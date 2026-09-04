@@ -1,13 +1,18 @@
+"use client";
+
 import { useState } from "react";
-import wayamLogo from "@/assets/wayam-logo-dark.svg";
-import { useNavigate, useLocation } from "react-router-dom";
+import anvayaLogoLight from "@/assets/anvaya-logo-light.svg";
+import anvayaLogoDark from "@/assets/anvaya-logo-dark.svg";
+import { useTheme } from "next-themes";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Layers, Factory, Package, ShoppingCart,
   TrendingUp, BarChart3, Settings, ChevronDown, ChevronRight,
   Zap, ClipboardList, Shield, Box, Truck, FileText,
   AlertTriangle, Calendar, Wrench, MapPin, Hash,
   Heart, LineChart, Target, PieChart, FileBarChart,
-  Building, Users, Link2, Bell, PanelLeftClose, PanelLeft, Search
+  Building, Users, Link2, Bell, PanelLeftClose, PanelLeft, Search,
+  LogOut, Moon, Sun
 } from "lucide-react";
 
 interface NavItem {
@@ -23,14 +28,12 @@ interface NavSection {
   items: NavItem[];
 }
 
+const topNavItems: NavItem[] = [
+  { label: "Dashboard", path: "/", icon: LayoutDashboard },
+  { label: "Traceability", path: "/traceability", icon: Search },
+];
+
 const navSections: NavSection[] = [
-  {
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    items: [
-      { label: "Planning Overview", path: "/", icon: LayoutDashboard },
-    ],
-  },
   {
     label: "Material Planning",
     icon: Layers,
@@ -39,7 +42,7 @@ const navSections: NavSection[] = [
       { label: "Material Requirements", path: "/material-requirements", icon: ClipboardList },
       { label: "BOM Management", path: "/bom-management", icon: FileText },
       { label: "Safety Stock", path: "/safety-stock", icon: Shield },
-      { label: "Stock Exhaustion Alerts", path: "/stock-alerts", icon: AlertTriangle, badge: 7 },
+      { label: "Stock Exhaustion Alerts", path: "/stock-alerts", icon: AlertTriangle },
     ],
   },
   {
@@ -48,7 +51,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "Production Schedule", path: "/production-schedule", icon: Calendar },
       { label: "Work Orders", path: "/work-orders", icon: Wrench },
-      { label: "Constraints", path: "/production-constraints", icon: AlertTriangle, badge: 3 },
+      { label: "Constraints", path: "/production-constraints", icon: AlertTriangle },
       { label: "Schedule Updates", path: "/schedule-updates", icon: Target },
     ],
   },
@@ -82,13 +85,6 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    label: "Traceability",
-    icon: Search,
-    items: [
-      { label: "BOM Traceability", path: "/traceability", icon: Search },
-    ],
-  },
-  {
     label: "Analytics & Reports",
     icon: BarChart3,
     items: [
@@ -107,19 +103,23 @@ const navSections: NavSection[] = [
       { label: "Users & Roles", path: "/users-roles", icon: Users },
       { label: "Integrations", path: "/integrations", icon: Link2 },
       { label: "Alert Configuration", path: "/alert-config", icon: Bell },
+      { label: "theme-toggle", path: "", icon: Moon },
+      { label: "Logout", path: "", icon: LogOut },
     ],
   },
 ];
 
 export default function AppSidebar() {
-  const navigate = useNavigate();
-  const location = useLocation();
+  const router = useRouter();
+  const pathname = usePathname();
+  const { theme = "light", setTheme } = useTheme();
+  const anvayaLogo = (theme === "dark" ? anvayaLogoDark : anvayaLogoLight).src;
   const [collapsed, setCollapsed] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     navSections.forEach((s) => {
-      const isActive = s.items.some((i) => i.path === location.pathname);
-      initial[s.label] = isActive || s.label === "Dashboard" || s.label === "Material Planning";
+      const isActive = s.items.some((i) => i.path === pathname);
+      initial[s.label] = isActive || s.label === "Material Planning";
     });
     return initial;
   });
@@ -128,6 +128,13 @@ export default function AppSidebar() {
     setOpenSections((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("matrixops_auth");
+    router.push("/login");
+  };
+
+  const isDark = theme === "dark";
+
   return (
     <aside
       className={`h-screen bg-sidebar flex flex-col border-r border-sidebar-border transition-[width] duration-300 ${
@@ -135,22 +142,34 @@ export default function AppSidebar() {
       } flex-shrink-0 sticky top-0`}
     >
       {/* Logo */}
-      <div className="flex flex-col px-4 py-3 border-b border-sidebar-border gap-1">
-        <img src={wayamLogo} alt="Wayam AI" className="h-16 object-contain self-center" />
-        {!collapsed && (
-          <div className="animate-fade-in">
-            <div className="text-sm font-bold text-primary-foreground tracking-tight">MatrixOps</div>
-            <div className="text-[10px] text-sidebar-foreground leading-none">Material Planning & ERP</div>
-          </div>
-        )}
+      <div className="flex flex-col px-4 py-3 border-b border-sidebar-border">
+        <img src={anvayaLogo} alt="Anvaya" className="h-20 object-contain self-center" />
       </div>
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+        {topNavItems.map((item) => {
+          const isActive = pathname === item.path;
+          const ItemIcon = item.icon;
+          return (
+            <button
+              key={item.path}
+              onClick={() => router.push(item.path)}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-all duration-150 group ${
+                isActive
+                  ? "bg-sidebar-hover text-accent font-medium"
+                  : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+              }`}
+            >
+              <ItemIcon className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? "text-accent" : ""}`} />
+              <span className="truncate flex-1 text-left">{item.label}</span>
+            </button>
+          );
+        })}
         {navSections.map((section) => {
           const isOpen = openSections[section.label];
           const SectionIcon = section.icon;
-          const hasActivePath = section.items.some((i) => i.path === location.pathname);
+          const hasActivePath = section.items.some((i) => i.path === pathname);
           const totalBadge = section.items.reduce((sum, i) => sum + (i.badge || 0), 0);
 
           return (
@@ -178,16 +197,43 @@ export default function AppSidebar() {
               {!collapsed && isOpen && (
                 <div className="ml-4 mt-0.5 space-y-0.5 animate-fade-in">
                   {section.items.map((item) => {
-                    const isActive = location.pathname === item.path;
+                    const isActive = pathname === item.path;
                     const ItemIcon = item.icon;
+
+                    if (item.label === "theme-toggle") {
+                      return (
+                        <button
+                          key="theme-toggle"
+                          onClick={() => setTheme(isDark ? "light" : "dark")}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-all duration-150 group text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                        >
+                          {isDark ? <Sun className="w-3.5 h-3.5 flex-shrink-0" /> : <Moon className="w-3.5 h-3.5 flex-shrink-0" />}
+                          <span className="truncate flex-1 text-left">{isDark ? "Light Mode" : "Dark Mode"}</span>
+                        </button>
+                      );
+                    }
+
+                    if (item.label === "Logout") {
+                      return (
+                        <button
+                          key="logout"
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-all duration-150 group text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                        >
+                          <LogOut className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span className="truncate flex-1 text-left">Logout</span>
+                        </button>
+                      );
+                    }
+
                     return (
                       <button
                         key={item.path}
-                        onClick={() => navigate(item.path)}
+                        onClick={() => router.push(item.path)}
                         className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] transition-all duration-150 group ${
                           isActive
                             ? "bg-sidebar-hover text-accent font-medium"
-                            : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-primary-foreground"
+                            : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
                         }`}
                       >
                         <ItemIcon className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? "text-accent" : ""}`} />
@@ -211,7 +257,7 @@ export default function AppSidebar() {
       <div className="border-t border-sidebar-border p-2">
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center justify-center gap-2 px-2 py-1.5 rounded-md text-sidebar-foreground hover:bg-sidebar-hover hover:text-primary-foreground transition-colors duration-150 text-xs"
+          className="w-full flex items-center justify-center gap-2 px-2 py-1.5 rounded-md text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground transition-colors duration-150 text-xs"
         >
           {collapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           {!collapsed && <span>Collapse</span>}

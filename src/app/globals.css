@@ -1,0 +1,536 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================================================
+   DESIGN TOKENS — 2-tier architecture
+   ----------------------------------------------------------------------------
+   Tier 1  REFERENCE  raw palette values. What a colour *is*. Never used by a
+                      component directly.
+   Tier 2  SEMANTIC   role mappings. What a colour *does*. Components use only
+                      these (via the Tailwind utilities in tailwind.config.ts).
+
+   Dark-mode-first: the dark mapping is the default on :root. `html.light`
+   carries a provisional light mapping so components need no changes when light
+   mode is designed properly.
+   ============================================================================ */
+
+:root {
+  /* ---- TIER 1 — REFERENCE : neutral grayscale ------------------------- */
+  --ref-gray-0: #ffffff;
+  --ref-gray-50: #f4f4f4;
+  --ref-gray-100: #e5e5e5;
+  --ref-gray-200: #d4d4d4;
+  --ref-gray-300: #b8b8b8;
+  --ref-gray-400: #969696;
+  --ref-gray-500: #737373;
+  --ref-gray-600: #525252;
+  --ref-gray-700: #383838;
+  --ref-gray-800: #252525;
+  --ref-gray-850: #1c1c1c;
+  --ref-gray-900: #151515;
+  --ref-gray-925: #111111;
+  --ref-gray-950: #0b0b0b;
+  --ref-gray-975: #070707;
+  --ref-gray-1000: #000000;
+
+  /* ---- TIER 1 — REFERENCE : feedback --------------------------------- */
+  /* Stored as R G B channels so semantic tokens can carry an alpha slot —
+     this is what makes `bg-feedback-critical/35` work. Solid hex equivalents
+     are commented for readability. */
+  --ref-green-400: 79 193 110;   /* #4fc16e */
+  --ref-green-500: 49 163 84;    /* #31a354 */
+  --ref-blue-400: 76 154 255;    /* #4c9aff */
+  --ref-blue-500: 41 121 255;    /* #2979ff */
+  --ref-orange-400: 255 159 67;  /* #ff9f43 */
+  --ref-orange-500: 244 123 32;  /* #f47b20 */
+  --ref-red-400: 255 90 82;      /* #ff5a52 */
+  --ref-red-500: 232 59 54;      /* #e83b36 */
+  --ref-yellow-400: 244 201 76;  /* #f4c94c */
+  --ref-yellow-500: 217 168 30;  /* #d9a81e */
+
+}
+
+/*
+  Dark semantic mapping. Applied to :root (dark-mode-first) and re-declared on
+  .cc-root so that subtree stays dark even while the surrounding ERP app is in
+  light mode — next-themes puts `class="light"` on <html>, and custom
+  properties inherit, so an always-dark island has to restate them.
+*/
+:root,
+.cc-root {
+  /* ---- TIER 2 — SEMANTIC (dark) : page ------------------------------- */
+  --page-background: var(--ref-gray-1000);
+  --page-background-subtle: var(--ref-gray-975);
+
+  /* ---- TIER 2 — SEMANTIC (dark) : surface ---------------------------- */
+  --surface-primary: var(--ref-gray-950);
+  --surface-secondary: var(--ref-gray-925);
+  --surface-tertiary: var(--ref-gray-900);
+  --surface-elevated: var(--ref-gray-850);
+  --surface-hover: var(--ref-gray-850);
+  --surface-active: var(--ref-gray-800);
+  --surface-disabled: var(--ref-gray-950);
+
+  /* ---- TIER 2 — SEMANTIC (dark) : text ------------------------------- */
+  --text-primary: var(--ref-gray-50);
+  --text-secondary: var(--ref-gray-300);
+  --text-tertiary: var(--ref-gray-400);
+  --text-muted: var(--ref-gray-500);
+  --text-disabled: var(--ref-gray-600);
+  --text-on-color: var(--ref-gray-0);
+  --text-on-light: var(--ref-gray-950);
+
+  /* ---- TIER 2 — SEMANTIC (dark) : icon ------------------------------- */
+  --icon-primary: var(--ref-gray-200);
+  --icon-secondary: var(--ref-gray-400);
+  --icon-tertiary: var(--ref-gray-500);
+  --icon-muted: var(--ref-gray-600);
+  --icon-disabled: var(--ref-gray-700);
+  --icon-on-light: var(--ref-gray-950);
+
+  /* ---- TIER 2 — SEMANTIC (dark) : stroke ----------------------------- */
+  --stroke-subtle: rgba(255, 255, 255, 0.06);
+  --stroke-default: rgba(255, 255, 255, 0.1);
+  --stroke-strong: rgba(255, 255, 255, 0.16);
+  --stroke-hover: rgba(255, 255, 255, 0.22);
+  --stroke-focus: var(--ref-gray-200);
+
+  /* ---- TIER 2 — SEMANTIC (dark) : action ----------------------------- */
+  --action-primary: var(--ref-gray-50);
+  --action-primary-hover: var(--ref-gray-100);
+  --action-primary-active: var(--ref-gray-200);
+  --action-primary-text: var(--ref-gray-950);
+  --action-secondary: var(--surface-tertiary);
+  --action-secondary-hover: var(--surface-elevated);
+  --action-secondary-text: var(--text-primary);
+  --action-disabled: var(--surface-disabled);
+  --action-disabled-text: var(--text-disabled);
+
+  /* ---- TIER 2 — SEMANTIC (dark) : feedback --------------------------- */
+  --feedback-success: var(--ref-green-400);
+  --feedback-info: var(--ref-blue-400);
+  --feedback-warning: var(--ref-orange-400);
+  --feedback-critical: var(--ref-red-400);
+  --feedback-highlight: var(--ref-yellow-400);
+
+  /* Subtle fills derive from the same channels — one source of truth. */
+  --feedback-success-subtle: rgb(var(--feedback-success) / 0.12);
+  --feedback-info-subtle: rgb(var(--feedback-info) / 0.12);
+  --feedback-warning-subtle: rgb(var(--feedback-warning) / 0.12);
+  --feedback-critical-subtle: rgb(var(--feedback-critical) / 0.12);
+  --feedback-highlight-subtle: rgb(var(--feedback-highlight) / 0.12);
+}
+
+/*
+  Provisional light mapping. Not designed yet — the values exist so that
+  components written against semantic tokens keep working, and so the ERP
+  screens (which render light by default) keep their current appearance.
+*/
+html.light {
+  --page-background: var(--ref-gray-50);
+  --page-background-subtle: var(--ref-gray-0);
+
+  --surface-primary: var(--ref-gray-0);
+  --surface-secondary: var(--ref-gray-50);
+  --surface-tertiary: var(--ref-gray-100);
+  --surface-elevated: var(--ref-gray-0);
+  --surface-hover: var(--ref-gray-100);
+  --surface-active: var(--ref-gray-200);
+  --surface-disabled: var(--ref-gray-100);
+
+  --text-primary: var(--ref-gray-900);
+  --text-secondary: var(--ref-gray-600);
+  --text-tertiary: var(--ref-gray-500);
+  --text-muted: var(--ref-gray-500);
+  --text-disabled: var(--ref-gray-300);
+  --text-on-color: var(--ref-gray-0);
+  --text-on-light: var(--ref-gray-950);
+
+  --icon-primary: var(--ref-gray-700);
+  --icon-secondary: var(--ref-gray-500);
+  --icon-tertiary: var(--ref-gray-500);
+  --icon-muted: var(--ref-gray-400);
+  --icon-disabled: var(--ref-gray-300);
+
+  --stroke-subtle: rgba(0, 0, 0, 0.08);
+  --stroke-default: rgba(0, 0, 0, 0.12);
+  --stroke-strong: rgba(0, 0, 0, 0.18);
+  --stroke-hover: rgba(0, 0, 0, 0.24);
+  --stroke-focus: var(--ref-gray-700);
+
+  --action-primary: var(--ref-gray-900);
+  --action-primary-hover: var(--ref-gray-800);
+  --action-primary-active: var(--ref-gray-700);
+  --action-primary-text: var(--ref-gray-0);
+  --action-secondary: var(--ref-gray-100);
+  --action-secondary-hover: var(--ref-gray-200);
+
+  /* Chosen to sit within a hair of the ERP's existing success/warning hues,
+     so the 60+ existing `text-success` / `text-warning` call sites do not
+     visibly shift when these utilities start resolving here. */
+  --feedback-success: var(--ref-green-500);
+  --feedback-info: var(--ref-blue-500);
+  --feedback-warning: var(--ref-orange-500);
+  --feedback-critical: var(--ref-red-500);
+  --feedback-highlight: var(--ref-yellow-500);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    /* Clean neutral light theme */
+    --background: 0 0% 98%;
+    --foreground: 0 0% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 15%;
+
+    --primary: 24 100% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 15%;
+
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 45%;
+
+    --accent: 24 100% 52%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 6 78% 57%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 24 100% 52%;
+
+    --radius: 0.5rem;
+
+    --success: 145 62% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 37 90% 51%;
+    --warning-foreground: 0 0% 100%;
+    --danger: 6 78% 57%;
+    --danger-foreground: 0 0% 100%;
+
+    /* Light sidebar */
+    --sidebar-bg: 0 0% 100%;
+    --sidebar-foreground: 0 0% 25%;
+    --sidebar-active: 24 100% 52%;
+    --sidebar-hover: 0 0% 96%;
+    --sidebar-section: 0 0% 45%;
+    --sidebar-border: 0 0% 90%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-primary: 24 100% 52%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 0 0% 20%;
+    --sidebar-ring: 24 100% 52%;
+
+    --chart-1: 24 100% 52%;
+    --chart-2: 24 85% 42%;
+    --chart-3: 24 100% 68%;
+    --chart-4: 20 80% 48%;
+    --chart-5: 28 90% 60%;
+
+    --chart-grid: 0 0% 90%;
+    --chart-axis: 0 0% 50%;
+    --chart-muted: 0 0% 80%;
+
+    --ebom: 24 100% 52%;
+    --ebom-foreground: 0 0% 100%;
+    --mbom: 24 85% 42%;
+    --mbom-foreground: 0 0% 100%;
+    --sbom: 24 100% 68%;
+    --sbom-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --background: 0 0% 7%;
+    --foreground: 0 0% 95%;
+
+    --card: 0 0% 11%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 0 0% 11%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 24 100% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 0 0% 16%;
+    --muted-foreground: 0 0% 65%;
+
+    --accent: 24 100% 52%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 6 78% 57%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 18%;
+    --input: 0 0% 20%;
+    --ring: 24 100% 52%;
+
+    --success: 145 60% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 40 95% 55%;
+    --warning-foreground: 0 0% 12%;
+    --danger: 6 78% 57%;
+    --danger-foreground: 0 0% 100%;
+
+    /* Dark sidebar */
+    --sidebar-bg: 0 0% 9%;
+    --sidebar-foreground: 0 0% 90%;
+    --sidebar-active: 24 100% 52%;
+    --sidebar-hover: 0 0% 16%;
+    --sidebar-section: 0 0% 55%;
+    --sidebar-border: 0 0% 18%;
+
+    --sidebar-background: 0 0% 9%;
+    --sidebar-primary: 24 100% 52%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 16%;
+    --sidebar-accent-foreground: 0 0% 90%;
+    --sidebar-ring: 24 100% 52%;
+
+    --chart-1: 24 100% 58%;
+    --chart-2: 24 85% 50%;
+    --chart-3: 24 100% 72%;
+    --chart-4: 20 80% 55%;
+    --chart-5: 28 90% 65%;
+
+    --chart-grid: 0 0% 18%;
+    --chart-axis: 0 0% 55%;
+    --chart-muted: 0 0% 22%;
+
+    --ebom: 24 100% 58%;
+    --ebom-foreground: 0 0% 100%;
+    --mbom: 24 85% 50%;
+    --mbom-foreground: 0 0% 100%;
+    --sbom: 24 100% 72%;
+    --sbom-foreground: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    text-wrap: balance;
+    overflow-wrap: break-word;
+  }
+
+  p {
+    text-wrap: pretty;
+    overflow-wrap: break-word;
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  .font-michroma {
+    font-family: "Michroma", sans-serif;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Animation keyframes */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out both;
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.stagger-1 { animation-delay: 60ms; }
+.stagger-2 { animation-delay: 120ms; }
+.stagger-3 { animation-delay: 180ms; }
+.stagger-4 { animation-delay: 240ms; }
+.stagger-5 { animation-delay: 300ms; }
+.stagger-6 { animation-delay: 360ms; }
+
+/* ============================================================================
+   Command Center design tokens
+   ----------------------------------------------------------------------------
+   A self-contained dark "mission control" surface. Scoped to `.cc-root` so the
+   palette is independent of the app-wide light/dark theme: the command center
+   is always dark, the way instrument panels always are.
+   ============================================================================ */
+
+.cc-root {
+  color-scheme: dark;
+
+  /*
+    Always-dark island. The dark semantic mapping is restated on this selector
+    (see the `:root, .cc-root` block above) so this subtree stays dark even
+    while the surrounding ERP app is in light mode.
+
+    What remains below is the non-colour token family — radii, shadows and
+    easing. Colours are consumed directly from the Tier-2 semantic tokens.
+  */
+
+  /* Radii ----------------------------------------------------------------- */
+  --cc-radius-sm: 6px;
+  --cc-radius-md: 10px;
+  --cc-radius-lg: 14px;
+  --cc-radius-xl: 16px;
+  --cc-radius-pill: 999px;
+
+  /* Shadows — restrained, never glowing ----------------------------------- */
+  --cc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --cc-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35);
+  --cc-shadow-panel: 0 8px 30px rgba(0, 0, 0, 0.45);
+
+  /* Motion ---------------------------------------------------------------- */
+  --cc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --cc-duration: 180ms;
+
+  background-color: var(--page-background);
+  color: var(--text-primary);
+}
+
+@layer components {
+  /* The 1px top inner highlight that gives panels their subtle metallic edge. */
+  .cc-inner-highlight {
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .cc-panel {
+    background-color: var(--surface-secondary);
+    border: 1px solid var(--stroke-subtle);
+    border-radius: var(--cc-radius-xl);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04), var(--cc-shadow-md);
+  }
+
+  /* Muted map treatment: a dark plate with a faint survey grid and a soft
+     radial lift, so it reads as terrain without a real tile layer. */
+  .cc-map-surface {
+    background-color: var(--surface-primary);
+    background-image:
+      radial-gradient(ellipse 90% 70% at 50% 40%, rgba(255, 255, 255, 0.028), transparent 70%),
+      linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+    background-size: 100% 100%, 56px 56px, 56px 56px;
+  }
+}
+
+@layer components {
+  /* Quieter cousin of the map plate, for small preview boxes where the survey
+     grid would otherwise read as a table. */
+  .cc-plate {
+    background-color: var(--surface-primary);
+    background-image:
+      radial-gradient(ellipse 80% 70% at 50% 45%, rgba(255, 255, 255, 0.03), transparent 72%),
+      linear-gradient(to right, rgba(255, 255, 255, 0.014) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+    background-size: 100% 100%, 22px 22px, 22px 22px;
+  }
+}
+
+/* Focus ring tuned for the dark plate. */
+.cc-root :focus-visible {
+  outline: 2px solid var(--stroke-focus);
+  outline-offset: 2px;
+  border-radius: var(--cc-radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-root *,
+  .cc-root *::before,
+  .cc-root *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

@@ -1,8 +1,11 @@
-import { useLocation, useNavigate } from "react-router-dom";
-import { Bell, ChevronRight, LogOut, User } from "lucide-react";
+"use client";
+
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { Bell, ChevronRight, User } from "lucide-react";
 
 const routeLabels: Record<string, string[]> = {
-  "/": ["Dashboard", "Planning Overview"],
+  "/": ["Dashboard"],
   "/mrp-run": ["Material Planning", "MRP Run & Results"],
   "/material-requirements": ["Material Planning", "Material Requirements"],
   "/bom-management": ["Material Planning", "BOM Management"],
@@ -23,6 +26,7 @@ const routeLabels: Record<string, string[]> = {
   "/demand-forecast": ["Forecasting", "Demand Forecast"],
   "/forecast-actuals": ["Forecasting", "Forecast vs. Actuals"],
   "/sales-orders": ["Forecasting", "Sales Order Intake"],
+  "/traceability": ["Traceability"],
   "/bi-dashboard": ["Analytics", "BI Dashboard"],
   "/material-coverage": ["Analytics", "Material Coverage Monitor"],
   "/procurement-reports": ["Analytics", "Procurement Reports"],
@@ -35,16 +39,19 @@ const routeLabels: Record<string, string[]> = {
 };
 
 export default function AppHeader() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const crumbs = routeLabels[location.pathname] || ["Dashboard"];
-  const email = localStorage.getItem("matrixops_email") || "guest@matrixops.in";
-  const role = localStorage.getItem("matrixops_role") || "admin";
+  const pathname = usePathname();
+  const crumbs = routeLabels[pathname] || ["Dashboard"];
 
-  const handleLogout = () => {
-    localStorage.removeItem("matrixops_auth");
-    navigate("/login");
-  };
+  // Read after mount: localStorage is not available during server rendering,
+  // and reading it inline would desync the first client paint.
+  const [identity, setIdentity] = useState({ email: "guest@matrixops.in", role: "admin" });
+  useEffect(() => {
+    setIdentity({
+      email: localStorage.getItem("matrixops_email") || "guest@matrixops.in",
+      role: localStorage.getItem("matrixops_role") || "admin",
+    });
+  }, []);
+  const { email, role } = identity;
 
   return (
     <header className="h-14 bg-card border-b border-border flex items-center justify-between px-6 sticky top-0 z-10">
@@ -59,27 +66,17 @@ export default function AppHeader() {
         ))}
       </div>
       <div className="flex items-center gap-4">
-        <button className="relative p-1.5 rounded-md hover:bg-secondary transition-colors">
-          <Bell className="w-4.5 h-4.5 text-muted-foreground" />
-          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-danger text-danger-foreground text-[9px] font-bold rounded-full flex items-center justify-center">
-            5
-          </span>
-        </button>
-        <div className="flex items-center gap-2 pl-3 border-l border-border">
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+          <button className="p-1.5 rounded-md hover:bg-secondary transition-colors">
+            <Bell className="w-4.5 h-4.5 text-muted-foreground" />
+          </button>
+        <div className="flex items-center gap-3 pl-3 border-l border-border">
+          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
             <User className="w-4 h-4 text-primary-foreground" />
           </div>
-          <div className="text-right">
-            <div className="text-sm font-medium truncate max-w-[160px]">{email}</div>
+          <div className="text-left min-w-0">
+            <div className="text-sm font-medium truncate">{email}</div>
             <div className="text-[11px] text-muted-foreground capitalize">{role}</div>
           </div>
-          <button
-            onClick={handleLogout}
-            title="Sign out"
-            className="p-1.5 rounded-md hover:bg-secondary transition-colors text-muted-foreground"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
       </div>
     </header>

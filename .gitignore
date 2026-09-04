@@ -24,3 +24,10 @@ dist-ssr
 *.sw?
 .vercel
 .env*
+
+# next.js
+.next/
+next-env.d.ts
+
+# typescript build info
+*.tsbuildinfo
