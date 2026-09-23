@@ -26,8 +26,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/*
+          Michroma is the wordmark face only, so it is loaded as a stylesheet
+          link rather than through next/font: it is used on two surfaces, and a
+          build-time fetch is not worth making the build network-dependent.
+          Geist ships locally from /public/fonts.
+        */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
           href="https://fonts.googleapis.com/css2?family=Michroma&display=swap"
           rel="stylesheet"

@@ -1,15 +1,25 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ShoppingCart, TrendingUp, Heart, Wrench, Zap, FileText, Package, Shield, Clock, Target, Search } from "lucide-react";
-import KPICard from "@/components/KPICard";
-import StatusBadge from "@/components/StatusBadge";
+import { Zap, FileText, Package, Shield } from "lucide-react";
+import { PageHeader } from "@/components/app/page-header";
+import { Section } from "@/components/app/section";
+import { MetricRow, type Metric } from "@/components/app/metric-row";
+import { DataTable, type Column } from "@/components/app/data-table";
+import { btnPrimary, btnSecondary } from "@/components/app/controls";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine
 } from "recharts";
 import { traceCompletenessByLine, missingScanExceptions } from "@/data/traceability";
-import { CHART_COLORS, SERIES } from "@/lib/chart-colors";
+import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE, CHART_LEGEND_STYLE } from "@/lib/chart-colors";
+import { RangePicker } from "@/components/app/chart-card";
+import { useSeriesToggle } from "@/lib/chart-config";
 import { useState } from "react";
+
+/* The five materials the coverage chart plots, in draw order. */
+const COVERAGE_SERIES = ["Polypropylene", "Stearic Acid", "HDPE Resin", "EDTA", "TiO2"] as const;
+const COVERAGE_RANGES = ["4W", "8W", "12W"] as const;
+type CoverageRange = (typeof COVERAGE_RANGES)[number];
 
 const coverageData = [
   { week: "W1", "Polypropylene": 6.2, "Stearic Acid": 3.1, "HDPE Resin": 8.4, "EDTA": 4.5, "TiO2": 5.1 },
@@ -24,17 +34,6 @@ const coverageData = [
   { week: "W10", "Polypropylene": 3.9, "Stearic Acid": 1.2, "HDPE Resin": 4.5, "EDTA": 1.8, "TiO2": 1.9 },
   { week: "W11", "Polypropylene": 3.4, "Stearic Acid": 0.8, "HDPE Resin": 4.2, "EDTA": 1.5, "TiO2": 1.6 },
   { week: "W12", "Polypropylene": 3.1, "Stearic Acid": 0.5, "HDPE Resin": 3.9, "EDTA": 1.2, "TiO2": 1.3 },
-];
-
-const procurementData = [
-  { week: "W5", procured: 14200, consumed: 12800 },
-  { week: "W6", procured: 11800, consumed: 13200 },
-  { week: "W7", procured: 15600, consumed: 13500 },
-  { week: "W8", procured: 12400, consumed: 14100 },
-  { week: "W9", procured: 16800, consumed: 13900 },
-  { week: "W10", procured: 13200, consumed: 14500 },
-  { week: "W11", procured: 14800, consumed: 14200 },
-  { week: "W12", procured: 11200, consumed: 14800 },
 ];
 
 const stockAlerts = [
@@ -58,6 +57,12 @@ const productionSchedule = [
 ];
 
 export default function Dashboard() {
+  // Windowing the existing twelve weeks — the tail is the recent end, so a
+  // shorter range keeps the last N points rather than the first.
+  const [coverageRange, setCoverageRange] = useState<CoverageRange>("12W");
+  const coverageWindow = coverageData.slice(-parseInt(coverageRange, 10));
+  const coverageLegend = useSeriesToggle([...COVERAGE_SERIES]);
+
   const router = useRouter();
   const [scanExceptions, setScanExceptions] = useState(missingScanExceptions);
 
@@ -65,178 +70,189 @@ export default function Dashboard() {
     setScanExceptions(prev => prev.map((e, i) => i === index ? { ...e, resolved: true } : e));
   };
 
+  const unresolved = scanExceptions.filter(e => !e.resolved).length;
+
+  // The nine figures that used to be nine bordered cards. Tone is applied only
+  // to the ones that need attention, so colour still carries meaning.
+  const metrics: Metric[] = [
+    { label: "Materials at risk", iconName: "materials-risk", value: "14", hint: "SKUs · up from 9 last week", tone: "danger" },
+    { label: "Open purchase orders", iconName: "purchase-orders", value: "87", hint: "₹4.2 Cr value" },
+    { label: "Schedule adherence", iconName: "schedule-adherence", value: "91.4%", delta: "2.1%", deltaDirection: "up" },
+    { label: "Inventory health", iconName: "inventory-health", value: "74", hint: "of 100 · below 80 target", tone: "warning" },
+    { label: "Pending work orders", iconName: "pending-work-orders", value: "23", hint: "6 overdue" },
+    { label: "Trace completeness", iconName: "trace-completeness", value: "92.4%", delta: "1.2%", deltaDirection: "up" },
+    { label: "Mean RCA time", iconName: "rca-time", value: "14.7", hint: "hrs · target under 12" },
+    { label: "Active suspect lots", iconName: "suspect-lots", value: "2", hint: "Up from 0 last week", tone: "danger" },
+    { label: "Recall accuracy", iconName: "recall-accuracy", value: "97.1%", hint: "Field containment" },
+  ];
+
+  type ScanException = (typeof scanExceptions)[number];
+  const exceptionColumns: Column<ScanException>[] = [
+    { key: "workOrder", header: "Work order", width: "w-[130px]", value: r => r.workOrder, cell: r => <span className="identifier text-body-sm">{r.workOrder}</span> },
+    { key: "part", header: "Part", width: "w-[130px]", value: r => r.part, cell: r => <span className="identifier text-body-sm text-muted-foreground">{r.part}</span> },
+    { key: "station", header: "Station", value: r => r.station, cell: r => r.station },
+    { key: "shift", header: "Shift", width: "w-[90px]", value: r => r.shift, cell: r => r.shift },
+    { key: "date", header: "Date", width: "w-[110px]", value: r => r.date, cell: r => r.date },
+    {
+      key: "action", header: "", align: "right", width: "w-[110px]",
+      cell: r => {
+        const i = scanExceptions.indexOf(r);
+        return r.resolved
+          ? <span className="text-body-sm text-muted-foreground">Resolved</span>
+          : <button onClick={() => resolveException(i)} className="h-7 rounded-lg border border-border bg-card px-2.5 text-body-sm font-medium text-foreground transition-colors hover:bg-secondary">Resolve</button>;
+      },
+    },
+  ];
+
+  type Scheduled = (typeof productionSchedule)[number];
+  const scheduleColumns: Column<Scheduled>[] = [
+    {
+      key: "product", header: "Product",
+      // Readiness rides with the product name rather than taking a column of
+      // its own, which is what made this table overflow its third of the row.
+      cell: r => (
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            title={r.status}
+            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${r.readiness === "green" ? "bg-success" : r.readiness === "amber" ? "bg-warning" : "bg-danger"}`}
+          />
+          <span className="truncate">{r.product}</span>
+        </span>
+      ),
+    },
+    { key: "qty", header: "Qty", align: "right", numeric: true, width: "w-[72px]", cell: r => r.qty },
+    { key: "date", header: "Date", align: "right", width: "w-[76px]", cell: r => <span className="whitespace-nowrap">{r.date}</span> },
+  ];
+
   return (
-    <div className="p-6 space-y-6">
-      {/* KPI Row */}
-      <div className="grid grid-cols-5 gap-4 animate-fade-in-up">
-        <KPICard title="Materials at Risk" value="14 SKUs" status="red" trend={{ value: "↑ from 9 last week", direction: "up", positive: false }} icon={AlertTriangle} />
-        <KPICard title="Open Purchase Orders" value="87" subtitle="₹4.2 Cr value" status="amber" icon={ShoppingCart} />
-        <KPICard title="Schedule Adherence" value="91.4%" status="green" trend={{ value: "+2.1%", direction: "up", positive: true }} icon={TrendingUp} />
-        <KPICard title="Inventory Health" value="74 / 100" subtitle="Below 80 target" status="amber" icon={Heart} />
-        <KPICard title="Pending Work Orders" value="23" subtitle="6 overdue" status="red" icon={Wrench} />
-      </div>
+    <div className="px-6 py-5">
+      <PageHeader
+        title="Dashboard"
+        description="Material planning, production readiness and traceability at a glance."
+        actions={
+          <>
+            <button onClick={() => router.push("/purchase-planning")} className={btnSecondary}>
+              <FileText /> Purchase plan
+            </button>
+            <button onClick={() => router.push("/mrp-run")} className={btnPrimary}>
+              <Zap /> Run MRP
+            </button>
+          </>
+        }
+      />
 
-      {/* Traceability Health Row */}
-      <div className="grid grid-cols-4 gap-4 animate-fade-in-up stagger-1">
-        <KPICard title="Trace Completeness" value="92.4%" status="green" trend={{ value: "+1.2%", direction: "up", positive: true }} icon={Shield} />
-        <KPICard title="Mean RCA Time" value="14.7 hrs" subtitle="Target < 12 hrs" status="amber" icon={Clock} />
-        <KPICard title="Active Suspect Lots" value="2" status="red" trend={{ value: "↑ from 0 last week", direction: "up", positive: false }} icon={AlertTriangle} />
-        <KPICard title="Recall Accuracy" value="97.1%" subtitle="Field containment" status="green" icon={Target} />
-      </div>
+      <MetricRow metrics={metrics} />
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-2 gap-4 animate-fade-in-up stagger-2">
-        <div className="bg-card rounded-lg border border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Material Coverage Trend (Weeks)</h3>
+      <div className="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-2">
+        <Section
+          title="Material coverage trend"
+          iconName="material-coverage"
+          description="Weeks of cover by material"
+          actions={<RangePicker<CoverageRange> value={coverageRange} options={COVERAGE_RANGES} onChange={setCoverageRange} />}
+        >
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={coverageData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-              <XAxis dataKey="week" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} />
-              <YAxis tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} label={{ value: "Weeks", angle: -90, position: "insideLeft", fontSize: 11 }} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <LineChart data={coverageWindow} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
+              <XAxis dataKey="week" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} tickMargin={6} />
+              <YAxis width={44} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} label={{ value: "Weeks of cover", angle: -90, position: "insideLeft", style: { fontSize: 11, fill: CHART_COLORS.axis, textAnchor: "middle" } }} />
+              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ stroke: CHART_COLORS.grid, strokeWidth: 1 }} formatter={(v: number | string) => (typeof v === "number" ? `${v} weeks` : v)} />
               <ReferenceLine y={2} stroke={CHART_COLORS.primary} strokeDasharray="5 5" label={{ value: "Min 2w", fontSize: 10, fill: CHART_COLORS.primary }} />
-              <Line type="monotone" dataKey="Polypropylene" stroke={SERIES[0]} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Stearic Acid" stroke={SERIES[1]} strokeWidth={1.5} dot={false} />
-              <Line type="monotone" dataKey="HDPE Resin" stroke={SERIES[2]} strokeWidth={1.5} dot={false} />
-              <Line type="monotone" dataKey="EDTA" stroke={SERIES[3]} strokeWidth={1.5} dot={false} />
-              <Line type="monotone" dataKey="TiO2" stroke={SERIES[4]} strokeWidth={1.5} dot={false} />
-              <Legend iconSize={6} wrapperStyle={{ fontSize: 10, color: "hsl(0, 0%, 55%)" }} />
+              {COVERAGE_SERIES.map((key, i) => (
+                <Line
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={SERIES[i]}
+                  strokeWidth={i === 0 ? 2 : 1.5}
+                  dot={false}
+                  // Hiding is what the legend toggles; the series stays in the
+                  // chart so its colour and legend entry do not reshuffle.
+                  hide={coverageLegend.isHidden(key)}
+                />
+              ))}
+              {/* Click a name to isolate or restore that material. */}
+              <Legend
+                iconSize={6}
+                wrapperStyle={{ ...CHART_LEGEND_STYLE, cursor: "pointer" }}
+                onClick={coverageLegend.onLegendClick}
+                formatter={(value: string) => (
+                  <span style={{ opacity: coverageLegend.isHidden(value) ? 0.4 : 1 }}>{value}</span>
+                )}
+              />
             </LineChart>
           </ResponsiveContainer>
-        </div>
+        </Section>
 
-        {/* Trace Completeness by Line */}
-        <div className="bg-card rounded-lg border border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Trace Completeness by Assembly Line (7d)</h3>
+        <Section title="Trace completeness by assembly line" iconName="trend-chart" description="Last 7 days">
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={traceCompletenessByLine}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-              <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} />
-              <YAxis domain={[60, 100]} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <BarChart data={traceCompletenessByLine} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
+              <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} />
+              <YAxis width={44} domain={[60, 100]} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} />
+              <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
               <Bar dataKey="Line 1" fill={SERIES[0]} radius={[2, 2, 0, 0]} />
               <Bar dataKey="Line 2" fill={SERIES[1]} radius={[2, 2, 0, 0]} />
               <Bar dataKey="Line 3" fill={SERIES[2]} radius={[2, 2, 0, 0]} />
               <Bar dataKey="Line 4" fill={SERIES[3]} radius={[2, 2, 0, 0]} />
-              <Legend iconSize={6} wrapperStyle={{ fontSize: 10, color: "hsl(0, 0%, 55%)" }} />
+              <Legend iconSize={6} wrapperStyle={CHART_LEGEND_STYLE} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </Section>
       </div>
 
-      {/* Third Row */}
-      <div className="grid grid-cols-3 gap-4 animate-fade-in-up stagger-3">
-        {/* MRP Status */}
-        <div className="bg-card rounded-lg border border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-3">MRP Run Status</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Last Run</span><span className="font-medium">23 Mar 2026, 06:30 AM</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Duration</span><span className="font-medium">4m 12s</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Planned Orders</span><span className="font-medium">312</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Exceptions</span><span className="font-medium">18</span></div>
-          </div>
-          <button onClick={() => router.push("/mrp-run")} className="mt-4 w-full h-9 bg-accent text-accent-foreground rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity active:scale-[0.98]">
-            <Zap className="w-3.5 h-3.5" /> Re-run MRP Now
-          </button>
-        </div>
-
-        {/* Stock Alerts */}
-        <div className="bg-card rounded-lg border border-border p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-foreground">Stock Exhaustion Alerts</h3>
-            <button onClick={() => router.push("/stock-alerts")} className="text-xs text-accent hover:underline">View all</button>
-          </div>
-          <div className="space-y-2">
-            {stockAlerts.slice(0, 7).map((a, i) => (
-              <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-border last:border-0">
-                <div className="flex-1 min-w-0">
-                  <span className="font-medium truncate block">{a.sku}</span>
-                  <span className="text-muted-foreground">{a.stock} · {a.days}d</span>
-                </div>
+      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
+        <Section title="MRP run status">
+          <dl className="divide-y divide-border">
+            {[
+              ["Last run", "23 Mar 2026, 06:30 AM"],
+              ["Duration", "4m 12s"],
+              ["Planned orders", "312"],
+              ["Exceptions", "18"],
+            ].map(([k, v]) => (
+              <div key={k} className="flex items-baseline justify-between py-2">
+                <dt className="text-body-md text-muted-foreground">{k}</dt>
+                <dd className="text-body-md font-medium tabular-nums text-foreground">{v}</dd>
               </div>
             ))}
-          </div>
-        </div>
+          </dl>
+        </Section>
 
-        {/* Production Schedule */}
-        <div className="bg-card rounded-lg border border-border p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-foreground">Production Schedule (Next 7 Days)</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead><tr className="border-b border-border">
-                <th className="text-left py-1.5 font-medium text-muted-foreground">Product</th>
-                <th className="text-right py-1.5 font-medium text-muted-foreground">Qty</th>
-                <th className="text-right py-1.5 font-medium text-muted-foreground">Date</th>
-                <th className="text-center py-1.5 font-medium text-muted-foreground">Ready</th>
-              </tr></thead>
-              <tbody>
-                {productionSchedule.map((p, i) => (
-                  <tr key={i} className="border-b border-border last:border-0 hover:bg-secondary/50">
-                    <td className="py-1.5 truncate max-w-[120px]">{p.product}</td>
-                    <td className="py-1.5 text-right tabular-nums">{p.qty}</td>
-                    <td className="py-1.5 text-right">{p.date}</td>
-                    <td className="py-1.5 text-center">
-                      <span className={`inline-block w-2 h-2 rounded-full ${p.readiness === "green" ? "bg-success" : p.readiness === "amber" ? "bg-warning" : "bg-danger"}`} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Missing Scan Exceptions Table */}
-      <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-            <Search className="w-4 h-4 text-muted-foreground" /> Missing Scan Exceptions
-          </h3>
-          <span className="text-xs text-muted-foreground">{scanExceptions.filter(e => !e.resolved).length} unresolved</span>
-        </div>
-        <table className="w-full text-[13px]">
-          <thead><tr className="bg-secondary/50 border-b border-border">
-            {["Work Order", "Part", "Station", "Shift", "Date", "Action"].map(h =>
-              <th key={h} className="text-left px-3 py-2 font-medium text-muted-foreground">{h}</th>
-            )}
-          </tr></thead>
-          <tbody>
-            {scanExceptions.map((e, i) => (
-              <tr key={i} className={`border-b border-border ${e.resolved ? "opacity-40" : "hover:bg-secondary/30"}`}>
-                <td className="px-3 py-2 font-mono text-xs text-accent">{e.workOrder}</td>
-                <td className="px-3 py-2 font-mono text-xs">{e.part}</td>
-                <td className="px-3 py-2">{e.station}</td>
-                <td className="px-3 py-2">{e.shift}</td>
-                <td className="px-3 py-2">{e.date}</td>
-                <td className="px-3 py-2">
-                  {!e.resolved ? (
-                    <button onClick={() => resolveException(i)} className="h-6 px-2 bg-accent text-accent-foreground rounded text-xs font-medium hover:opacity-90">Resolve</button>
-                  ) : (
-                    <span className="text-xs text-muted-foreground font-medium">Resolved</span>
-                  )}
-                </td>
-              </tr>
+        <Section
+          title="Stock exhaustion alerts"
+          actions={
+            <button onClick={() => router.push("/stock-alerts")} className="text-body-sm text-muted-foreground transition-colors hover:text-foreground">
+              View all
+            </button>
+          }
+        >
+          <ul className="divide-y divide-border">
+            {stockAlerts.slice(0, 7).map(a => (
+              <li key={a.sku} className="flex items-baseline justify-between gap-3 py-2">
+                <span className="min-w-0 truncate text-body-md text-foreground">{a.sku}</span>
+                <span className="shrink-0 text-body-sm tabular-nums text-muted-foreground">{a.stock} · {a.days}d</span>
+              </li>
             ))}
-          </tbody>
-        </table>
+          </ul>
+        </Section>
+
+        <Section title="Production schedule" description="Next 7 days">
+          <DataTable columns={scheduleColumns} rows={productionSchedule} rowKey={r => r.product} />
+        </Section>
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex gap-3 animate-fade-in-up stagger-5">
-        <button onClick={() => router.push("/mrp-run")} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity active:scale-[0.98] flex items-center gap-2">
-          <Zap className="w-4 h-4" /> Run MRP
-        </button>
-        <button onClick={() => router.push("/purchase-planning")} className="px-4 py-2 bg-card border border-border text-foreground rounded-lg text-sm font-medium hover:bg-secondary transition-colors active:scale-[0.98] flex items-center gap-2">
-          <FileText className="w-4 h-4" /> Review Purchase Plan
-        </button>
-        <button onClick={() => router.push("/traceability")} className="px-4 py-2 bg-card border border-border text-foreground rounded-lg text-sm font-medium hover:bg-secondary transition-colors active:scale-[0.98] flex items-center gap-2">
-          <Shield className="w-4 h-4" /> BOM Traceability
-        </button>
-        <button onClick={() => router.push("/inventory-health")} className="px-4 py-2 bg-card border border-border text-foreground rounded-lg text-sm font-medium hover:bg-secondary transition-colors active:scale-[0.98] flex items-center gap-2">
-          <Package className="w-4 h-4" /> Check Slow-Moving Stock
-        </button>
+      <Section className="mt-8" title="Missing scan exceptions" description={`${unresolved} unresolved`}>
+        <DataTable columns={exceptionColumns} rows={scanExceptions} rowKey={r => r.workOrder} name="Missing scan exceptions" searchable exportable />
+      </Section>
+
+      <div className="mt-8 flex flex-wrap gap-2 border-t border-border pt-5">
+        {[
+          { label: "BOM traceability", icon: Shield, to: "/traceability" },
+          { label: "Slow-moving stock", icon: Package, to: "/inventory-health" },
+        ].map(({ label, icon: Icon, to }) => (
+          <button key={to} onClick={() => router.push(to)} className={btnSecondary}>
+            <Icon className="h-4 w-4" /> {label}
+          </button>
+        ))}
       </div>
     </div>
   );

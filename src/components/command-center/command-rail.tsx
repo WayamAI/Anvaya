@@ -45,7 +45,7 @@ export function SidebarItem({ icon: Icon, label, active = false, badge, onClick 
           <span
             className={cn(
               "absolute -right-0.5 -top-0.5 flex h-[15px] min-w-[15px] items-center justify-center",
-              "rounded-full bg-feedback-critical px-1 text-[9px] font-semibold leading-none text-on-color",
+              "rounded-full bg-feedback-critical px-1 text-caption font-semibold leading-none text-on-color",
               "ring-2 ring-page",
             )}
           >
@@ -87,7 +87,7 @@ export function CommandRail({ className }: { className?: string }) {
         className="mb-5 flex h-8 w-8 items-center justify-center rounded-[10px] border border-default bg-surface-tertiary"
         aria-hidden="true"
       >
-        <span className="text-[13px] font-semibold leading-none text-primary">A</span>
+        <span className="text-body-md font-semibold leading-none text-primary">A</span>
       </div>
 
       <ul className="flex flex-col items-center gap-1.5">

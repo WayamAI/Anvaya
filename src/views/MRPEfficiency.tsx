@@ -1,7 +1,7 @@
 import KPICard from "@/components/KPICard";
-import { Target, Zap, CheckCircle, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { CHART_COLORS, SERIES } from "@/lib/chart-colors";
+import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE } from "@/lib/chart-colors";
+import { PageIcon } from "@/components/app/page-icon";
 
 const adherenceData = [
   { month: "Apr", adherence: 78 }, { month: "May", adherence: 82 }, { month: "Jun", adherence: 80 },
@@ -30,56 +30,61 @@ const runHistory = [
 
 export default function MRPEfficiency() {
   return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold animate-fade-in-up">MRP Efficiency Metrics</h2>
-      <div className="grid grid-cols-4 gap-4 animate-fade-in-up stagger-1">
-        <KPICard title="Plan Adherence" value="91%" trend={{ value: "+5% vs Q3", direction: "up", positive: true }} icon={Target} status="green" />
-        <KPICard title="Avg Run Duration" value="4m 19s" subtitle="Full regenerative" icon={Zap} status="green" />
-        <KPICard title="Exception Resolution" value="86%" subtitle="Resolved within SLA" icon={CheckCircle} status="amber" />
-        <KPICard title="Open Exceptions" value="18" subtitle="6 high severity" icon={AlertTriangle} status="red" />
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">MRP efficiency metrics</span>
+        </h1>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard title="Plan adherence" value="91%" trend={{ value: "+5% vs Q3", direction: "up", positive: true }} iconName="plan-adherence" />
+        <KPICard title="Avg run duration" value="4m 19s" subtitle="Full regenerative" iconName="avg-run-duration" />
+        <KPICard title="Exception resolution" value="86%" subtitle="Resolved within SLA" iconName="exception-resolution" status="amber" />
+        <KPICard title="Open exceptions" value="18" subtitle="6 high severity" iconName="open-exceptions" status="red" />
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-2">
-          <h3 className="text-sm font-semibold mb-3">MRP Plan Adherence (12 Months)</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <h3 className="text-body-md font-semibold mb-3">MRP plan adherence (12 months)</h3>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={adherenceData}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
               <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis domain={[70, 100]} tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+              <YAxis width={44} domain={[70, 100]} tick={{ fontSize: 11 }} />
+              <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
               <Line type="monotone" dataKey="adherence" stroke={CHART_COLORS.primary} strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-3">
-          <h3 className="text-sm font-semibold mb-3">Exception Types (Last 30 Days)</h3>
-          <table className="w-full text-[13px]">
-            <thead><tr className="border-b border-border">
-              {["Type", "Count", "Resolved", "Avg Resolution"].map(h => <th key={h} className="text-left py-2 font-medium text-muted-foreground">{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {exceptionTypes.map((e, i) => (
-                <tr key={i} className="border-b border-border last:border-0">
-                  <td className="py-2 font-medium">{e.type}</td>
-                  <td className="py-2 tabular-nums">{e.count}</td>
-                  <td className="py-2 tabular-nums text-success">{e.resolved}</td>
-                  <td className="py-2">{e.avg}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div>
+          <h3 className="text-body-md font-semibold mb-3">Exception types (last 30 days)</h3>
+          <div className="overflow-x-auto">
+            <table className="data-table w-full text-body-md">
+              <thead><tr className="border-b border-border">
+                {["Type", "Count", "Resolved", "Avg resolution"].map(h => <th key={h} className="text-left py-2 font-medium text-muted-foreground">{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {exceptionTypes.map((e, i) => (
+                  <tr key={i} className="border-b border-border last:border-0">
+                    <td className="py-2 font-medium">{e.type}</td>
+                    <td className="py-2 tabular-nums">{e.count}</td>
+                    <td className="py-2 tabular-nums text-success">{e.resolved}</td>
+                    <td className="py-2">{e.avg}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-3">
-        <h3 className="text-sm font-semibold px-4 pt-4 mb-3">MRP Run History</h3>
-        <table className="w-full text-[13px]">
-          <thead><tr className="bg-secondary/50 border-b border-border">
-            {["Date", "Run Type", "Duration", "Planned Orders", "Exceptions", "Status"].map(h =>
+      <div className="overflow-x-auto">
+        <h3 className="text-body-md font-semibold px-4 pt-4 mb-3">MRP run history</h3>
+        <table className="data-table w-full text-body-md">
+          <thead><tr className="border-b border-border">
+            {["Date", "Run type", "Duration", "Planned orders", "Exceptions", "Status"].map(h =>
               <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
           </tr></thead>
           <tbody>
             {runHistory.map((r, i) => (
-              <tr key={i} className="border-b border-border hover:bg-secondary/30">
+              <tr key={i} className="border-b border-border hover:bg-sunken">
                 <td className="px-3 py-2">{r.date}</td>
                 <td className="px-3 py-2 font-medium">{r.type}</td>
                 <td className="px-3 py-2 tabular-nums">{r.duration}</td>

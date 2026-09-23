@@ -1,5 +1,7 @@
 import StatusBadge from "@/components/StatusBadge";
 
+import { btnSecondarySm } from "@/components/app/controls";
+import { PageIcon } from "@/components/app/page-icon";
 const updates = [
   { time: "2 min ago", type: "Material Issue", desc: "RM-2087 Stearic Acid issued 120 kg to WO-2026-0847 (Line 3)", user: "Suresh P.", wo: "WO-2026-0847" },
   { time: "8 min ago", type: "Production Start", desc: "WO-2026-0847 — Industrial Cleaner 5L — Line 3 started batch production", user: "System", wo: "WO-2026-0847" },
@@ -24,27 +26,30 @@ const typeColors: Record<string, "green" | "amber" | "red" | "blue" | "gray"> = 
 
 export default function ScheduleUpdates() {
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Schedule Updates (Real-Time)</h2>
+    <div className="px-6 py-5 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Schedule updates (real-time)</span>
+        </h1>
         <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5 text-xs text-success"><span className="w-2 h-2 rounded-full bg-success animate-pulse" /> Live</span>
-          <button className="h-8 px-3 bg-card border border-border rounded-md text-xs font-medium hover:bg-secondary">Refresh</button>
+          <span className="flex items-center gap-1.5 text-body-sm text-success"><span className="w-2 h-2 rounded-full bg-success animate-pulse" /> Live</span>
+          <button className={btnSecondarySm}>Refresh</button>
         </div>
       </div>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-1">
+      <div className="overflow-x-auto">
         <div className="divide-y divide-border">
           {updates.map((u, i) => (
-            <div key={i} className="px-4 py-3 hover:bg-secondary/30 transition-colors flex items-start gap-3">
+            <div key={i} className="px-4 py-3 hover:bg-sunken transition-colors flex items-start gap-3">
               <div className="flex-shrink-0 mt-0.5">
                 <StatusBadge status={typeColors[u.type] || "gray"} label={u.type} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm">{u.desc}</p>
-                <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                <p className="text-body-md">{u.desc}</p>
+                <div className="flex items-center gap-3 mt-1 text-body-sm text-muted-foreground">
                   <span>{u.time}</span>
                   <span>by {u.user}</span>
-                  {u.wo !== "—" && <span className="font-mono text-accent">{u.wo}</span>}
+                  {u.wo !== "—" && <span className="identifier text-foreground">{u.wo}</span>}
                 </div>
               </div>
             </div>

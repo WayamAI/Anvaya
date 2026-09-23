@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 import { ArrowRight } from "lucide-react";
 import anvayaLogoLight from "@/assets/anvaya-logo-light.svg";
 import anvayaLogoDark from "@/assets/anvaya-logo-dark.svg";
+import { btnPrimary, inputBase } from "@/components/app/controls";
 
 export default function Login() {
   const router = useRouter();
@@ -28,44 +29,53 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
-      <div className="w-full max-w-md animate-scale-in">
-        <div className="text-center mb-8">
-          <img src={anvayaLogo} alt="Anvaya" className="h-28 object-contain mx-auto" />
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="w-full max-w-[380px]">
+        <div className="mb-9 text-center">
+          <img src={anvayaLogo} alt="Anvaya" className="mx-auto h-16 object-contain" />
+          {/*
+            The one Michroma setting in the product. It is the wordmark, so it
+            gets the display face; nothing below it does.
+          */}
+          <p className="font-brand mt-5 text-body-sm text-muted-foreground">
+            Production planning
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-card rounded-xl border border-border p-6 shadow-lg shadow-primary/5">
+        <form onSubmit={handleSubmit} className="surface-panel p-6">
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
+              <label htmlFor="login-email" className="mb-1.5 block text-label-sm text-foreground">
+                Email
+              </label>
               <input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="email"
-                className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="you@company.com"
+                className={inputBase}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Password</label>
+              <label htmlFor="login-password" className="mb-1.5 block text-label-sm text-foreground">
+                Password
+              </label>
               <input
+                id="login-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="password"
-                className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="••••••••"
+                className={inputBase}
               />
             </div>
 
-            <button
-              type="submit"
-              className="w-full h-10 bg-accent text-accent-foreground rounded-lg font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity active:scale-[0.98]"
-            >
-              Sign In <ArrowRight className="w-4 h-4" />
+            <button type="submit" className={`${btnPrimary} h-10 w-full`}>
+              Sign in <ArrowRight />
             </button>
           </div>
         </form>
-
       </div>
     </div>
   );

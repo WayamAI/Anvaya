@@ -1,4 +1,7 @@
 import StatusBadge from "@/components/StatusBadge";
+import { PageHeader } from "@/components/app/page-header";
+import { DataTable, type Column } from "@/components/app/data-table";
+import { EmptyState } from "@/components/app/empty-state";
 
 const constraints = [
   { id: "C-001", type: "Material Shortage", resource: "Stearic Acid (RM-2087)", impact: "WO-2026-0849 — Dish Wash Liquid 500ml", severity: "high", startDate: "23 Mar 2026", resolution: "Emergency PO placed — ETA 1 Apr", status: "Open", owner: "Priya S." },
@@ -10,44 +13,56 @@ const constraints = [
   { id: "C-007", type: "Utility Outage", resource: "Boiler #2 — Steam supply", impact: "All mixing operations Line 1 & 3", severity: "medium", startDate: "27 Mar 2026", resolution: "Backup boiler commissioned — 80% capacity", status: "Mitigated", owner: "Karthik R." },
 ];
 
-const severityMap: Record<string, "red" | "amber" | "green"> = { high: "red", medium: "amber", low: "green" };
+const severityDot: Record<string, string> = { high: "bg-danger", medium: "bg-warning", low: "bg-success" };
 const statusMap: Record<string, "red" | "amber" | "green" | "blue" | "gray"> = { Open: "red", Mitigated: "amber", Scheduled: "blue", Resolved: "green" };
 
+type Constraint = (typeof constraints)[number];
+
 export default function ProductionConstraints() {
+  const counts = constraints.reduce<Record<string, number>>((acc, c) => {
+    acc[c.status] = (acc[c.status] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const columns: Column<Constraint>[] = [
+    { key: "id", header: "ID", width: "w-[80px]", value: c => c.id, cell: c => <span className="identifier text-body-sm">{c.id}</span> },
+    {
+      key: "type", header: "Type", width: "w-[180px]",
+      value: c => c.type,
+      // Severity reads as a dot on the type rather than a second badge per row.
+      cell: c => (
+        <span className="flex items-center gap-2">
+          <span title={`${c.severity} severity`} className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${severityDot[c.severity]}`} />
+          <span className="font-medium">{c.type}</span>
+        </span>
+      ),
+    },
+    { key: "resource", header: "Resource", value: c => c.resource, cell: c => c.resource },
+    { key: "impact", header: "Impact", value: c => c.impact, cell: c => <span className="block max-w-[220px] truncate text-muted-foreground">{c.impact}</span> },
+    { key: "date", header: "Date", width: "w-[120px]", value: c => c.startDate, cell: c => <span className="whitespace-nowrap">{c.startDate}</span> },
+    { key: "resolution", header: "Resolution", value: c => c.resolution, cell: c => <span className="block max-w-[240px] truncate text-muted-foreground">{c.resolution}</span> },
+    { key: "status", header: "Status", width: "w-[120px]", value: c => c.status, cell: c => <StatusBadge status={statusMap[c.status]} label={c.status} /> },
+    { key: "owner", header: "Owner", width: "w-[110px]", value: c => c.owner, cell: c => c.owner },
+  ];
+
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Production Constraints</h2>
-        <div className="flex gap-2">
-          {[{ l: "Open", c: 3, s: "red" }, { l: "Mitigated", c: 2, s: "amber" }, { l: "Scheduled", c: 1, s: "blue" }, { l: "Resolved", c: 1, s: "green" }].map(b => (
-            <span key={b.l} className="text-xs font-medium px-2 py-1 rounded-full bg-secondary">{b.l}: {b.c}</span>
-          ))}
-        </div>
-      </div>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-1">
-        <table className="w-full text-[13px]">
-          <thead><tr className="bg-secondary/50 border-b border-border">
-            {["ID", "Type", "Resource", "Impact", "Severity", "Date", "Resolution", "Status", "Owner"].map(h =>
-              <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
-            )}
-          </tr></thead>
-          <tbody>
-            {constraints.map((c, i) => (
-              <tr key={i} className="border-b border-border hover:bg-secondary/30">
-                <td className="px-3 py-2 font-mono text-xs">{c.id}</td>
-                <td className="px-3 py-2 font-medium">{c.type}</td>
-                <td className="px-3 py-2">{c.resource}</td>
-                <td className="px-3 py-2 text-muted-foreground max-w-[200px] truncate">{c.impact}</td>
-                <td className="px-3 py-2"><StatusBadge status={severityMap[c.severity]} label={c.severity} /></td>
-                <td className="px-3 py-2">{c.startDate}</td>
-                <td className="px-3 py-2 text-muted-foreground max-w-[220px] truncate">{c.resolution}</td>
-                <td className="px-3 py-2"><StatusBadge status={statusMap[c.status]} label={c.status} /></td>
-                <td className="px-3 py-2">{c.owner}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className="px-6 py-5">
+      <PageHeader
+        title="Production constraints"
+        description={["Open", "Mitigated", "Scheduled", "Resolved"]
+          .filter(s => counts[s])
+          .map(s => `${counts[s]} ${s.toLowerCase()}`)
+          .join(" · ")}
+      />
+      <DataTable
+        columns={columns}
+        rows={constraints}
+        rowKey={c => c.id}
+        name="Production constraints"
+        searchable
+        exportable
+        empty={<EmptyState title="No constraints" description="Nothing is currently blocking production." />}
+      />
     </div>
   );
 }

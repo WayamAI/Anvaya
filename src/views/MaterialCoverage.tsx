@@ -1,7 +1,9 @@
 import StatusBadge from "@/components/StatusBadge";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
-import { CHART_COLORS, SERIES } from "@/lib/chart-colors";
+import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE } from "@/lib/chart-colors";
 
+import { btnLink } from "@/components/app/controls";
+import { PageIcon } from "@/components/app/page-icon";
 const coverageData = [
   { week: "W1", "Polypropylene": 6.2, "Stearic Acid": 3.1, "HDPE Resin": 8.4, "SLS": 4.5, "TiO2": 5.1, "EDTA": 3.8 },
   { week: "W3", "Polypropylene": 5.1, "Stearic Acid": 2.2, "HDPE Resin": 7.2, "SLS": 3.8, "TiO2": 4.3, "EDTA": 3.0 },
@@ -27,16 +29,19 @@ const materials = [
 
 export default function MaterialCoverage() {
   return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold animate-fade-in-up">Material Coverage Monitor</h2>
-      <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-1">
-        <h3 className="text-sm font-semibold mb-3">Coverage Trend (Weeks of Stock)</h3>
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Material coverage monitor</span>
+        </h1>
+      <div>
+        <h3 className="text-body-md font-semibold mb-3">Coverage trend (weeks of stock)</h3>
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={coverageData}>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <YAxis width={44} tick={{ fontSize: 11 }} />
+            <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
             <ReferenceLine y={2} stroke={CHART_COLORS.primary} strokeDasharray="5 5" label={{ value: "Critical (2w)", fontSize: 10, fill: CHART_COLORS.primary }} />
             <Line type="monotone" dataKey="Polypropylene" stroke={SERIES[0]} strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="Stearic Acid" stroke={SERIES[1]} strokeWidth={1.5} dot={false} />
@@ -47,21 +52,21 @@ export default function MaterialCoverage() {
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-2">
-        <table className="w-full text-[13px]">
-          <thead><tr className="bg-secondary/50 border-b border-border">
-            {["Material", "Coverage (days)", "Trend", "Risk Level", "Next PO Due", "Action"].map(h =>
+      <div className="overflow-x-auto">
+        <table className="data-table w-full text-body-md">
+          <thead><tr className="border-b border-border">
+            {["Material", "Coverage (days)", "Trend", "Risk level", "Next PO due", "Action"].map(h =>
               <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
           </tr></thead>
           <tbody>
             {materials.map((m, i) => (
-              <tr key={i} className="border-b border-border hover:bg-secondary/30">
+              <tr key={i} className="border-b border-border hover:bg-sunken">
                 <td className="px-3 py-2 font-medium">{m.name}</td>
                 <td className="px-3 py-2 tabular-nums font-medium">{m.coverage}d</td>
                 <td className="px-3 py-2"><StatusBadge status={m.trend === "Declining" ? "red" : "green"} label={m.trend} /></td>
                 <td className="px-3 py-2"><StatusBadge status={m.riskLevel === "Critical" ? "red" : m.riskLevel === "High" ? "red" : m.riskLevel === "Medium" ? "amber" : "green"} label={m.riskLevel} /></td>
                 <td className="px-3 py-2">{m.nextPO}</td>
-                <td className="px-3 py-2"><button className="text-xs text-accent hover:underline font-medium">{m.action}</button></td>
+                <td className="px-3 py-2"><button className={btnLink}>{m.action}</button></td>
               </tr>
             ))}
           </tbody>

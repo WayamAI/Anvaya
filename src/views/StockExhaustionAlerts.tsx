@@ -2,6 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
+import { DataTable, type Column } from "@/components/app/data-table";
+import { btnSecondarySm } from "@/components/app/controls";
+import { PageIcon } from "@/components/app/page-icon";
 
 const MATERIALS = [
   "Stearic Acid", "Fragrance Blend FG-04", "EDTA Disodium Salt", "Shrink Labels (Type B)",
@@ -17,8 +20,24 @@ const VENDORS = [
   "Jungbunzlauer India", "Reliance Polymers", "Gujarat Alkalies", "Mold-Tek Containers"
 ];
 
+interface AlertRow {
+  level: "red" | "amber" | "green";
+  levelLabel: string;
+  material: string;
+  warehouse: string;
+  stock: string;
+  daily: string;
+  days: number;
+  reqBy: string;
+  reorderBy: string;
+  lead: number;
+  vendor: string;
+  /** Sort key only; stripped before the rows are handed out. */
+  _days: number;
+}
+
 const generateAlerts = () => {
-  const result: any[] = [];
+  const result: AlertRow[] = [];
   let seed = 777;
   const random = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
 
@@ -45,7 +64,7 @@ const generateAlerts = () => {
       }
 
       result.push({
-        level, levelLabel, material, warehouse,
+        level: level as AlertRow["level"], levelLabel, material, warehouse,
         stock: `${stock.toLocaleString()} ${isKg ? 'kg' : 'L'}`,
         daily: `${dailyUsage} ${isKg ? 'kg' : 'L'}/d`,
         days: parseFloat(days.toFixed(1)),
@@ -74,62 +93,76 @@ export default function StockExhaustionAlerts() {
     total: alerts.length
   };
 
+  type Alert = (typeof alerts)[number];
+  const columns: Column<Alert>[] = [
+    { key: "level", header: "Level", width: "w-[110px]", value: a => a.levelLabel, cell: a => <StatusBadge status={a.level} label={a.levelLabel} /> },
+    { key: "material", header: "Material", value: a => a.material, cell: a => <span className="font-medium">{a.material}</span> },
+    { key: "warehouse", header: "Warehouse", width: "w-[120px]", value: a => a.warehouse, cell: a => <span className="text-muted-foreground">{a.warehouse}</span> },
+    { key: "stock", header: "Current stock", align: "right", numeric: true, width: "w-[130px]", value: a => a.stock, cell: a => a.stock },
+    { key: "daily", header: "Daily use", align: "right", numeric: true, width: "w-[110px]", value: a => a.daily, cell: a => a.daily },
+    { key: "days", header: "Days cover", align: "right", numeric: true, width: "w-[115px]", value: a => a.days, cell: a => <span className="font-medium">{a.days}d</span> },
+    { key: "reqBy", header: "Required by", width: "w-[125px]", value: a => a.reqBy, cell: a => a.reqBy },
+    { key: "reorderBy", header: "Reorder by", width: "w-[125px]", value: a => a.reorderBy, cell: a => <span className="font-medium">{a.reorderBy}</span> },
+    { key: "lead", header: "Lead (d)", align: "right", numeric: true, width: "w-[95px]", value: a => a.lead, cell: a => a.lead },
+    { key: "vendor", header: "Vendor", value: a => a.vendor, cell: a => a.vendor },
+    {
+      key: "action", header: "Action", width: "w-[110px]", sortable: false,
+      cell: () => (
+        <button onClick={() => router.push("/purchase-orders")} className={btnSecondarySm}>
+          Raise PO
+        </button>
+      ),
+    },
+  ];
+
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Stock Exhaustion Alerts</h2>
+    <div className="px-6 py-5 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Stock exhaustion alerts</span>
+        </h1>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 animate-fade-in-up stagger-1">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Critical (< 3 days)", count: counts.critical, color: "bg-danger/10 text-danger border-danger/20" },
-          { label: "High (3–7 days)", count: counts.high, color: "bg-warning/10 text-warning border-warning/20" },
-          { label: "Medium (7–14 days)", count: counts.medium, color: "bg-accent/10 text-accent border-accent/20" },
-          { label: "Total Active Alerts", count: counts.total, color: "bg-secondary text-foreground border-border" },
+          { label: "Critical (< 3 days)", count: counts.critical, icon: "alert-critical", color: "bg-danger/10 text-danger border-danger/20" },
+          { label: "High (3–7 days)", count: counts.high, icon: "alert-high", color: "bg-warning/10 text-warning border-warning/20" },
+          { label: "Medium (7–14 days)", count: counts.medium, icon: "alert-medium", color: "bg-warning/10 text-warning border-warning/20" },
+          { label: "Total active alerts", count: counts.total, icon: "alert-total", color: "bg-secondary text-foreground border-border" },
         ].map((s) => (
           <div key={s.label} className={`rounded-lg border p-3 ${s.color}`}>
-            <div className="text-2xl font-bold tabular-nums">{s.count}</div>
-            <div className="text-xs mt-0.5">{s.label}</div>
+            {/* The icon is pulled out beside the figure and the label rather
+                than stacked above them, so the card keeps the height it had
+                and the number stays the first thing read. */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-display-xl leading-none tabular-nums">{s.count}</div>
+                <div className="text-body-sm mt-0.5">{s.label}</div>
+              </div>
+              <img
+                src={`/icons/alerts/${s.icon}.png`}
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                className="block h-6 w-6 shrink-0 object-contain"
+              />
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-2">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="bg-secondary/50 border-b border-border">
-                {["Level", "Material", "Warehouse", "Current Stock", "Daily Use", "Days Cover", "Required By", "Reorder By", "Lead (d)", "Vendor", "Action"].map((h) => (
-                  <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {alerts.map((a, i) => (
-                <tr key={i} className="border-b border-border hover:bg-secondary/30 transition-colors">
-                  <td className="px-3 py-2"><StatusBadge status={a.level} label={a.levelLabel} /></td>
-                  <td className="px-3 py-2 font-medium">{a.material}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{a.warehouse}</td>
-                  <td className="px-3 py-2 tabular-nums">{a.stock}</td>
-                  <td className="px-3 py-2 tabular-nums">{a.daily}</td>
-                  <td className="px-3 py-2 tabular-nums font-medium">{a.days}d</td>
-                  <td className="px-3 py-2">{a.reqBy}</td>
-                  <td className="px-3 py-2 font-medium">{a.reorderBy}</td>
-                  <td className="px-3 py-2 tabular-nums">{a.lead}</td>
-                  <td className="px-3 py-2">{a.vendor}</td>
-                  <td className="px-3 py-2">
-                    <button
-                      onClick={() => router.push("/purchase-orders")}
-                      className="h-7 px-2.5 bg-accent text-accent-foreground rounded text-xs font-medium hover:opacity-90 active:scale-[0.97]"
-                    >
-                      Raise PO
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="overflow-x-auto">
+        <DataTable
+          columns={columns}
+          rows={alerts}
+          rowKey={a => `${a.material}-${a.warehouse}-${a.reqBy}`}
+          name="Stock exhaustion alerts"
+          searchable
+          columnToggle
+          exportable
+          pageSize={25}
+        />
       </div>
     </div>
   );

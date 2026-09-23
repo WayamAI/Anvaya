@@ -1,5 +1,8 @@
 import { useState, useMemo } from "react";
 import StatusBadge from "@/components/StatusBadge";
+import { PageHeader } from "@/components/app/page-header";
+import { DataTable, type Column } from "@/components/app/data-table";
+import { EmptyState } from "@/components/app/empty-state";
 
 const tabs = [
   { key: "all", label: "All", count: 412 }, { key: "draft", label: "Draft", count: 8 },
@@ -100,48 +103,63 @@ export default function PurchaseOrders() {
     return allPOs.filter(po => po.status === tabData.label);
   }, [tab]);
 
-  return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Purchase Orders</h2>
+  type PO = (typeof allPOs)[number];
+  const columns: Column<PO>[] = [
+    { key: "po", header: "PO number", width: "w-[140px]", value: p => p.po, cell: p => <span className="identifier text-body-sm">{p.po}</span> },
+    { key: "vendor", header: "Vendor", value: p => p.vendor, cell: p => <span className="font-medium">{p.vendor}</span> },
+    { key: "date", header: "Order date", width: "w-[130px]", value: p => p.date, cell: p => p.date },
+    { key: "delivery", header: "Expected delivery", width: "w-[150px]", value: p => p.delivery, cell: p => p.delivery },
+    { key: "value", header: "Value", align: "right", numeric: true, width: "w-[100px]", value: p => p.value, cell: p => p.value },
+    { key: "items", header: "Items", align: "right", numeric: true, width: "w-[70px]", value: p => p.items, cell: p => p.items },
+    {
+      key: "received", header: "Received", align: "right", numeric: true, width: "w-[100px]",
+      value: p => p.received,
+      // Payment was a second badge on every row. As plain text next to the
+      // receipt figure it carries the same information without the noise.
+      cell: p => (
+        <span className="whitespace-nowrap">
+          {p.received}%
+          <span className="ml-2 text-body-sm text-muted-foreground">{p.payment}</span>
+        </span>
+      ),
+    },
+    {
+      key: "status", header: "Status", width: "w-[150px]",
+      cell: p => <StatusBadge status={statusMap[p.status]} label={p.status} />,
+    },
+  ];
 
-      </div>
-      <div className="flex gap-1 border-b border-border overflow-x-auto animate-fade-in-up stagger-1">
+  return (
+    <div className="px-6 py-5">
+      <PageHeader title="Purchase orders" description={`${filteredPOs.length.toLocaleString()} orders`} />
+
+      <div className="-mx-1 mb-1 flex gap-1 overflow-x-auto border-b border-border px-1">
         {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} className={`px-3 py-2 text-xs font-medium border-b-2 whitespace-nowrap transition-colors ${tab === t.key ? "border-accent text-accent" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-            {t.label} ({t.count})
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`whitespace-nowrap border-b-2 px-3 py-2 text-body-md font-medium transition-colors ${
+              tab === t.key
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label} <span className="tabular-nums text-muted-foreground">{t.count}</span>
           </button>
         ))}
       </div>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead><tr className="bg-secondary/50 border-b border-border">
-              {["PO Number", "Vendor", "Order Date", "Expected Delivery", "Value", "Items", "Received %", "Payment", "Status"].map(h =>
-                <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
-              )}
-            </tr></thead>
-            <tbody>
-              {filteredPOs.map((p, i) => (
-                <tr key={i} className="border-b border-border hover:bg-secondary/30 cursor-pointer">
-                  <td className="px-3 py-2 font-mono text-xs text-accent">{p.po}</td>
-                  <td className="px-3 py-2 font-medium">{p.vendor}</td>
-                  <td className="px-3 py-2">{p.date}</td>
-                  <td className="px-3 py-2">{p.delivery}</td>
-                  <td className="px-3 py-2 tabular-nums">{p.value}</td>
-                  <td className="px-3 py-2 tabular-nums">{p.items}</td>
-                  <td className="px-3 py-2 tabular-nums">{p.received}%</td>
-                  <td className="px-3 py-2"><StatusBadge status={p.payment === "Paid" ? "green" : p.payment === "Partial" ? "amber" : "gray"} label={p.payment} /></td>
-                  <td className="px-3 py-2"><StatusBadge status={statusMap[p.status]} label={p.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filteredPOs.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground text-sm">No data found.</div>
-          )}
-        </div>
-      </div>
+
+      <DataTable
+        columns={columns}
+        rows={filteredPOs}
+        rowKey={p => p.po}
+        name="Purchase orders"
+        searchable
+        columnToggle
+        exportable
+        pageSize={25}
+        empty={<EmptyState title="No purchase orders" description="Nothing matches this filter yet." />}
+      />
     </div>
   );
 }

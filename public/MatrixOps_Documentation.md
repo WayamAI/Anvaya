@@ -1,7 +1,7 @@
-# MatrixOps — Application Documentation
+# Anvaya — Application Documentation
 
-**Product:** MatrixOps — Material Planning & ERP
-**Vendor:** Wayam AI
+**Product:** Anvaya — Material Planning & ERP
+**Vendor:** Anvaya
 **Domain:** Manufacturing / Process Industries (FMCG, Chemicals, Discrete Assembly)
 **Stack:** React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui + Recharts + React Router
 **Live URL:**
@@ -11,7 +11,7 @@
 
 ## 1. Purpose & Vision
 
-MatrixOps is an integrated **Material Planning, Production, Procurement, Inventory, and Traceability** platform designed for Indian manufacturing operations. It unifies the planning loop — from **demand forecast → MRP → purchase → production → inventory → batch traceability → field quality** — into a single operational dashboard.
+Anvaya is an integrated **Material Planning, Production, Procurement, Inventory, and Traceability** platform designed for Indian manufacturing operations. It unifies the planning loop — from **demand forecast → MRP → purchase → production → inventory → batch traceability → field quality** — into a single operational dashboard.
 
 The platform is targeted at plant managers, supply chain heads, procurement leads, QA managers, and CXOs who need:
 
@@ -271,8 +271,8 @@ Each arrow is bidirectionally navigable in the UI.
 
 ## 7. Branding & Identity
 
-- **Logo:** Wayam AI mark, centered above the wordmark in the sidebar.
-- **Wordmark:** "MatrixOps" with subheading "Material Planning & ERP", left-aligned beneath the logo.
+- **Logo:** Anvaya mark, centered above the wordmark in the sidebar.
+- **Wordmark:** "Anvaya" with subheading "Material Planning & ERP", left-aligned beneath the logo.
 - **Accent color:** Teal (used for primary links such as batch numbers like `B-2026-0412`).
 - **Status badges:** Approved (green), Quarantine (amber), Pending (neutral), Failed (red) — consistent across every module.
 
@@ -288,4 +288,4 @@ Each arrow is bidirectionally navigable in the UI.
 
 ---
 
-*Document generated automatically from the live MatrixOps codebase.*
+*Document generated automatically from the live Anvaya codebase.*

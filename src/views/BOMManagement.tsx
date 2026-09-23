@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { ChevronRight, ChevronDown, Package, Download, Shield, Search } from "lucide-react";
-import StatusBadge from "@/components/StatusBadge";
 import { ebomParts } from "@/data/traceability";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { CHART_COLORS } from "@/lib/chart-colors";
+import { CHART_COLORS, CHART_TOOLTIP_STYLE } from "@/lib/chart-colors";
+import { btnLink, btnSecondary, selectBase } from "@/components/app/controls";
+import { PageIcon } from "@/components/app/page-icon";
+import { cn } from "@/lib/utils";
 
 interface BOMNode {
   code: string;
@@ -39,31 +41,84 @@ const products = [
   "Surface Disinfectant 5L", "Anti-Bacterial Compound V2",
 ];
 
-function TreeNode({ node, depth = 0, onSelect }: { node: BOMNode; depth?: number; onSelect: (code: string) => void }) {
+/** Flattened once so the detail panel can name the part the tree has selected. */
+const nodeIndex: Record<string, BOMNode> = {};
+(function index(node: BOMNode) {
+  nodeIndex[node.code] = node;
+  node.children?.forEach(index);
+})(bomTree);
+
+/*
+  One row of the tree.
+
+  Quantity and lead time sit in fixed-width cells pinned to the right rather
+  than flowing after the name, so they line up in a column no matter how deep
+  a row is indented — which is the whole reason to put them in a tree rather
+  than a list.
+
+  Children nest inside a bordered container instead of taking a computed
+  padding-left. The border is the indent guide: at four levels deep it is the
+  only thing that tells you which parent a row belongs to.
+*/
+function TreeNode({
+  node,
+  selected,
+  onSelect,
+}: {
+  node: BOMNode;
+  selected: string | null;
+  onSelect: (code: string) => void;
+}) {
   const [open, setOpen] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
+  const isSelected = node.code === selected;
 
   return (
     <div>
       <div
-        className="flex items-center gap-2 py-1.5 px-2 hover:bg-secondary/50 rounded-md cursor-pointer transition-colors text-sm"
-        style={{ paddingLeft: depth * 20 + 8 }}
-        onClick={() => { hasChildren ? setOpen(!open) : onSelect(node.code); }}
+        className={cn(
+          "group relative flex items-center gap-2 rounded-lg py-1.5 pl-2 pr-2.5 cursor-pointer",
+          "text-body-md transition-colors",
+          // Selected is a step darker than hover, plus a marker on the leading
+          // edge. A fill alone at this weight is easy to mistake for hover.
+          isSelected
+            ? "bg-secondary font-medium text-foreground"
+            : "hover:bg-sunken",
+        )}
+        onClick={() => {
+          // Unchanged behaviour: a parent folds, a leaf selects.
+          if (hasChildren) setOpen(!open);
+          else onSelect(node.code);
+        }}
       >
+        {isSelected && (
+          <span
+            aria-hidden="true"
+            className="absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-r-full bg-foreground"
+          />
+        )}
         {hasChildren ? (
-          open ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          open ? <ChevronDown className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" />
         ) : (
           <span className="w-3.5 flex-shrink-0" />
         )}
-        <Package className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-        <span className="font-mono text-xs text-muted-foreground">{node.code}</span>
-        <span className="font-medium">{node.name}</span>
-        <span className="text-muted-foreground ml-auto text-xs tabular-nums">{node.qty} {node.uom}</span>
-        {node.lead > 0 && <span className="text-xs text-muted-foreground">{node.lead}d</span>}
+        <Package className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" />
+        <span className="identifier text-body-sm text-muted-foreground w-[74px] flex-shrink-0">{node.code}</span>
+        <span className="truncate">{node.name}</span>
+        <span className="ml-auto w-[88px] flex-shrink-0 text-right text-body-sm tabular-nums text-muted-foreground">
+          {node.qty} {node.uom}
+        </span>
+        <span className="w-[52px] flex-shrink-0 text-right text-body-sm tabular-nums text-muted-foreground">
+          {node.lead > 0 ? `${node.lead}d` : "—"}
+        </span>
       </div>
-      {hasChildren && open && node.children!.map((child, i) => (
-        <TreeNode key={i} node={child} depth={depth + 1} onSelect={onSelect} />
-      ))}
+      {hasChildren && open && (
+        <div className="mt-0.5 ml-[15px] space-y-0.5 border-l border-border pl-2.5">
+          {node.children!.map((child, i) => (
+            <TreeNode key={i} node={child} selected={selected} onSelect={onSelect} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -91,6 +146,26 @@ const whereUsed: Record<string, string[]> = {
   "RM-8012": ["Industrial Cleaning Compound 5L", "Toilet Cleaner 500ml", "Bathroom Cleaner"],
 };
 
+/** Label / value pair. One shape for all eighteen of them. */
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-1">
+      <span className="text-body-sm text-muted-foreground shrink-0">{label}</span>
+      <span className="text-body-sm font-medium text-foreground text-right">{value}</span>
+    </div>
+  );
+}
+
+/** A titled group inside the detail panel. */
+function FieldGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="label-caps mb-1">{title}</p>
+      <div className="divide-y divide-border">{children}</div>
+    </div>
+  );
+}
+
 export default function BOMManagement() {
   const [selected, setSelected] = useState("Industrial Cleaning Compound 5L");
   const [selectedItem, setSelectedItem] = useState<string | null>("RM-4023");
@@ -101,126 +176,229 @@ export default function BOMManagement() {
     month: ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"][i],
     rate: v,
   }));
+  const latestFailure = ebomPart?.fieldFailureRate[ebomPart.fieldFailureRate.length - 1];
+  const details = selectedItem ? itemDetails[selectedItem] : undefined;
+  const selectedNode = selectedItem ? nodeIndex[selectedItem] : undefined;
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">BOM Management</h2>
-        <div className="flex gap-2">
-          <button className="h-8 px-3 bg-card border border-border rounded-md text-xs font-medium hover:bg-secondary transition-colors flex items-center gap-1">
-            <Download className="w-3 h-3" /> Export
+    <div className="px-6 py-5">
+      {/*
+        One header band: what you are looking at, which BOM, and the way out.
+        The selector used to sit on its own row below the title, which cost a
+        whole band of vertical space to hold one control.
+      */}
+      <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 pb-5">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">BOM management</span>
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            aria-label="Product"
+            className={cn(selectBase, "w-auto min-w-[260px]")}
+          >
+            {products.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <button className={btnSecondary}>
+            <Download /> Export
           </button>
         </div>
-      </div>
+      </header>
 
-      <div className="animate-fade-in-up stagger-1">
-        <select value={selected} onChange={(e) => setSelected(e.target.value)} className="h-9 px-3 rounded-lg border border-input bg-card text-sm w-80">
-          {products.map((p) => <option key={p}>{p}</option>)}
-        </select>
-      </div>
-
-      <div className="grid grid-cols-5 gap-4 animate-fade-in-up stagger-2">
-        {/* BOM Tree */}
-        <div className="col-span-3 bg-card rounded-lg border border-border p-4">
-          <h3 className="text-sm font-semibold mb-3">Bill of Materials — {selected}</h3>
-          <TreeNode node={bomTree} onSelect={setSelectedItem} />
-        </div>
-
-        {/* Detail Panel */}
-        <div className="col-span-2 bg-card rounded-lg border border-border p-4 space-y-4">
-          <h3 className="text-sm font-semibold">Component Details</h3>
-          {selectedItem && itemDetails[selectedItem] ? (
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Current Stock</span><span className="font-medium">{itemDetails[selectedItem].stock}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Open POs</span><span className="font-medium">{itemDetails[selectedItem].openPO}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Primary Vendor</span><span className="font-medium">{itemDetails[selectedItem].vendor}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Alternate Vendor</span><span className="font-medium">{itemDetails[selectedItem].altVendor}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Standard Cost</span><span className="font-medium">{itemDetails[selectedItem].cost}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Last Purchase Price</span><span className="font-medium">{itemDetails[selectedItem].lastPrice}</span></div>
+      {/*
+        Seven/five rather than an even split: the tree is the thing being read
+        and needs the room for deep rows, while the detail panel is a fixed
+        set of short fields. Stacks below xl, where two columns of this density
+        stop being readable side by side.
+      */}
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-12">
+        {/* ---- BOM hierarchy ------------------------------------------- */}
+        <section className="surface-panel min-w-0 xl:col-span-7">
+          <div className="panel-head flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <div className="min-w-0">
+              <p className="label-caps">Bill of materials</p>
+              <h2 className="mt-1 truncate text-body-lg font-medium text-foreground">{selected}</h2>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Click a component in the BOM tree to view details.</p>
+            <p className="text-body-sm text-muted-foreground">Select a component to inspect it</p>
+          </div>
+
+          {/* Column heads for the two right-hand cells, so the numbers below
+              are labelled rather than left to be inferred. */}
+          <div className="flex items-center gap-2 border-b border-border px-4 py-2 pr-[18px]">
+            <span className="label-caps flex-1">Component</span>
+            <span className="label-caps w-[88px] shrink-0 text-right">Qty</span>
+            <span className="label-caps w-[52px] shrink-0 text-right">Lead</span>
+          </div>
+
+          <div className="overflow-x-auto p-2">
+            <div className="min-w-[520px]">
+              <TreeNode node={bomTree} selected={selectedItem} onSelect={setSelectedItem} />
+            </div>
+          </div>
+        </section>
+
+        {/* ---- Component details, traceability, chart ------------------- */}
+        <div className="min-w-0 space-y-4 xl:col-span-5">
+          {/* Component details */}
+          <section className="surface-panel">
+            <div className="panel-head">
+              <p className="label-caps">Component details</p>
+              {selectedNode ? (
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <h2 className="text-body-lg font-medium text-foreground">{selectedNode.name}</h2>
+                  <span className="identifier text-body-sm text-muted-foreground">{selectedNode.code}</span>
+                </div>
+              ) : (
+                <h2 className="mt-1 text-body-lg font-medium text-muted-foreground">No component selected</h2>
+              )}
+            </div>
+
+            {details ? (
+              <div className="space-y-4 p-4">
+                <FieldGroup title="Inventory">
+                  <Field label="Current stock" value={details.stock} />
+                  <Field label="Open POs" value={details.openPO} />
+                </FieldGroup>
+                <FieldGroup title="Suppliers">
+                  <Field label="Primary vendor" value={details.vendor} />
+                  <Field label="Alternate vendor" value={details.altVendor} />
+                </FieldGroup>
+                <FieldGroup title="Cost">
+                  <Field label="Standard cost" value={details.cost} />
+                  <Field label="Last purchase price" value={details.lastPrice} />
+                </FieldGroup>
+              </div>
+            ) : (
+              <p className="p-4 text-body-sm text-muted-foreground">
+                Click a component in the BOM tree to view details.
+              </p>
+            )}
+          </section>
+
+          {/* EBOM traceability */}
+          {ebomPart && (
+            <section className="surface-panel">
+              <div className="panel-head flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <p className="label-caps flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5 text-ebom" /> EBOM traceability
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-caption font-medium ${traceabilityLevelColors[ebomPart.traceabilityLevel].bg} ${traceabilityLevelColors[ebomPart.traceabilityLevel].text}`}>
+                    {ebomPart.traceabilityLevel.toUpperCase()}
+                  </span>
+                  {ebomPart.ctq && (
+                    <span className="inline-flex items-center rounded-full bg-danger/10 px-2.5 py-0.5 text-caption font-medium text-danger">
+                      CTQ
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4 p-4">
+                {/* Current state, read before the history that produced it. */}
+                <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                  <div className="sm:pr-4">
+                    <Field label="Current rev" value={ebomPart.currentRevision} />
+                  </div>
+                  <div className="sm:pl-4">
+                    <Field label="ECO" value={ebomPart.ecoNumber} />
+                  </div>
+                </div>
+
+                {/* Revision history — a real table, so rev, date, ECO and the
+                    change each own a column and scan vertically. */}
+                <div>
+                  <p className="label-caps mb-1.5">Revision history</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[320px] border-collapse text-left">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="label-caps whitespace-nowrap py-1.5 pr-3">Rev</th>
+                          <th className="label-caps whitespace-nowrap py-1.5 pr-3">Date</th>
+                          <th className="label-caps whitespace-nowrap py-1.5 pr-3">ECO</th>
+                          <th className="label-caps py-1.5">Change</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ebomPart.revisionHistory.map((r, i) => {
+                          const isCurrent = r.rev === ebomPart.currentRevision;
+                          return (
+                            <tr
+                              key={i}
+                              className={cn(
+                                "border-b border-border last:border-b-0",
+                                isCurrent && "bg-sunken",
+                              )}
+                            >
+                              <td className="whitespace-nowrap py-1.5 pr-3 text-body-sm">
+                                <span className={cn("font-medium", isCurrent ? "text-ebom" : "text-muted-foreground")}>
+                                  {r.rev}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap py-1.5 pr-3 text-body-sm tabular-nums text-muted-foreground">{r.date}</td>
+                              <td className="identifier whitespace-nowrap py-1.5 pr-3 text-body-sm text-muted-foreground">{r.eco}</td>
+                              <td className="py-1.5 text-body-sm text-ink-secondary">{r.summary}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Effectivity */}
+                <div>
+                  <p className="label-caps mb-1.5">Effectivity range</p>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                    <div className="h-full rounded-full bg-ebom/40" style={{ width: "70%" }} />
+                  </div>
+                  <div className="mt-1 flex justify-between text-body-sm tabular-nums text-muted-foreground">
+                    <span>{ebomPart.effectivityStart}</span>
+                    <span>{ebomPart.effectivityEnd}</span>
+                  </div>
+                </div>
+
+                {/* Where-used */}
+                <div className="border-t border-border pt-3">
+                  <button onClick={() => setShowWhereUsed(!showWhereUsed)} className={`${btnLink} flex items-center gap-1`}>
+                    <Search className="h-3 w-3" /> Where-used analysis →
+                  </button>
+                  {showWhereUsed && selectedItem && whereUsed[selectedItem] && (
+                    <ul className="mt-2 space-y-1 rounded-lg bg-sunken p-3">
+                      {whereUsed[selectedItem].map((a, i) => (
+                        <li key={i} className="text-body-sm text-ink-secondary">• {a}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </section>
           )}
 
-          {/* EBOM Traceability Panel */}
-          {ebomPart && (
-            <div className="border-t border-border pt-4 space-y-3">
-              <h4 className="text-xs font-semibold text-ebom uppercase tracking-wide flex items-center gap-1.5">
-                <Shield className="w-3.5 h-3.5" /> EBOM Traceability
-              </h4>
-
-              {/* Revision History Timeline */}
-              <div className="space-y-1.5">
-                <span className="text-xs text-muted-foreground font-medium">Revision History</span>
-                <div className="space-y-1">
-                  {ebomPart.revisionHistory.map((r, i) => (
-                    <div key={i} className={`flex items-center gap-2 text-xs py-1 px-2 rounded ${r.rev === ebomPart.currentRevision ? "bg-ebom/10 border border-ebom/20" : "bg-secondary/50"}`}>
-                      <span className={`font-bold ${r.rev === ebomPart.currentRevision ? "text-ebom" : "text-muted-foreground"}`}>Rev {r.rev}</span>
-                      <span className="text-muted-foreground">{r.date}</span>
-                      <span className="font-mono text-muted-foreground">{r.eco}</span>
-                      <span className="flex-1 truncate">{r.summary}</span>
-                    </div>
-                  ))}
-                </div>
+          {/* Field failure rate — its own card, with the figure stated rather
+              than left to be read off an unlabelled sparkline. */}
+          {ebomPart && failureData && (
+            <section className="surface-panel">
+              <div className="panel-head flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <p className="label-caps">Field failure rate</p>
+                <span className="text-body-sm text-muted-foreground">Last 12 months</span>
               </div>
-
-              {/* ECO & Effectivity */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="flex justify-between"><span className="text-muted-foreground">ECO</span><span className="font-mono font-medium">{ebomPart.ecoNumber}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Current Rev</span><span className="font-bold text-ebom">{ebomPart.currentRevision}</span></div>
+              <div className="p-4">
+                <p className="font-display text-display-lg tabular-nums text-foreground">{latestFailure}%</p>
+                <p className="mt-0.5 text-body-sm text-muted-foreground">Current month</p>
+                <ResponsiveContainer width="100%" height={96} className="mt-3">
+                  <LineChart data={failureData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: CHART_COLORS.axis }} tickLine={false} axisLine={false} interval={1} />
+                    <YAxis tick={{ fontSize: 11, fill: CHART_COLORS.axis }} tickLine={false} axisLine={false} domain={[0, "auto"]} width={34} tickFormatter={(v: number) => `${v}%`} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(v: number) => `${v}%`} />
+                    <Line type="monotone" dataKey="rate" stroke={CHART_COLORS.primary} strokeWidth={1.5} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
-
-              {/* Effectivity bar */}
-              <div>
-                <span className="text-xs text-muted-foreground">Effectivity Range</span>
-                <div className="mt-1 h-2 bg-secondary rounded-full overflow-hidden">
-                  <div className="h-full bg-ebom/40 rounded-full" style={{ width: "70%" }} />
-                </div>
-                <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
-                  <span>{ebomPart.effectivityStart}</span>
-                  <span>{ebomPart.effectivityEnd}</span>
-                </div>
-              </div>
-
-              {/* Badges row */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${traceabilityLevelColors[ebomPart.traceabilityLevel].bg} ${traceabilityLevelColors[ebomPart.traceabilityLevel].text}`}>
-                  {ebomPart.traceabilityLevel.toUpperCase()}
-                </span>
-                {ebomPart.ctq && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-danger/10 text-danger">
-                    CTQ
-                  </span>
-                )}
-              </div>
-
-              {/* Where-used button */}
-              <button onClick={() => setShowWhereUsed(!showWhereUsed)} className="text-xs text-accent hover:underline flex items-center gap-1">
-                <Search className="w-3 h-3" /> Where-used analysis →
-              </button>
-              {showWhereUsed && selectedItem && whereUsed[selectedItem] && (
-                <div className="bg-secondary/50 rounded-md p-2 space-y-1">
-                  {whereUsed[selectedItem].map((a, i) => (
-                    <div key={i} className="text-xs text-foreground">• {a}</div>
-                  ))}
-                </div>
-              )}
-
-              {/* Field Failure Rate sparkline */}
-              {failureData && (
-                <div>
-                  <span className="text-xs text-muted-foreground">Field Failure Rate (12mo)</span>
-                  <ResponsiveContainer width="100%" height={60}>
-                    <LineChart data={failureData}>
-                      <XAxis dataKey="month" hide />
-                      <YAxis hide domain={[0, "auto"]} />
-                      <Tooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} formatter={(v: number) => `${v}%`} />
-                      <Line type="monotone" dataKey="rate" stroke={CHART_COLORS.primary} strokeWidth={1.5} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
+            </section>
           )}
         </div>
       </div>

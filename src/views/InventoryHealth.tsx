@@ -1,5 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
-import { CHART_COLORS, SERIES } from "@/lib/chart-colors";
+import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE } from "@/lib/chart-colors";
+import { PageIcon } from "@/components/app/page-icon";
 
 const scoreHistory = [
   { month: "Apr", score: 68 }, { month: "May", score: 70 }, { month: "Jun", score: 65 },
@@ -34,22 +35,25 @@ export default function InventoryHealth() {
   const gaugeAngle = (score / 100) * 180;
 
   return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold animate-fade-in-up">Inventory Health Scoring</h2>
-      <div className="grid grid-cols-4 gap-4 animate-fade-in-up stagger-1">
-        <div className="bg-card rounded-lg border border-border p-6 text-center">
-          <div className="text-5xl font-bold text-warning tabular-nums">{score}</div>
-          <div className="text-sm text-muted-foreground mt-1">/ 100</div>
-          <div className="text-xs font-medium text-warning mt-2">Below 80 target</div>
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Inventory health scoring</span>
+        </h1>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="p-6 text-center">
+          <div className="text-display-4xl font-semibold text-warning tabular-nums">{score}</div>
+          <div className="text-body-md text-muted-foreground mt-1">/ 100</div>
+          <div className="text-body-sm font-medium text-warning mt-2">Below 80 target</div>
         </div>
         {[
-          { label: "Stock Availability", score: 81, color: "text-success" },
-          { label: "Turnover Efficiency", score: 68, color: "text-warning" },
-          { label: "Excess & Obsolescence", score: 72, color: "text-warning" },
+          { label: "Stock availability", score: 81, color: "text-success" },
+          { label: "Turnover efficiency", score: 68, color: "text-warning" },
+          { label: "Excess & obsolescence", score: 72, color: "text-warning" },
         ].map((s) => (
-          <div key={s.label} className="bg-card rounded-lg border border-border p-4">
-            <div className={`text-2xl font-bold tabular-nums ${s.color}`}>{s.score}</div>
-            <div className="text-xs text-muted-foreground mt-1">{s.label}</div>
+          <div key={s.label}>
+            <div className={`text-display-xl leading-none tabular-nums ${s.color}`}>{s.score}</div>
+            <div className="text-body-sm text-muted-foreground mt-1">{s.label}</div>
             <div className="w-full h-1.5 bg-secondary rounded-full mt-3">
               <div className={`h-full rounded-full ${s.score >= 80 ? "bg-success" : "bg-warning"}`} style={{ width: `${s.score}%` }} />
             </div>
@@ -57,32 +61,32 @@ export default function InventoryHealth() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="col-span-2 space-y-4">
-          <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-2">
-            <h3 className="text-sm font-semibold mb-3">Score Trend (12 Months)</h3>
+          <div>
+            <h3 className="text-body-md font-semibold mb-3">Score trend (12 months)</h3>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={scoreHistory}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} />
-                <YAxis domain={[50, 100]} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <YAxis width={44} domain={[50, 100]} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
                 <Line type="monotone" dataKey="score" stroke={CHART_COLORS.primary} strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
-          <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-3">
-            <table className="w-full text-[13px]">
-              <thead><tr className="bg-secondary/50 border-b border-border">
-                {["Material", "Score", "Main Penalty", "Suggested Action"].map(h => <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
+          <div className="overflow-x-auto">
+            <table className="data-table w-full text-body-md">
+              <thead><tr className="border-b border-border">
+                {["Material", "Score", "Main penalty", "Suggested action"].map(h => <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
               </tr></thead>
               <tbody>
                 {materialScores.map((m, i) => (
-                  <tr key={i} className="border-b border-border hover:bg-secondary/30">
+                  <tr key={i} className="border-b border-border hover:bg-sunken">
                     <td className="px-3 py-2 font-medium">{m.material}</td>
                     <td className="px-3 py-2">
-                      <span className={`font-bold tabular-nums ${m.score >= 80 ? "text-success" : m.score >= 60 ? "text-warning" : "text-danger"}`}>{m.score}</span>
+                      <span className={`font-semibold tabular-nums ${m.score >= 80 ? "text-success" : m.score >= 60 ? "text-warning" : "text-danger"}`}>{m.score}</span>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{m.penalty}</td>
                     <td className="px-3 py-2">{m.action}</td>
@@ -93,12 +97,12 @@ export default function InventoryHealth() {
           </div>
         </div>
 
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-3">
-          <h3 className="text-sm font-semibold mb-3">Top 5 Recommendations</h3>
+        <div>
+          <h3 className="text-body-md font-semibold mb-3">Top 5 recommendations</h3>
           <div className="space-y-3">
             {recommendations.map((r, i) => (
-              <div key={i} className="p-3 rounded-md bg-accent/5 border border-accent/10 text-xs leading-relaxed">
-                <span className="font-semibold text-accent mr-1">{i + 1}.</span> {r}
+              <div key={i} className="p-3 rounded-lg bg-secondary/60 text-body-sm leading-relaxed">
+                <span className="font-semibold text-muted-foreground mr-1">{i + 1}.</span> {r}
               </div>
             ))}
           </div>

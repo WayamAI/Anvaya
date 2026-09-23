@@ -1,4 +1,5 @@
 import StatusBadge from "@/components/StatusBadge";
+import { PageIcon } from "@/components/app/page-icon";
 
 const locations = ["Pune Plant", "Mumbai WH", "Delhi Depot", "Chennai Hub"];
 const materials = [
@@ -27,24 +28,27 @@ function getCoverageColor(days: number) {
 
 export default function MultiLocationInventory() {
   return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold animate-fade-in-up">Multi-Location Inventory</h2>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-1">
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Multi-location inventory</span>
+        </h1>
+      <div className="overflow-x-auto">
         <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
+          <table className="data-table w-full text-body-md">
             <thead>
-              <tr className="bg-secondary/50 border-b border-border">
+              <tr className="border-b border-border">
                 <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Material</th>
                 {locations.map(l => <th key={l} className="text-center px-3 py-2.5 font-medium text-muted-foreground">{l}</th>)}
               </tr>
             </thead>
             <tbody>
               {materials.map((m, i) => (
-                <tr key={i} className="border-b border-border hover:bg-secondary/30">
+                <tr key={i} className="border-b border-border hover:bg-sunken">
                   <td className="px-3 py-2 font-medium">{m.name}</td>
                   {[m.pune, m.mumbai, m.delhi, m.chennai].map((loc, j) => (
                     <td key={j} className="px-3 py-2 text-center">
-                      <span className={`inline-block px-2 py-1 rounded text-xs font-medium tabular-nums ${getCoverageColor(loc.days)}`}>
+                      <span className={`inline-block px-2 py-1 rounded text-body-sm font-medium tabular-nums ${getCoverageColor(loc.days)}`}>
                         {loc.qty > 0 ? `${loc.qty.toLocaleString()} (${loc.days}d)` : "—"}
                       </span>
                     </td>
@@ -55,9 +59,9 @@ export default function MultiLocationInventory() {
           </table>
         </div>
       </div>
-      <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-2">
-        <h3 className="text-sm font-semibold mb-3">Stock In-Transit</h3>
-        <table className="w-full text-[13px]">
+      <div>
+        <h3 className="text-body-md font-semibold mb-3">Stock in-transit</h3>
+        <table className="data-table w-full text-body-md">
           <thead><tr className="border-b border-border">
             {["Source", "Destination", "Material", "Qty", "Dispatched", "ETA", "Status"].map(h => <th key={h} className="text-left px-3 py-2 font-medium text-muted-foreground">{h}</th>)}
           </tr></thead>

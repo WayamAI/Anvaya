@@ -1,6 +1,8 @@
 import KPICard from "@/components/KPICard";
 import StatusBadge from "@/components/StatusBadge";
-import { ClipboardList, ShoppingCart, AlertTriangle } from "lucide-react";
+import { DataTable, type Column } from "@/components/app/data-table";
+import { AlertTriangle } from "lucide-react";
+import { PageIcon } from "@/components/app/page-icon";
 
 const purchasePlan = [
   { material: "Stearic Acid", reqDate: "27 Mar 2026", reqQty: "500 kg", uom: "KG", vendor: "Rashtriya Chemicals", lead: 14, orderDate: "Immediate", sugQty: "500 kg", cost: "₹72,500", source: "MRP", priority: "red" as const },
@@ -17,45 +19,51 @@ const purchasePlan = [
 
 export default function PurchasePlanning() {
   
+  type PlanRow = (typeof purchasePlan)[number];
+  const priorityLabel = (p: PlanRow["priority"]) =>
+    p === "red" ? "Critical" : p === "amber" ? "Medium" : "Low";
+
+  const columns: Column<PlanRow>[] = [
+    {
+      key: "select", header: "", width: "w-[44px]", sortable: false,
+      cell: () => <input type="checkbox" className="rounded" aria-label="Select row" />,
+    },
+    { key: "material", header: "Material", value: p => p.material, cell: p => <span className="font-medium">{p.material}</span> },
+    { key: "reqDate", header: "Req. date", width: "w-[120px]", value: p => p.reqDate, cell: p => p.reqDate },
+    { key: "reqQty", header: "Req. qty", align: "right", numeric: true, width: "w-[110px]", value: p => p.reqQty, cell: p => p.reqQty },
+    { key: "vendor", header: "Vendor", value: p => p.vendor, cell: p => p.vendor },
+    { key: "lead", header: "Lead (d)", align: "right", numeric: true, width: "w-[95px]", value: p => p.lead, cell: p => p.lead },
+    { key: "orderDate", header: "Order by", width: "w-[120px]", value: p => p.orderDate, cell: p => <span className="font-medium">{p.orderDate}</span> },
+    { key: "sugQty", header: "Sug. qty", align: "right", numeric: true, width: "w-[110px]", value: p => p.sugQty, cell: p => p.sugQty },
+    { key: "cost", header: "Est. cost", align: "right", numeric: true, width: "w-[110px]", value: p => p.cost, cell: p => p.cost },
+    { key: "source", header: "Source", width: "w-[110px]", value: p => p.source, cell: p => <StatusBadge status="blue" label={p.source} /> },
+    { key: "priority", header: "Priority", width: "w-[110px]", value: p => priorityLabel(p.priority), cell: p => <StatusBadge status={p.priority} label={priorityLabel(p.priority)} /> },
+  ];
+
   return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold animate-fade-in-up">Purchase Planning</h2>
-      <div className="grid grid-cols-3 gap-4 animate-fade-in-up stagger-1">
-        <KPICard title="Pending Requisitions" value="47" subtitle="₹2.8 Cr" icon={ClipboardList} status="amber" />
-        <KPICard title="Planned POs to Raise" value="89" subtitle="₹6.1 Cr" icon={ShoppingCart} status="amber" />
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Purchase planning</span>
+        </h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <KPICard title="Pending requisitions" value="47" subtitle="₹2.8 Cr" iconName="requisitions" status="amber" />
+        <KPICard title="Planned POs to raise" value="89" subtitle="₹6.1 Cr" iconName="planned-pos" status="amber" />
         <KPICard title="Overdue POs" value="6" icon={AlertTriangle} status="red" />
       </div>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-2">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead><tr className="bg-secondary/50 border-b border-border">
-              <th className="px-3 py-2.5 text-left font-medium text-muted-foreground"><input type="checkbox" className="rounded" /></th>
-              {["Material", "Req. Date", "Req. Qty", "Vendor", "Lead (d)", "Order By", "Sug. Qty", "Est. Cost", "Source", "Priority"].map(h =>
-                <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
-              )}
-            </tr></thead>
-            <tbody>
-              {purchasePlan.map((p, i) => (
-                <tr key={i} className="border-b border-border hover:bg-secondary/30">
-                  <td className="px-3 py-2"><input type="checkbox" className="rounded" /></td>
-                  <td className="px-3 py-2 font-medium">{p.material}</td>
-                  <td className="px-3 py-2">{p.reqDate}</td>
-                  <td className="px-3 py-2 tabular-nums">{p.reqQty}</td>
-                  <td className="px-3 py-2">{p.vendor}</td>
-                  <td className="px-3 py-2 tabular-nums">{p.lead}</td>
-                  <td className="px-3 py-2 font-medium">{p.orderDate}</td>
-                  <td className="px-3 py-2 tabular-nums">{p.sugQty}</td>
-                  <td className="px-3 py-2 tabular-nums">{p.cost}</td>
-                  <td className="px-3 py-2"><StatusBadge status="blue" label={p.source} /></td>
-                  <td className="px-3 py-2"><StatusBadge status={p.priority} label={p.priority === "red" ? "Critical" : p.priority === "amber" ? "Medium" : "Low"} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="overflow-x-auto">
+        <DataTable
+          columns={columns}
+          rows={purchasePlan}
+          rowKey={p => `${p.material}-${p.reqDate}`}
+          name="Purchase planning"
+          searchable
+          columnToggle
+          exportable
+        />
         <div className="px-4 py-3 border-t border-border flex items-center justify-between">
 
-          <span className="text-xs text-muted-foreground">Showing 10 of 89 planned orders</span>
+          <span className="text-body-sm text-muted-foreground">Showing 10 of 89 planned orders</span>
         </div>
       </div>
     </div>

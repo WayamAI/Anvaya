@@ -1,8 +1,8 @@
 import KPICard from "@/components/KPICard";
 import StatusBadge from "@/components/StatusBadge";
-import { TrendingUp, BarChart3, Target } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { CHART_COLORS, SERIES } from "@/lib/chart-colors";
+import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE, CHART_LEGEND_STYLE } from "@/lib/chart-colors";
+import { PageIcon } from "@/components/app/page-icon";
 
 const demandTrend = [
   { month: "Apr", demand: 3800 }, { month: "May", demand: 4100 }, { month: "Jun", demand: 4350 },
@@ -32,51 +32,54 @@ const products = [
 
 export default function DemandForecast() {
   return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold animate-fade-in-up">Demand Forecast</h2>
-      <div className="grid grid-cols-3 gap-4 animate-fade-in-up stagger-1">
-        <KPICard title="Avg Monthly Demand" value="5,120 units" trend={{ value: "+8.2% YoY", direction: "up", positive: true }} icon={TrendingUp} status="green" />
-        <KPICard title="Next Quarter Forecast" value="18,900 units" subtitle="Apr–Jun 2026" icon={BarChart3} status="green" />
-        <KPICard title="Forecast Accuracy" value="85.8%" subtitle="MAPE: 14.2%" icon={Target} status="amber" />
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Demand forecast</span>
+        </h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <KPICard title="Avg monthly demand" value="5,120 units" trend={{ value: "+8.2% YoY", direction: "up", positive: true }} iconName="forecast-chart" />
+        <KPICard title="Next quarter forecast" value="18,900 units" subtitle="Apr–Jun 2026" iconName="forecast-chart" />
+        <KPICard title="Forecast accuracy" value="85.8%" subtitle="MAPE: 14.2%" iconName="forecast-accuracy" status="amber" />
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-2">
-          <h3 className="text-sm font-semibold mb-3">Demand Trend & 3-Month Forecast</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <h3 className="text-body-md font-semibold mb-3">Demand trend & 3-month forecast</h3>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={demandTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
               <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+              <YAxis width={44} tick={{ fontSize: 11 }} />
+              <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
               <Line type="monotone" dataKey="demand" stroke={SERIES[0]} strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
-          <p className="text-[10px] text-muted-foreground mt-1">* = Forecast period</p>
+          <p className="text-caption text-muted-foreground mt-1">* = Forecast period</p>
         </div>
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-3">
-          <h3 className="text-sm font-semibold mb-3">Demand by Category (Current vs Forecast)</h3>
+        <div>
+          <h3 className="text-body-md font-semibold mb-3">Demand by category (current vs forecast)</h3>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={categoryDemand}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
               <XAxis dataKey="category" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+              <YAxis width={44} tick={{ fontSize: 11 }} />
+              <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
+              <Legend iconSize={8} wrapperStyle={CHART_LEGEND_STYLE} />
               <Bar dataKey="current" fill={SERIES[0]} name="Current" radius={[3, 3, 0, 0]} />
               <Bar dataKey="forecast" fill={SERIES[1]} name="Forecast" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-3">
-        <table className="w-full text-[13px]">
-          <thead><tr className="bg-secondary/50 border-b border-border">
-            {["Product", "Current Demand", "3M Forecast", "Growth", "Confidence", "Seasonality"].map(h =>
+      <div className="overflow-x-auto">
+        <table className="data-table w-full text-body-md">
+          <thead><tr className="border-b border-border">
+            {["Product", "Current demand", "3M forecast", "Growth", "Confidence", "Seasonality"].map(h =>
               <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
           </tr></thead>
           <tbody>
             {products.map((p, i) => (
-              <tr key={i} className="border-b border-border hover:bg-secondary/30">
+              <tr key={i} className="border-b border-border hover:bg-sunken">
                 <td className="px-3 py-2 font-medium">{p.product}</td>
                 <td className="px-3 py-2 tabular-nums">{p.current}</td>
                 <td className="px-3 py-2 tabular-nums font-medium">{p.forecast3m}</td>

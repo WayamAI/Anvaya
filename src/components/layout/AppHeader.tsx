@@ -1,83 +1,97 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Bell, ChevronRight, User } from "lucide-react";
+import { Bell, ChevronRight } from "lucide-react";
 
 const routeLabels: Record<string, string[]> = {
   "/": ["Dashboard"],
-  "/mrp-run": ["Material Planning", "MRP Run & Results"],
-  "/material-requirements": ["Material Planning", "Material Requirements"],
-  "/bom-management": ["Material Planning", "BOM Management"],
-  "/safety-stock": ["Material Planning", "Safety Stock Management"],
-  "/stock-alerts": ["Material Planning", "Stock Exhaustion Alerts"],
-  "/production-schedule": ["Production", "Production Schedule"],
-  "/work-orders": ["Production", "Work Orders"],
-  "/production-constraints": ["Production", "Production Constraints"],
-  "/schedule-updates": ["Production", "Schedule Updates"],
-  "/stock-overview": ["Inventory", "Stock Overview"],
-  "/multi-location": ["Inventory", "Multi-Location Inventory"],
-  "/batch-tracking": ["Inventory", "Batch & Serial Tracking"],
-  "/inventory-health": ["Inventory", "Inventory Health Scoring"],
-  "/purchase-planning": ["Purchase", "Purchase Planning"],
-  "/purchase-orders": ["Purchase", "Purchase Orders"],
-  "/vendor-management": ["Purchase", "Vendor Management"],
-  "/procurement-analytics": ["Purchase", "Procurement Cycle Analytics"],
-  "/demand-forecast": ["Forecasting", "Demand Forecast"],
-  "/forecast-actuals": ["Forecasting", "Forecast vs. Actuals"],
-  "/sales-orders": ["Forecasting", "Sales Order Intake"],
+  "/mrp-run": ["Material planning", "MRP run & results"],
+  "/material-requirements": ["Material planning", "Material requirements"],
+  "/bom-management": ["Material planning", "BOM management"],
+  "/safety-stock": ["Material planning", "Safety stock management"],
+  "/stock-alerts": ["Material planning", "Stock exhaustion alerts"],
+  "/production-schedule": ["Production", "Production schedule"],
+  "/work-orders": ["Production", "Work orders"],
+  "/production-constraints": ["Production", "Production constraints"],
+  "/schedule-updates": ["Production", "Schedule updates"],
+  "/stock-overview": ["Inventory", "Stock overview"],
+  "/multi-location": ["Inventory", "Multi-location inventory"],
+  "/batch-tracking": ["Inventory", "Batch & serial tracking"],
+  "/inventory-health": ["Inventory", "Inventory health scoring"],
+  "/purchase-planning": ["Purchase", "Purchase planning"],
+  "/purchase-orders": ["Purchase", "Purchase orders"],
+  "/vendor-management": ["Purchase", "Vendor management"],
+  "/procurement-analytics": ["Purchase", "Procurement cycle analytics"],
+  "/demand-forecast": ["Forecasting", "Demand forecast"],
+  "/forecast-actuals": ["Forecasting", "Forecast vs. actuals"],
+  "/sales-orders": ["Forecasting", "Sales order intake"],
   "/traceability": ["Traceability"],
-  "/bi-dashboard": ["Analytics", "BI Dashboard"],
-  "/material-coverage": ["Analytics", "Material Coverage Monitor"],
-  "/procurement-reports": ["Analytics", "Procurement Reports"],
-  "/mrp-efficiency": ["Analytics", "MRP Efficiency Metrics"],
-  "/custom-reports": ["Analytics", "Custom Reports"],
-  "/company-settings": ["Settings", "Company & Warehouses"],
-  "/users-roles": ["Settings", "Users & Roles"],
+  "/bi-dashboard": ["Analytics", "BI dashboard"],
+  "/material-coverage": ["Analytics", "Material coverage monitor"],
+  "/procurement-reports": ["Analytics", "Procurement reports"],
+  "/mrp-efficiency": ["Analytics", "MRP efficiency metrics"],
+  "/custom-reports": ["Analytics", "Custom reports"],
+  "/company-settings": ["Settings", "Company & warehouses"],
+  "/users-roles": ["Settings", "Users & roles"],
   "/integrations": ["Settings", "Integrations"],
-  "/alert-config": ["Settings", "Alert Configuration"],
+  "/alert-config": ["Settings", "Alert configuration"],
 };
 
+/**
+ * The application bar.
+ *
+ * Deliberately thin and almost empty: it carries location and nothing else.
+ * Identity now lives at the foot of the rail, and page-level titles and
+ * actions belong to PageHeader, so the two never compete and the bar stays the
+ * same height on every route.
+ */
 export default function AppHeader() {
   const pathname = usePathname();
   const crumbs = routeLabels[pathname] || ["Dashboard"];
 
-  // Read after mount: localStorage is not available during server rendering,
-  // and reading it inline would desync the first client paint.
-  const [identity, setIdentity] = useState({ email: "guest@matrixops.in", role: "admin" });
-  useEffect(() => {
-    setIdentity({
-      email: localStorage.getItem("matrixops_email") || "guest@matrixops.in",
-      role: localStorage.getItem("matrixops_role") || "admin",
-    });
-  }, []);
-  const { email, role } = identity;
-
   return (
-    <header className="h-14 bg-card border-b border-border flex items-center justify-between px-6 sticky top-0 z-10">
-      <div className="flex items-center gap-1.5 text-sm">
-        {crumbs.map((crumb, i) => (
-          <span key={i} className="flex items-center gap-1.5">
-            {i > 0 && <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
-            <span className={i === crumbs.length - 1 ? "font-medium text-foreground" : "text-muted-foreground"}>
-              {crumb}
+    /*
+      The bar sits on the page surface, not on a container, so the white rail
+      and the white cards below both read as things placed on it.
+    */
+    <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5">
+      {/*
+        Location, set as an eyebrow and a title rather than as a row of equal
+        crumbs: the ancestors are context and the last one is where you are,
+        and typography can say that without a separator doing the work. The
+        trail is still a single nav with the same links it always had.
+      */}
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-baseline gap-3">
+        {crumbs.map((crumb, i) => {
+          const isLast = i === crumbs.length - 1;
+          if (isLast) {
+            return (
+              <span
+                key={i}
+                aria-current="page"
+                className="truncate font-display text-display-lg text-foreground"
+              >
+                {crumb}
+              </span>
+            );
+          }
+          return (
+            <span key={i} className="flex min-w-0 items-center gap-3">
+              <span className="label-caps truncate">{crumb}</span>
+              {i > 0 && <ChevronRight className="block h-3.5 w-3.5 shrink-0 text-ink-quaternary" />}
             </span>
-          </span>
-        ))}
-      </div>
-      <div className="flex items-center gap-4">
-          <button className="p-1.5 rounded-md hover:bg-secondary transition-colors">
-            <Bell className="w-4.5 h-4.5 text-muted-foreground" />
-          </button>
-        <div className="flex items-center gap-3 pl-3 border-l border-border">
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-            <User className="w-4 h-4 text-primary-foreground" />
-          </div>
-          <div className="text-left min-w-0">
-            <div className="text-sm font-medium truncate">{email}</div>
-            <div className="text-[11px] text-muted-foreground capitalize">{role}</div>
-          </div>
-        </div>
+          );
+        })}
+      </nav>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          aria-label="Notifications"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-ink-tertiary transition-colors hover:border-input hover:bg-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+        >
+          <Bell className="block h-[15px] w-[15px]" />
+        </button>
       </div>
     </header>
   );

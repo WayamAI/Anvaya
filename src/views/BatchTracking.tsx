@@ -7,6 +7,8 @@ import { grns, getGRN, getGRNsByRMBatch } from "@/data/grn";
 import { purchaseOrders, getPO } from "@/data/purchase_orders";
 import { salesOrders, getSOsByBatch } from "@/data/sales_orders";
 import { vendors as vendorData, getVendor } from "@/data/vendors";
+import { btnSecondarySm } from "@/components/app/controls";
+import { PageIcon } from "@/components/app/page-icon";
 
 // ─── Helpers ───
 const daysBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
@@ -64,46 +66,48 @@ type DrawerType =
 // ─── GRN Search result component ───
 function GRNSearchResult({ grnNumber, onClose }: { grnNumber: string; onClose: () => void }) {
   const grn = getGRN(grnNumber);
-  if (!grn) return <div className="p-4 text-sm text-muted-foreground">GRN not found: {grnNumber}</div>;
+  if (!grn) return <div className="p-4 text-body-md text-muted-foreground">GRN not found: {grnNumber}</div>;
   const po = getPO(grn.purchase_order_number);
   // Find all production batches that consumed RM/PM from this GRN
   const producedFrom = grn.line_items.flatMap(li => getBatchesByRMBatch(li.rm_batch_number));
   const unique = [...new Map(producedFrom.map(b => [b.batch_number, b])).values()];
 
   return (
-    <div className="bg-card rounded-lg border border-border p-4 animate-fade-in">
+    <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold">GRN Detail: <span className="text-accent font-mono">{grnNumber}</span></h3>
+        <h3 className="text-body-md font-semibold">GRN Detail: <span className="text-foreground identifier">{grnNumber}</span></h3>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
       </div>
-      <div className="grid grid-cols-3 gap-3 text-xs mb-4">
-        <div><span className="text-muted-foreground">PO Number</span><div className="font-mono text-accent">{grn.purchase_order_number}</div></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-body-sm mb-4">
+        <div><span className="text-muted-foreground">PO number</span><div className="identifier text-foreground">{grn.purchase_order_number}</div></div>
         <div><span className="text-muted-foreground">Vendor</span><div className="font-medium">{grn.vendor_name}</div></div>
-        <div><span className="text-muted-foreground">Receipt Date</span><div>{fmtDate(grn.grn_date)}</div></div>
+        <div><span className="text-muted-foreground">Receipt date</span><div>{fmtDate(grn.grn_date)}</div></div>
       </div>
-      <table className="w-full text-[12px] mb-4">
-        <thead><tr className="bg-secondary/50 border-b border-border">
-          {["Material", "Type", "Qty", "RM Batch #", "Supplier Lot", "Inspection", "CoA"].map(h =>
-            <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
-        </tr></thead>
-        <tbody>{grn.line_items.map((li, i) => (
-          <tr key={i} className="border-b border-border">
-            <td className="px-2 py-1.5 font-medium">{li.material_name}</td>
-            <td className="px-2 py-1.5"><StatusBadge status={li.material_type === "RM" ? "green" : "blue"} label={li.material_type} /></td>
-            <td className="px-2 py-1.5 tabular-nums">{li.quantity} {li.unit}</td>
-            <td className="px-2 py-1.5 font-mono text-accent">{li.rm_batch_number}</td>
-            <td className="px-2 py-1.5 font-mono text-xs">{li.supplier_lot_number}</td>
-            <td className="px-2 py-1.5"><StatusBadge status={li.inspection_status === "passed" ? "green" : li.inspection_status === "failed" ? "red" : "amber"} label={li.inspection_status} /></td>
-            <td className="px-2 py-1.5 text-muted-foreground">{li.coa_reference}</td>
-          </tr>
-        ))}</tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="data-table w-full text-body-sm mb-4">
+          <thead><tr className="border-b border-border">
+            {["Material", "Type", "Qty", "RM batch #", "Supplier lot", "Inspection", "CoA"].map(h =>
+              <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
+          </tr></thead>
+          <tbody>{grn.line_items.map((li, i) => (
+            <tr key={i} className="border-b border-border">
+              <td className="px-2 py-1.5 font-medium">{li.material_name}</td>
+              <td className="px-2 py-1.5"><StatusBadge status={li.material_type === "RM" ? "green" : "blue"} label={li.material_type} /></td>
+              <td className="px-2 py-1.5 tabular-nums">{li.quantity} {li.unit}</td>
+              <td className="px-2 py-1.5 identifier text-foreground">{li.rm_batch_number}</td>
+              <td className="px-2 py-1.5 identifier text-body-sm">{li.supplier_lot_number}</td>
+              <td className="px-2 py-1.5"><StatusBadge status={li.inspection_status === "passed" ? "green" : li.inspection_status === "failed" ? "red" : "amber"} label={li.inspection_status} /></td>
+              <td className="px-2 py-1.5 text-muted-foreground">{li.coa_reference}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
       {unique.length > 0 && (
         <div>
-          <h4 className="text-xs font-semibold text-muted-foreground mb-2">Batches Produced Using These Inputs</h4>
+          <h4 className="text-body-sm font-semibold text-muted-foreground mb-2">Batches produced using these inputs</h4>
           <div className="space-y-1">{unique.map(b => (
-            <div key={b.batch_number} className="flex items-center gap-3 text-xs p-1.5 rounded bg-secondary/30">
-              <span className="font-mono text-accent">{b.batch_number}</span>
+            <div key={b.batch_number} className="flex items-center gap-3 text-body-sm p-1.5 rounded bg-secondary/30">
+              <span className="identifier text-foreground">{b.batch_number}</span>
               <span className="font-medium">{b.product_name}</span>
               <span className="tabular-nums">{b.quantity_produced.toLocaleString()} {b.unit}</span>
               <StatusBadge status={b.qc_status === "Approved" ? "green" : b.qc_status === "Quarantine" ? "amber" : "red"} label={b.qc_status} />
@@ -120,13 +124,13 @@ function SideDrawer({ drawer, onClose, onNavigate }: { drawer: NonNullable<Drawe
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-foreground/20" />
-      <div className="relative w-[520px] max-w-full h-full bg-card border-l border-border shadow-xl overflow-y-auto animate-slide-in-left" onClick={e => e.stopPropagation()}>
+      <div className="relative w-[520px] max-w-full h-full bg-card border-l border-border shadow-xl overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="sticky top-0 bg-card border-b border-border px-5 py-3 flex items-center justify-between z-10">
-          <h3 className="text-sm font-semibold">
+          <h3 className="text-body-md font-semibold">
             {drawer.kind === "grn" && `GRN Detail`}
             {drawer.kind === "so" && `Sales Order Detail`}
             {drawer.kind === "vendor" && `Vendor Detail`}
-            {drawer.kind === "qc" && `QC Report`}
+            {drawer.kind === "qc" && `QC report`}
             {drawer.kind === "containment" && `Containment Panel`}
             {drawer.kind === "product" && `Product / Formula Detail`}
           </h3>
@@ -147,46 +151,46 @@ function SideDrawer({ drawer, onClose, onNavigate }: { drawer: NonNullable<Drawe
 
 function GRNDrawerContent({ grnNumber, onNavigate }: { grnNumber: string; onNavigate: (d: DrawerType) => void }) {
   const grn = getGRN(grnNumber);
-  if (!grn) return <p className="text-sm text-muted-foreground">Not found</p>;
+  if (!grn) return <p className="text-body-md text-muted-foreground">Not found</p>;
   const po = getPO(grn.purchase_order_number);
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 text-xs">
-        <div><span className="text-muted-foreground block">GRN Number</span><span className="font-mono text-accent font-semibold">{grn.grn_number}</span></div>
-        <div><span className="text-muted-foreground block">Receipt Date</span><span>{fmtDate(grn.grn_date)}</span></div>
-        <div><span className="text-muted-foreground block">PO Number</span><span className="font-mono text-accent">{grn.purchase_order_number}</span></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
+        <div><span className="text-muted-foreground block">GRN number</span><span className="identifier text-foreground font-semibold">{grn.grn_number}</span></div>
+        <div><span className="text-muted-foreground block">Receipt date</span><span>{fmtDate(grn.grn_date)}</span></div>
+        <div><span className="text-muted-foreground block">PO number</span><span className="identifier text-foreground">{grn.purchase_order_number}</span></div>
         <div><span className="text-muted-foreground block">Vendor</span>
-          <button onClick={() => onNavigate({ kind: "vendor", vendorId: grn.vendor_id, grnNumber })} className="text-accent underline">{grn.vendor_name}</button>
+          <button onClick={() => onNavigate({ kind: "vendor", vendorId: grn.vendor_id, grnNumber })} className="text-foreground underline underline-offset-2 hover:text-foreground">{grn.vendor_name}</button>
         </div>
         {po && <>
-          <div><span className="text-muted-foreground block">PO Value</span><span className="tabular-nums">₹{po.line_items.reduce((s, li) => s + li.ordered_qty * li.unit_price, 0).toLocaleString()}</span></div>
-          <div><span className="text-muted-foreground block">PO Status</span><StatusBadge status="green" label={po.status} /></div>
+          <div><span className="text-muted-foreground block">PO value</span><span className="tabular-nums">₹{po.line_items.reduce((s, li) => s + li.ordered_qty * li.unit_price, 0).toLocaleString()}</span></div>
+          <div><span className="text-muted-foreground block">PO status</span><StatusBadge status="green" label={po.status} /></div>
         </>}
       </div>
-      <h4 className="text-xs font-semibold mt-4 mb-2">Line Items</h4>
+      <h4 className="text-body-sm font-semibold mt-4 mb-2">Line items</h4>
       {grn.line_items.map((li, i) => (
-        <div key={i} className={`p-3 rounded-md border ${li.inspection_status === "failed" ? "border-danger/30 bg-danger/5" : "border-border"}`}>
+        <div key={i} className={`p-3 rounded-lg border ${li.inspection_status === "failed" ? "border-danger/30 bg-danger/5" : "border-border"}`}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <StatusBadge status={li.material_type === "RM" ? "green" : "blue"} label={li.material_type} />
-              <span className="text-sm font-medium">{li.material_name}</span>
+              <span className="text-body-md font-medium">{li.material_name}</span>
             </div>
             <StatusBadge status={li.inspection_status === "passed" ? "green" : li.inspection_status === "failed" ? "red" : "amber"} label={li.inspection_status} />
           </div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div><span className="text-muted-foreground">Batch #</span> <span className="font-mono text-accent">{li.rm_batch_number}</span></div>
-            <div><span className="text-muted-foreground">Supplier Lot</span> <span className="font-mono">{li.supplier_lot_number}</span></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-body-sm">
+            <div><span className="text-muted-foreground">Batch #</span> <span className="identifier text-foreground">{li.rm_batch_number}</span></div>
+            <div><span className="text-muted-foreground">Supplier lot</span> <span className="identifier">{li.supplier_lot_number}</span></div>
             <div><span className="text-muted-foreground">Qty</span> <span className="tabular-nums">{li.quantity} {li.unit}</span></div>
-            <div><span className="text-muted-foreground">Heat #</span> <span className="font-mono">{li.heat_number}</span></div>
-            <div><span className="text-muted-foreground">CoA Ref</span> <span>{li.coa_reference}</span></div>
+            <div><span className="text-muted-foreground">Heat #</span> <span className="identifier">{li.heat_number}</span></div>
+            <div><span className="text-muted-foreground">CoA ref</span> <span>{li.coa_reference}</span></div>
             <div><span className="text-muted-foreground">Inspector</span> <span>{li.inspector_name}</span></div>
             <div><span className="text-muted-foreground">Location</span> <span>{li.storage_location} / {li.bin}</span></div>
             <div><span className="text-muted-foreground">Inspected</span> <span>{fmtDate(li.inspection_date)}</span></div>
           </div>
           {Object.keys(li.coa_parameters).length > 0 && (
-            <div className="mt-2 p-2 bg-secondary/30 rounded text-xs">
-              <span className="font-semibold text-muted-foreground">CoA Parameters:</span>
-              <div className="grid grid-cols-2 gap-1 mt-1">
+            <div className="mt-2 p-2 bg-secondary/30 rounded text-body-sm">
+              <span className="font-semibold text-muted-foreground">CoA parameters:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 mt-1">
                 {Object.entries(li.coa_parameters).map(([k, v]) => (
                   <div key={k}><span className="text-muted-foreground">{k.replace(/_/g, " ")}:</span> <span className="font-medium">{v}</span></div>
                 ))}
@@ -201,27 +205,27 @@ function GRNDrawerContent({ grnNumber, onNavigate }: { grnNumber: string; onNavi
 
 function SODrawerContent({ soNumber }: { soNumber: string }) {
   const so = salesOrders.find(s => s.so_number === soNumber);
-  if (!so) return <p className="text-sm text-muted-foreground">Not found</p>;
+  if (!so) return <p className="text-body-md text-muted-foreground">Not found</p>;
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 text-xs">
-        <div><span className="text-muted-foreground block">SO Number</span><span className="font-mono text-accent font-semibold">{so.so_number}</span></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
+        <div><span className="text-muted-foreground block">SO number</span><span className="identifier text-foreground font-semibold">{so.so_number}</span></div>
         <div><span className="text-muted-foreground block">Customer</span><span className="font-medium">{so.customer_name}</span></div>
         <div><span className="text-muted-foreground block">Type</span><StatusBadge status="blue" label={so.customer_type} /></div>
         <div><span className="text-muted-foreground block">Date</span><span>{fmtDate(so.so_date)}</span></div>
-        <div><span className="text-muted-foreground block">Invoice</span><span className="font-mono">{so.invoice_number}</span></div>
+        <div><span className="text-muted-foreground block">Invoice</span><span className="identifier">{so.invoice_number}</span></div>
         <div><span className="text-muted-foreground block">Dispatch</span><span>{fmtDate(so.dispatch_date)}</span></div>
         <div><span className="text-muted-foreground block">Delivery</span><StatusBadge status={so.delivery_status === "delivered" ? "green" : so.delivery_status === "in_transit" ? "amber" : "gray"} label={so.delivery_status.replace("_", " ")} /></div>
-        <div><span className="text-muted-foreground block">Total Value</span><span className="tabular-nums font-semibold">₹{so.line_items.reduce((s, li) => s + li.quantity * li.unit_price, 0).toLocaleString()}</span></div>
+        <div><span className="text-muted-foreground block">Total value</span><span className="tabular-nums font-semibold">₹{so.line_items.reduce((s, li) => s + li.quantity * li.unit_price, 0).toLocaleString()}</span></div>
       </div>
-      <h4 className="text-xs font-semibold mt-4 mb-2">Line Items</h4>
+      <h4 className="text-body-sm font-semibold mt-4 mb-2">Line items</h4>
       {so.line_items.map((li, i) => (
-        <div key={i} className="p-3 rounded-md border border-border">
-          <div className="text-sm font-medium">{li.product_name}</div>
-          <div className="grid grid-cols-3 gap-2 text-xs mt-1">
+        <div key={i} className="p-3 rounded-lg border border-border">
+          <div className="text-body-md font-medium">{li.product_name}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-body-sm mt-1">
             <div><span className="text-muted-foreground">Qty</span> <span className="tabular-nums">{li.quantity.toLocaleString()} {li.unit}</span></div>
-            <div><span className="text-muted-foreground">Batch</span> <span className="font-mono text-accent">{li.batch_number}</span></div>
-            <div><span className="text-muted-foreground">Unit Price</span> <span className="tabular-nums">₹{li.unit_price}</span></div>
+            <div><span className="text-muted-foreground">Batch</span> <span className="identifier text-foreground">{li.batch_number}</span></div>
+            <div><span className="text-muted-foreground">Unit price</span> <span className="tabular-nums">₹{li.unit_price}</span></div>
           </div>
         </div>
       ))}
@@ -231,39 +235,39 @@ function SODrawerContent({ soNumber }: { soNumber: string }) {
 
 function VendorDrawerContent({ vendorId, grnNumber }: { vendorId: string; grnNumber?: string }) {
   const v = getVendor(vendorId);
-  if (!v) return <p className="text-sm text-muted-foreground">Not found</p>;
+  if (!v) return <p className="text-body-md text-muted-foreground">Not found</p>;
   const grn = grnNumber ? getGRN(grnNumber) : null;
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
         <div><span className="text-muted-foreground block">Name</span><span className="font-semibold">{v.vendor_name}</span></div>
-        <div><span className="text-muted-foreground block">Code</span><span className="font-mono">{v.vendor_code}</span></div>
+        <div><span className="text-muted-foreground block">Code</span><span className="identifier">{v.vendor_code}</span></div>
         <div><span className="text-muted-foreground block">Location</span><span>{v.location}</span></div>
-        <div><span className="text-muted-foreground block">ASL Status</span><StatusBadge status={v.asl ? "green" : "red"} label={v.asl ? "Approved" : "Not on ASL"} /></div>
+        <div><span className="text-muted-foreground block">ASL status</span><StatusBadge status={v.asl ? "green" : "red"} label={v.asl ? "Approved" : "Not on ASL"} /></div>
         <div><span className="text-muted-foreground block">Contact</span><span>{v.contact_person}</span></div>
         <div><span className="text-muted-foreground block">Terms</span><span>{v.payment_terms}</span></div>
       </div>
-      <h4 className="text-xs font-semibold mt-4 mb-1">Approved Materials</h4>
+      <h4 className="text-body-sm font-semibold mt-4 mb-1">Approved materials</h4>
       <div className="flex flex-wrap gap-1">{v.approved_materials.length > 0 ? v.approved_materials.map(m => (
-        <span key={m} className="px-2 py-0.5 bg-accent/10 text-accent rounded-full text-[11px] font-mono">{m}</span>
-      )) : <span className="text-xs text-danger italic">No approved materials</span>}</div>
+        <span key={m} className="px-2 py-0.5 bg-secondary text-foreground rounded-full text-caption identifier">{m}</span>
+      )) : <span className="text-body-sm text-danger italic">No approved materials</span>}</div>
 
-      <h4 className="text-xs font-semibold mt-4 mb-1">Quality Scorecard</h4>
-      <div className="grid grid-cols-2 gap-2 text-xs p-3 bg-secondary/30 rounded-md">
-        <div><span className="text-muted-foreground">Defect Rate</span><div className={`font-semibold ${v.quality_scorecard.defect_rate_percent > 3 ? "text-danger" : v.quality_scorecard.defect_rate_percent > 1.5 ? "text-warning" : "text-success"}`}>{v.quality_scorecard.defect_rate_percent}%</div></div>
+      <h4 className="text-body-sm font-semibold mt-4 mb-1">Quality scorecard</h4>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-body-sm p-3 bg-secondary/30 rounded-lg">
+        <div><span className="text-muted-foreground">Defect rate</span><div className={`font-semibold ${v.quality_scorecard.defect_rate_percent > 3 ? "text-danger" : v.quality_scorecard.defect_rate_percent > 1.5 ? "text-warning" : "text-success"}`}>{v.quality_scorecard.defect_rate_percent}%</div></div>
         <div><span className="text-muted-foreground">COPQ</span><div className="font-semibold text-danger">{v.quality_scorecard.copq_amount}</div></div>
         <div><span className="text-muted-foreground">OTD</span><div className={`font-semibold ${v.quality_scorecard.on_time_delivery_percent >= 90 ? "text-success" : "text-warning"}`}>{v.quality_scorecard.on_time_delivery_percent}%</div></div>
-        <div><span className="text-muted-foreground">Last Audit</span><div>{fmtDate(v.quality_scorecard.last_audit_date)} — <StatusBadge status={v.quality_scorecard.audit_result === "Pass" ? "green" : v.quality_scorecard.audit_result === "Fail" ? "red" : "amber"} label={v.quality_scorecard.audit_result} /></div></div>
+        <div><span className="text-muted-foreground">Last audit</span><div>{fmtDate(v.quality_scorecard.last_audit_date)} — <StatusBadge status={v.quality_scorecard.audit_result === "Pass" ? "green" : v.quality_scorecard.audit_result === "Fail" ? "red" : "amber"} label={v.quality_scorecard.audit_result} /></div></div>
       </div>
 
       {grn && (
         <>
-          <h4 className="text-xs font-semibold mt-4 mb-1">GRN {grn.grn_number}</h4>
-          <div className="text-xs space-y-1">
+          <h4 className="text-body-sm font-semibold mt-4 mb-1">GRN {grn.grn_number}</h4>
+          <div className="text-body-sm space-y-1">
             {grn.line_items.map((li, i) => (
               <div key={i} className="p-2 bg-secondary/20 rounded flex justify-between">
                 <span>{li.material_name} — {li.quantity} {li.unit}</span>
-                <span className="font-mono text-xs">{li.supplier_lot_number}</span>
+                <span className="identifier text-body-sm">{li.supplier_lot_number}</span>
               </div>
             ))}
           </div>
@@ -272,10 +276,10 @@ function VendorDrawerContent({ vendorId, grnNumber }: { vendorId: string; grnNum
 
       {v.scar_history.length > 0 && (
         <>
-          <h4 className="text-xs font-semibold mt-4 mb-1">SCAR History</h4>
+          <h4 className="text-body-sm font-semibold mt-4 mb-1">SCAR history</h4>
           {v.scar_history.map(s => (
-            <div key={s.scar_id} className="p-2 rounded border border-border text-xs">
-              <div className="flex justify-between"><span className="font-mono text-accent">{s.scar_id}</span><StatusBadge status={s.status === "Closed" ? "green" : s.status === "Open" ? "red" : "amber"} label={s.status} /></div>
+            <div key={s.scar_id} className="p-2 rounded border border-border text-body-sm">
+              <div className="flex justify-between"><span className="identifier text-foreground">{s.scar_id}</span><StatusBadge status={s.status === "Closed" ? "green" : s.status === "Open" ? "red" : "amber"} label={s.status} /></div>
               <div className="text-muted-foreground mt-1">{s.description}</div>
             </div>
           ))}
@@ -287,19 +291,19 @@ function VendorDrawerContent({ vendorId, grnNumber }: { vendorId: string; grnNum
 
 function QCDrawerContent({ batchNumber }: { batchNumber: string }) {
   const pb = getProductionBatch(batchNumber);
-  if (!pb) return <p className="text-sm text-muted-foreground">Not found</p>;
+  if (!pb) return <p className="text-body-md text-muted-foreground">Not found</p>;
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 text-xs">
-        <div><span className="text-muted-foreground block">Batch</span><span className="font-mono text-accent font-semibold">{pb.batch_number}</span></div>
-        <div><span className="text-muted-foreground block">QC Lot</span><span className="font-mono">{pb.qc_lot_number}</span></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
+        <div><span className="text-muted-foreground block">Batch</span><span className="identifier text-foreground font-semibold">{pb.batch_number}</span></div>
+        <div><span className="text-muted-foreground block">QC lot</span><span className="identifier">{pb.qc_lot_number}</span></div>
         <div><span className="text-muted-foreground block">Product</span><span className="font-medium">{pb.product_name}</span></div>
-        <div><span className="text-muted-foreground block">Test Date</span><span>{fmtDate(pb.qc_date)}</span></div>
+        <div><span className="text-muted-foreground block">Test date</span><span>{fmtDate(pb.qc_date)}</span></div>
         <div><span className="text-muted-foreground block">Overall</span><StatusBadge status={pb.qc_status === "Approved" ? "green" : pb.qc_status === "Quarantine" ? "amber" : "red"} label={pb.qc_status} /></div>
       </div>
-      <h4 className="text-xs font-semibold mt-4 mb-2">Test Parameters</h4>
-      <table className="w-full text-[12px]">
-        <thead><tr className="bg-secondary/50 border-b border-border">
+      <h4 className="text-body-sm font-semibold mt-4 mb-2">Test parameters</h4>
+      <table className="data-table w-full text-body-sm">
+        <thead><tr className="border-b border-border">
           {["Parameter", "Specification", "Result", "Status"].map(h => <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
         </tr></thead>
         <tbody>{pb.qc_result.map((p, i) => (
@@ -317,7 +321,7 @@ function QCDrawerContent({ batchNumber }: { batchNumber: string }) {
 
 function ContainmentDrawerContent({ batchNumber }: { batchNumber: string }) {
   const pb = getProductionBatch(batchNumber);
-  if (!pb) return <p className="text-sm text-muted-foreground">Not found</p>;
+  if (!pb) return <p className="text-body-md text-muted-foreground">Not found</p>;
 
   // Find suspect inputs
   const suspectInputs = pb.rm_consumption.filter(inp => {
@@ -342,68 +346,68 @@ function ContainmentDrawerContent({ batchNumber }: { batchNumber: string }) {
 
   return (
     <>
-      <div className="p-3 rounded-md border border-danger/30 bg-danger/5 mb-4">
-        <div className="flex items-center gap-2 text-danger text-sm font-semibold"><AlertTriangle className="w-4 h-4" /> Containment Required</div>
-        <div className="text-xs text-muted-foreground mt-1">Batch {pb.batch_number} — {pb.product_name} — QC Status: {pb.qc_status}</div>
+      <div className="p-3 rounded-lg border border-danger/30 bg-danger/5 mb-4">
+        <div className="flex items-center gap-2 text-danger text-body-md font-semibold"><AlertTriangle className="w-4 h-4" /> Containment required</div>
+        <div className="text-body-sm text-muted-foreground mt-1">Batch {pb.batch_number} — {pb.product_name} — QC Status: {pb.qc_status}</div>
       </div>
 
-      <h4 className="text-xs font-semibold mb-2">Suspect Inputs</h4>
+      <h4 className="text-body-sm font-semibold mb-2">Suspect inputs</h4>
       {suspectInputs.length > 0 ? suspectInputs.map(inp => {
         const rm = getRMBatch(inp.rm_batch_number)!;
         return (
-          <div key={inp.rm_batch_number} className="p-2 rounded border border-danger/20 bg-danger/5 text-xs mb-1">
-            <span className="font-mono text-danger">{inp.rm_batch_number}</span> — {inp.material_name} — QC: <StatusBadge status="red" label={rm.qc_status} /> — {rm.vendor_name}
+          <div key={inp.rm_batch_number} className="p-2 rounded border border-danger/20 bg-danger/5 text-body-sm mb-1">
+            <span className="identifier text-danger">{inp.rm_batch_number}</span> — {inp.material_name} — QC: <StatusBadge status="red" label={rm.qc_status} /> — {rm.vendor_name}
           </div>
         );
-      }) : <div className="text-xs text-muted-foreground">No suspect RM batches — QC failure at FG level</div>}
+      }) : <div className="text-body-sm text-muted-foreground">No suspect RM batches — QC failure at FG level</div>}
 
       {nonAslInputs.length > 0 && (
         <>
-          <h4 className="text-xs font-semibold mt-3 mb-2">Non-ASL Inputs</h4>
+          <h4 className="text-body-sm font-semibold mt-3 mb-2">Non-ASL inputs</h4>
           {nonAslInputs.map(inp => {
             const rm = getRMBatch(inp.rm_batch_number)!;
             return (
-              <div key={inp.rm_batch_number} className="p-2 rounded border border-warning/20 bg-warning/5 text-xs mb-1">
-                <span className="font-mono text-warning">{inp.rm_batch_number}</span> — {inp.material_name} — Vendor: {rm.vendor_name} (Not on ASL)
+              <div key={inp.rm_batch_number} className="p-2 rounded border border-warning/20 bg-warning/5 text-body-sm mb-1">
+                <span className="identifier text-warning">{inp.rm_batch_number}</span> — {inp.material_name} — Vendor: {rm.vendor_name} (Not on ASL)
               </div>
             );
           })}
         </>
       )}
 
-      <h4 className="text-xs font-semibold mt-4 mb-2">Dispatch Status</h4>
-      <div className="grid grid-cols-3 gap-3 text-center mb-3">
-        <div className="p-2 bg-secondary/30 rounded"><div className="text-lg font-bold tabular-nums">{pb.quantity_remaining.toLocaleString()}</div><div className="text-[10px] text-muted-foreground">In Stock</div></div>
-        <div className="p-2 bg-secondary/30 rounded"><div className="text-lg font-bold tabular-nums">{totalDispatched.toLocaleString()}</div><div className="text-[10px] text-muted-foreground">Dispatched</div></div>
-        <div className="p-2 bg-danger/10 rounded"><div className="text-lg font-bold tabular-nums text-danger">{atRiskField.toLocaleString()}</div><div className="text-[10px] text-muted-foreground">At Risk (Field)</div></div>
+      <h4 className="text-body-sm font-semibold mt-4 mb-2">Dispatch status</h4>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-center mb-3">
+        <div className="p-2 bg-secondary/30 rounded"><div className="text-display-lg font-semibold tabular-nums">{pb.quantity_remaining.toLocaleString()}</div><div className="text-caption text-muted-foreground">In stock</div></div>
+        <div className="p-2 bg-secondary/30 rounded"><div className="text-display-lg font-semibold tabular-nums">{totalDispatched.toLocaleString()}</div><div className="text-caption text-muted-foreground">Dispatched</div></div>
+        <div className="p-2 bg-danger/10 rounded"><div className="text-display-lg font-semibold tabular-nums text-danger">{atRiskField.toLocaleString()}</div><div className="text-caption text-muted-foreground">At risk (field)</div></div>
       </div>
 
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs text-muted-foreground">Containment Priority:</span>
+        <span className="text-body-sm text-muted-foreground">Containment priority:</span>
         <StatusBadge status={prColor} label={`${priority} (${ratio.toFixed(1)}%)`} />
       </div>
       <div className="w-full bg-secondary rounded-full h-2 mb-4">
         <div className="bg-danger rounded-full h-2 transition-all" style={{ width: `${Math.min(ratio, 100)}%` }} />
       </div>
 
-      <h4 className="text-xs font-semibold mb-2">Dispatched Units by Customer</h4>
-      <table className="w-full text-[12px]">
-        <thead><tr className="bg-secondary/50 border-b border-border">
+      <h4 className="text-body-sm font-semibold mb-2">Dispatched units by customer</h4>
+      <table className="data-table w-full text-body-sm">
+        <thead><tr className="border-b border-border">
           {["Customer", "Qty", "Invoice", "Status"].map(h => <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
         </tr></thead>
         <tbody>{dispatchedByCustomer.map((c, i) => (
           <tr key={i} className="border-b border-border">
             <td className="px-2 py-1.5 font-medium">{c.customer}</td>
             <td className="px-2 py-1.5 tabular-nums">{c.qty.toLocaleString()}</td>
-            <td className="px-2 py-1.5 font-mono text-xs">{c.invoice}</td>
+            <td className="px-2 py-1.5 identifier text-body-sm">{c.invoice}</td>
             <td className="px-2 py-1.5"><StatusBadge status={c.status === "delivered" ? "green" : c.status === "in_transit" ? "amber" : "gray"} label={c.status.replace("_", " ")} /></td>
           </tr>
         ))}</tbody>
       </table>
 
       <div className="flex gap-2 mt-4">
-        <button className="flex-1 h-8 bg-warning text-warning-foreground rounded-md text-xs font-medium flex items-center justify-center gap-1"><Ban className="w-3 h-3" />Place Dispatch Hold</button>
-        <button className="flex-1 h-8 bg-danger text-danger-foreground rounded-md text-xs font-medium flex items-center justify-center gap-1"><AlertTriangle className="w-3 h-3" />Raise Quality Event</button>
+        <button className="flex-1 h-8 bg-warning text-warning-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1"><Ban className="w-3 h-3" />Place dispatch hold</button>
+        <button className="flex-1 h-8 bg-danger text-danger-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1"><AlertTriangle className="w-3 h-3" />Raise quality event</button>
       </div>
     </>
   );
@@ -411,25 +415,25 @@ function ContainmentDrawerContent({ batchNumber }: { batchNumber: string }) {
 
 function ProductDrawerContent({ batchNumber }: { batchNumber: string }) {
   const pb = getProductionBatch(batchNumber);
-  if (!pb) return <p className="text-sm text-muted-foreground">Not found</p>;
+  if (!pb) return <p className="text-body-md text-muted-foreground">Not found</p>;
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
         <div><span className="text-muted-foreground block">Product</span><span className="font-semibold">{pb.product_name}</span></div>
-        <div><span className="text-muted-foreground block">Code</span><span className="font-mono">{pb.product_code}</span></div>
-        <div><span className="text-muted-foreground block">Formula</span><span className="font-mono">{pb.formula_code}</span></div>
-        <div><span className="text-muted-foreground block">Revision</span><span className="font-mono font-semibold">{pb.formula_revision}</span></div>
+        <div><span className="text-muted-foreground block">Code</span><span className="identifier">{pb.product_code}</span></div>
+        <div><span className="text-muted-foreground block">Formula</span><span className="identifier">{pb.formula_code}</span></div>
+        <div><span className="text-muted-foreground block">Revision</span><span className="identifier font-semibold">{pb.formula_revision}</span></div>
       </div>
-      <h4 className="text-xs font-semibold mt-4 mb-2">Approved Ingredient List (from formula)</h4>
-      <table className="w-full text-[12px]">
-        <thead><tr className="bg-secondary/50 border-b border-border">
-          {["Material", "Code", "Qty Used", "Type"].map(h => <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
+      <h4 className="text-body-sm font-semibold mt-4 mb-2">Approved ingredient list (from formula)</h4>
+      <table className="data-table w-full text-body-sm">
+        <thead><tr className="border-b border-border">
+          {["Material", "Code", "Qty used", "Type"].map(h => <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
         </tr></thead>
         <tbody>
           {[...pb.rm_consumption, ...pb.pm_consumption].map((inp, i) => (
             <tr key={i} className="border-b border-border">
               <td className="px-2 py-1.5 font-medium">{inp.material_name}</td>
-              <td className="px-2 py-1.5 font-mono text-xs text-accent">{inp.material_code}</td>
+              <td className="px-2 py-1.5 identifier text-body-sm text-foreground">{inp.material_code}</td>
               <td className="px-2 py-1.5 tabular-nums">{inp.quantity_used} {inp.unit}</td>
               <td className="px-2 py-1.5"><StatusBadge status={inp.material_code.startsWith("PM") ? "blue" : "green"} label={inp.material_code.startsWith("PM") ? "PM" : "RM"} /></td>
             </tr>
@@ -494,33 +498,36 @@ export default function BatchTracking() {
   }, [selectedPB]);
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="px-6 py-5 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Batch & Serial Tracking</h2>
+      <div className="flex items-center justify-between">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Batch & serial tracking</span>
+        </h1>
         <div className="relative w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input value={search} onChange={e => handleSearch(e.target.value)}
             placeholder="Search batch, material, or GRN-xxxx..."
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-input bg-card text-sm" />
+            className="w-full h-9 pl-9 pr-3 rounded-lg border border-input bg-card text-body-md" />
         </div>
       </div>
 
       {/* Completeness Indicators */}
-      <div className="grid grid-cols-3 gap-4 animate-fade-in-up stagger-1">
-        <div className="bg-card rounded-lg border border-border p-3 flex items-center gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center"><Shield className="w-5 h-5 text-success" /></div>
-          <div><div className="text-xs text-muted-foreground">Backward Trace Complete</div><div className="text-xl font-bold tabular-nums text-success">{completeness.backwardPct}%</div></div>
+          <div><div className="text-body-sm text-muted-foreground">Backward trace complete</div><div className="text-display-lg font-semibold tabular-nums text-success">{completeness.backwardPct}%</div></div>
         </div>
-        <div className="bg-card rounded-lg border border-border p-3 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center"><Package className="w-5 h-5 text-accent" /></div>
-          <div><div className="text-xs text-muted-foreground">Forward Trace Complete</div><div className="text-xl font-bold tabular-nums text-accent">{completeness.forwardPct}%</div></div>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center"><Package className="w-5 h-5 text-muted-foreground" /></div>
+          <div><div className="text-body-sm text-muted-foreground">Forward trace complete</div><div className="text-display-lg font-semibold tabular-nums text-foreground">{completeness.forwardPct}%</div></div>
         </div>
-        <div className="bg-card rounded-lg border border-border p-3 flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${completeness.containmentActions > 0 ? "bg-danger/10" : "bg-success/10"}`}>
             <AlertTriangle className={`w-5 h-5 ${completeness.containmentActions > 0 ? "text-danger" : "text-success"}`} />
           </div>
-          <div><div className="text-xs text-muted-foreground">Open Containment Actions</div><div className={`text-xl font-bold tabular-nums ${completeness.containmentActions > 0 ? "text-danger" : "text-success"}`}>{completeness.containmentActions}</div></div>
+          <div><div className="text-body-sm text-muted-foreground">Open containment actions</div><div className={`text-display-lg font-semibold tabular-nums ${completeness.containmentActions > 0 ? "text-danger" : "text-success"}`}>{completeness.containmentActions}</div></div>
         </div>
       </div>
 
@@ -529,45 +536,45 @@ export default function BatchTracking() {
 
       {/* Traceability Panel */}
       {selectedPB && !grnSearchResult && (
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-2">
+        <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold">
-              Traceability: <button onClick={() => setDrawer({ kind: "product", batchNumber: selectedPB.batch_number })} className="text-accent underline">{selectedPB.batch_number}</button>
+            <h3 className="text-body-md font-semibold">
+              Traceability: <button onClick={() => setDrawer({ kind: "product", batchNumber: selectedPB.batch_number })} className="text-foreground underline underline-offset-2 hover:text-foreground">{selectedPB.batch_number}</button>
               <span className="text-muted-foreground font-normal ml-2">— {selectedPB.product_name} — {selectedPB.formula_code} {selectedPB.formula_revision}</span>
             </h3>
             <div className="flex items-center gap-2">
               {(selectedPB.qc_status === "Quarantine" || selectedPB.qc_status === "Failed") && (
-                <button onClick={() => setDrawer({ kind: "containment", batchNumber: selectedPB.batch_number })} className="h-7 px-2.5 bg-danger text-danger-foreground rounded text-xs font-medium flex items-center gap-1">
+                <button onClick={() => setDrawer({ kind: "containment", batchNumber: selectedPB.batch_number })} className="h-7 px-2.5 bg-danger text-danger-foreground rounded text-body-sm font-medium flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" /> Containment
                 </button>
               )}
-              <button onClick={() => setDrawer({ kind: "qc", batchNumber: selectedPB.batch_number })} className="h-7 px-2.5 bg-accent text-accent-foreground rounded text-xs font-medium">QC Report</button>
+              <button onClick={() => setDrawer({ kind: "qc", batchNumber: selectedPB.batch_number })} className={btnSecondarySm}>QC report</button>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-body-md">
             {/* Backward Trace */}
             <div>
-              <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">← Backward Trace ({backwardTrace.length} inputs)</h4>
+              <h4 className="text-body-sm font-semibold text-muted-foreground mb-2">← Backward Trace ({backwardTrace.length} inputs)</h4>
               <div className="space-y-1.5">
                 {backwardTrace.map(({ inp, rm, grn, grnLine, po, vendor, isNonASL, isSuspect }) => (
-                  <div key={inp.rm_batch_number} className={`rounded-md border text-xs ${isSuspect ? "border-danger/30 bg-danger/5" : isNonASL ? "border-warning/30 bg-warning/5" : "border-border"}`}>
+                  <div key={inp.rm_batch_number} className={`rounded-lg border text-body-sm ${isSuspect ? "border-danger/30 bg-danger/5" : isNonASL ? "border-warning/30 bg-warning/5" : "border-border"}`}>
                     <div className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer" onClick={() => toggleInput(inp.rm_batch_number)}>
                       {expandedInputs[inp.rm_batch_number] ? <ChevronDown className="w-3 h-3 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 text-muted-foreground" />}
                       <StatusBadge status={inp.material_code.startsWith("PM") ? "blue" : "green"} label={inp.material_code.startsWith("PM") ? "PM" : "RM"} />
-                      <button onClick={e => { e.stopPropagation(); if (rm) setDrawer({ kind: "grn", grnNumber: rm.grn_number }); }} className="font-mono text-accent hover:underline">{inp.rm_batch_number}</button>
+                      <button onClick={e => { e.stopPropagation(); if (rm) setDrawer({ kind: "grn", grnNumber: rm.grn_number }); }} className="identifier text-foreground hover:underline">{inp.rm_batch_number}</button>
                       <span className="font-medium truncate">{inp.material_name}</span>
                       <span className="tabular-nums text-muted-foreground ml-auto">{inp.quantity_used} {inp.unit}</span>
                       {isSuspect && <AlertTriangle className="w-3 h-3 text-danger" />}
                       {isNonASL && <AlertTriangle className="w-3 h-3 text-warning" />}
                     </div>
                     {expandedInputs[inp.rm_batch_number] && rm && (
-                      <div className="px-2.5 pb-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] border-t border-border/50 pt-1.5 ml-5">
-                        <div><span className="text-muted-foreground">Supplier</span> <button onClick={() => setDrawer({ kind: "vendor", vendorId: rm.vendor_id, grnNumber: rm.grn_number })} className="text-accent hover:underline">{rm.vendor_name}</button></div>
-                        <div><span className="text-muted-foreground">GRN</span> <button onClick={() => setDrawer({ kind: "grn", grnNumber: rm.grn_number })} className="text-accent hover:underline">{rm.grn_number}</button></div>
-                        <div><span className="text-muted-foreground">Supplier Lot</span> <span className="font-mono">{rm.supplier_lot_number}</span></div>
+                      <div className="px-2.5 pb-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 text-caption border-t border-border/50 pt-1.5 ml-5">
+                        <div><span className="text-muted-foreground">Supplier</span> <button onClick={() => setDrawer({ kind: "vendor", vendorId: rm.vendor_id, grnNumber: rm.grn_number })} className="text-foreground underline underline-offset-2 hover:text-foreground">{rm.vendor_name}</button></div>
+                        <div><span className="text-muted-foreground">GRN</span> <button onClick={() => setDrawer({ kind: "grn", grnNumber: rm.grn_number })} className="text-foreground underline underline-offset-2 hover:text-foreground">{rm.grn_number}</button></div>
+                        <div><span className="text-muted-foreground">Supplier lot</span> <span className="identifier">{rm.supplier_lot_number}</span></div>
                         <div><span className="text-muted-foreground">CoA</span> <span>{rm.coa_reference}</span></div>
-                        <div><span className="text-muted-foreground">PO</span> <span className="font-mono">{rm.po_number}</span></div>
+                        <div><span className="text-muted-foreground">PO</span> <span className="identifier">{rm.po_number}</span></div>
                         <div><span className="text-muted-foreground">QC</span> <StatusBadge status={rm.qc_status === "Approved" ? "green" : rm.qc_status === "Quarantine" ? "amber" : "red"} label={rm.qc_status} /></div>
                         <div><span className="text-muted-foreground">Location</span> <span>{rm.storage_location} / {rm.bin}</span></div>
                         {isNonASL && <div className="col-span-2 text-warning font-semibold">⚠ Supplier not on ASL for {inp.material_code}</div>}
@@ -577,10 +584,10 @@ export default function BatchTracking() {
                   </div>
                 ))}
                 {/* QC Lot */}
-                <div className="px-2.5 py-1.5 rounded-md border border-border text-xs flex items-center gap-2">
+                <div className="px-2.5 py-1.5 rounded-lg border border-border text-body-sm flex items-center gap-2">
                   <span className="text-success">✅</span>
-                  <span>QC Lot:</span>
-                  <button onClick={() => setDrawer({ kind: "qc", batchNumber: selectedPB.batch_number })} className="font-mono text-accent hover:underline">{selectedPB.qc_lot_number}</button>
+                  <span>QC lot:</span>
+                  <button onClick={() => setDrawer({ kind: "qc", batchNumber: selectedPB.batch_number })} className="identifier text-foreground hover:underline">{selectedPB.qc_lot_number}</button>
                   <span className="text-muted-foreground">— {selectedPB.qc_result.filter(r => r.status === "Pass").length}/{selectedPB.qc_result.length} parameters passed — {fmtDate(selectedPB.qc_date)}</span>
                 </div>
               </div>
@@ -588,25 +595,25 @@ export default function BatchTracking() {
 
             {/* Forward Trace */}
             <div>
-              <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Forward Trace → ({forwardTrace.length} orders)</h4>
+              <h4 className="text-body-sm font-semibold text-muted-foreground mb-2">Forward Trace → ({forwardTrace.length} orders)</h4>
               <div className="space-y-1.5">
                 {forwardTrace.map(so => {
                   const lines = so.line_items.filter(li => li.batch_number === selectedPB.batch_number);
                   const totalQty = lines.reduce((s, li) => s + li.quantity, 0);
                   return (
-                    <div key={so.so_number} className="px-2.5 py-1.5 rounded-md border border-border text-xs flex items-center gap-2 flex-wrap">
+                    <div key={so.so_number} className="px-2.5 py-1.5 rounded-lg border border-border text-body-sm flex items-center gap-2 flex-wrap">
                       <span className="text-muted-foreground">📤</span>
-                      <button onClick={() => setDrawer({ kind: "so", soNumber: so.so_number })} className="font-mono text-accent hover:underline">{so.so_number}</button>
+                      <button onClick={() => setDrawer({ kind: "so", soNumber: so.so_number })} className="identifier text-foreground hover:underline">{so.so_number}</button>
                       <span className="font-medium">{so.customer_name}</span>
                       <span className="tabular-nums">{totalQty.toLocaleString()} units</span>
-                      <span className="font-mono text-[10px] text-muted-foreground">{so.invoice_number}</span>
+                      <span className="identifier text-caption text-muted-foreground">{so.invoice_number}</span>
                       <StatusBadge status={so.delivery_status === "delivered" ? "green" : so.delivery_status === "in_transit" ? "amber" : "gray"} label={so.delivery_status === "delivered" ? "Delivered" : so.delivery_status === "in_transit" ? "In Transit" : "Pending"} />
                       {so.dispatch_date && <span className="text-muted-foreground">{fmtDate(so.dispatch_date)}</span>}
                     </div>
                   );
                 })}
                 {/* Remaining stock */}
-                <div className="px-2.5 py-1.5 rounded-md border border-border bg-secondary/20 text-xs flex items-center gap-2">
+                <div className="px-2.5 py-1.5 rounded-lg border border-border bg-secondary/20 text-body-sm flex items-center gap-2">
                   <span>📍</span>
                   <span>Remaining: <strong className="tabular-nums">{selectedPB.quantity_remaining.toLocaleString()} {selectedPB.unit}</strong> in {selectedPB.warehouse} ({selectedPB.bin})</span>
                 </div>
@@ -617,13 +624,13 @@ export default function BatchTracking() {
       )}
 
       {/* Main Grid */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Batch Register Table */}
-        <div className="col-span-2 bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-3">
+        <div className="col-span-2 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead><tr className="bg-secondary/50 border-b border-border">
-                {["Batch", "Material", "Qty", "Mfg Date", "Expiry", "Warehouse", "Bin", "Formula Rev", "Inputs", "QC", "Age"].map(h =>
+            <table className="data-table w-full text-body-md">
+              <thead><tr className="border-b border-border">
+                {["Batch", "Material", "Qty", "Mfg date", "Expiry", "Warehouse", "Bin", "Formula rev", "Inputs", "QC", "Age"].map(h =>
                   <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
                 )}
               </tr></thead>
@@ -633,9 +640,9 @@ export default function BatchTracking() {
                   const inputCount = b.rm_consumption.length + b.pm_consumption.length;
                   const isContainment = b.qc_status === "Quarantine" || b.qc_status === "Failed";
                   return (
-                    <tr key={b.batch_number} className={`border-b border-border hover:bg-secondary/30 cursor-pointer ${selectedBatch === b.batch_number ? "bg-accent/5" : ""} ${isContainment ? "bg-danger/3" : ""}`}
+                    <tr key={b.batch_number} className={`border-b border-border hover:bg-sunken cursor-pointer ${selectedBatch === b.batch_number ? "bg-sunken" : ""} ${isContainment ? "bg-danger/3" : ""}`}
                       onClick={() => { setSelectedBatch(b.batch_number); setGrnSearchResult(null); }}>
-                      <td className="px-3 py-2 font-mono text-xs text-accent">{b.batch_number}</td>
+                      <td className="px-3 py-2 identifier text-body-sm text-foreground">{b.batch_number}</td>
                       <td className="px-3 py-2 font-medium">
                         <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "product", batchNumber: b.batch_number }); }} className="hover:underline text-left">{b.product_name}</button>
                       </td>
@@ -643,11 +650,11 @@ export default function BatchTracking() {
                       <td className="px-3 py-2">{fmtDate(b.production_date)}</td>
                       <td className="px-3 py-2">{fmtDate(b.expiry_date)}</td>
                       <td className="px-3 py-2">{b.warehouse}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{b.bin}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{b.formula_revision}</td>
+                      <td className="px-3 py-2 identifier text-body-sm">{b.bin}</td>
+                      <td className="px-3 py-2 identifier text-body-sm">{b.formula_revision}</td>
                       <td className="px-3 py-2">
                         <button onClick={e => { e.stopPropagation(); setSelectedBatch(b.batch_number); setGrnSearchResult(null); }}
-                          className="px-1.5 py-0.5 bg-accent/10 text-accent rounded text-[11px] font-semibold hover:bg-accent/20">{inputCount} inputs</button>
+                          className="px-1.5 py-0.5 bg-secondary text-foreground rounded text-caption font-semibold hover:bg-sunken">{inputCount} inputs</button>
                       </td>
                       <td className="px-3 py-2">
                         <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "qc", batchNumber: b.batch_number }); }}>
@@ -668,20 +675,20 @@ export default function BatchTracking() {
         </div>
 
         {/* Expiring Batches */}
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-4">
-          <h3 className="text-sm font-semibold mb-3 text-danger">Expiring Within 30 Days</h3>
+        <div>
+          <h3 className="text-body-md font-semibold mb-3 text-danger">Expiring within 30 days</h3>
           <div className="space-y-3">
             {expiringBatches.length > 0 ? expiringBatches.map(b => {
               const daysLeft = daysBetween(today, b.expiry_date);
               const value = b.quantity_remaining * 300; // approx
               return (
-                <div key={b.batch_number} className="p-2.5 rounded-md bg-danger/5 border border-danger/10 cursor-pointer" onClick={() => { setSelectedBatch(b.batch_number); setGrnSearchResult(null); }}>
-                  <div className="text-xs font-mono text-accent">{b.batch_number}</div>
-                  <div className="text-sm font-medium">{b.product_name}</div>
-                  <div className="text-xs text-muted-foreground">{b.quantity_remaining} {b.unit} · Expires {fmtDate(b.expiry_date)} · {daysLeft}d left · ~₹{(value / 100000).toFixed(2)}L</div>
+                <div key={b.batch_number} className="p-2.5 rounded-lg bg-danger/5 border border-danger/10 cursor-pointer" onClick={() => { setSelectedBatch(b.batch_number); setGrnSearchResult(null); }}>
+                  <div className="text-body-sm identifier text-foreground">{b.batch_number}</div>
+                  <div className="text-body-md font-medium">{b.product_name}</div>
+                  <div className="text-body-sm text-muted-foreground">{b.quantity_remaining} {b.unit} · Expires {fmtDate(b.expiry_date)} · {daysLeft}d left · ~₹{(value / 100000).toFixed(2)}L</div>
                 </div>
               );
-            }) : <div className="text-xs text-muted-foreground py-4 text-center">No batches expiring within 30 days</div>}
+            }) : <div className="text-body-sm text-muted-foreground py-4 text-center">No batches expiring within 30 days</div>}
           </div>
         </div>
       </div>

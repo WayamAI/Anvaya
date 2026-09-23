@@ -1,3 +1,5 @@
+@import "../styles/tokens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,321 +12,245 @@
   font-display: swap;
 }
 
-/* ============================================================================
-   DESIGN TOKENS — 2-tier architecture
-   ----------------------------------------------------------------------------
-   Tier 1  REFERENCE  raw palette values. What a colour *is*. Never used by a
-                      component directly.
-   Tier 2  SEMANTIC   role mappings. What a colour *does*. Components use only
-                      these (via the Tailwind utilities in tailwind.config.ts).
-
-   Dark-mode-first: the dark mapping is the default on :root. `html.light`
-   carries a provisional light mapping so components need no changes when light
-   mode is designed properly.
-   ============================================================================ */
-
-:root {
-  /* ---- TIER 1 — REFERENCE : neutral grayscale ------------------------- */
-  --ref-gray-0: #ffffff;
-  --ref-gray-50: #f4f4f4;
-  --ref-gray-100: #e5e5e5;
-  --ref-gray-200: #d4d4d4;
-  --ref-gray-300: #b8b8b8;
-  --ref-gray-400: #969696;
-  --ref-gray-500: #737373;
-  --ref-gray-600: #525252;
-  --ref-gray-700: #383838;
-  --ref-gray-800: #252525;
-  --ref-gray-850: #1c1c1c;
-  --ref-gray-900: #151515;
-  --ref-gray-925: #111111;
-  --ref-gray-950: #0b0b0b;
-  --ref-gray-975: #070707;
-  --ref-gray-1000: #000000;
-
-  /* ---- TIER 1 — REFERENCE : feedback --------------------------------- */
-  /* Stored as R G B channels so semantic tokens can carry an alpha slot —
-     this is what makes `bg-feedback-critical/35` work. Solid hex equivalents
-     are commented for readability. */
-  --ref-green-400: 79 193 110;   /* #4fc16e */
-  --ref-green-500: 49 163 84;    /* #31a354 */
-  --ref-blue-400: 76 154 255;    /* #4c9aff */
-  --ref-blue-500: 41 121 255;    /* #2979ff */
-  --ref-orange-400: 255 159 67;  /* #ff9f43 */
-  --ref-orange-500: 244 123 32;  /* #f47b20 */
-  --ref-red-400: 255 90 82;      /* #ff5a52 */
-  --ref-red-500: 232 59 54;      /* #e83b36 */
-  --ref-yellow-400: 244 201 76;  /* #f4c94c */
-  --ref-yellow-500: 217 168 30;  /* #d9a81e */
-
-}
-
-/*
-  Dark semantic mapping. Applied to :root (dark-mode-first) and re-declared on
-  .cc-root so that subtree stays dark even while the surrounding ERP app is in
-  light mode — next-themes puts `class="light"` on <html>, and custom
-  properties inherit, so an always-dark island has to restate them.
-*/
-:root,
-.cc-root {
-  /* ---- TIER 2 — SEMANTIC (dark) : page ------------------------------- */
-  --page-background: var(--ref-gray-1000);
-  --page-background-subtle: var(--ref-gray-975);
-
-  /* ---- TIER 2 — SEMANTIC (dark) : surface ---------------------------- */
-  --surface-primary: var(--ref-gray-950);
-  --surface-secondary: var(--ref-gray-925);
-  --surface-tertiary: var(--ref-gray-900);
-  --surface-elevated: var(--ref-gray-850);
-  --surface-hover: var(--ref-gray-850);
-  --surface-active: var(--ref-gray-800);
-  --surface-disabled: var(--ref-gray-950);
-
-  /* ---- TIER 2 — SEMANTIC (dark) : text ------------------------------- */
-  --text-primary: var(--ref-gray-50);
-  --text-secondary: var(--ref-gray-300);
-  --text-tertiary: var(--ref-gray-400);
-  --text-muted: var(--ref-gray-500);
-  --text-disabled: var(--ref-gray-600);
-  --text-on-color: var(--ref-gray-0);
-  --text-on-light: var(--ref-gray-950);
-
-  /* ---- TIER 2 — SEMANTIC (dark) : icon ------------------------------- */
-  --icon-primary: var(--ref-gray-200);
-  --icon-secondary: var(--ref-gray-400);
-  --icon-tertiary: var(--ref-gray-500);
-  --icon-muted: var(--ref-gray-600);
-  --icon-disabled: var(--ref-gray-700);
-  --icon-on-light: var(--ref-gray-950);
-
-  /* ---- TIER 2 — SEMANTIC (dark) : stroke ----------------------------- */
-  --stroke-subtle: rgba(255, 255, 255, 0.06);
-  --stroke-default: rgba(255, 255, 255, 0.1);
-  --stroke-strong: rgba(255, 255, 255, 0.16);
-  --stroke-hover: rgba(255, 255, 255, 0.22);
-  --stroke-focus: var(--ref-gray-200);
-
-  /* ---- TIER 2 — SEMANTIC (dark) : action ----------------------------- */
-  --action-primary: var(--ref-gray-50);
-  --action-primary-hover: var(--ref-gray-100);
-  --action-primary-active: var(--ref-gray-200);
-  --action-primary-text: var(--ref-gray-950);
-  --action-secondary: var(--surface-tertiary);
-  --action-secondary-hover: var(--surface-elevated);
-  --action-secondary-text: var(--text-primary);
-  --action-disabled: var(--surface-disabled);
-  --action-disabled-text: var(--text-disabled);
-
-  /* ---- TIER 2 — SEMANTIC (dark) : feedback --------------------------- */
-  --feedback-success: var(--ref-green-400);
-  --feedback-info: var(--ref-blue-400);
-  --feedback-warning: var(--ref-orange-400);
-  --feedback-critical: var(--ref-red-400);
-  --feedback-highlight: var(--ref-yellow-400);
-
-  /* Subtle fills derive from the same channels — one source of truth. */
-  --feedback-success-subtle: rgb(var(--feedback-success) / 0.12);
-  --feedback-info-subtle: rgb(var(--feedback-info) / 0.12);
-  --feedback-warning-subtle: rgb(var(--feedback-warning) / 0.12);
-  --feedback-critical-subtle: rgb(var(--feedback-critical) / 0.12);
-  --feedback-highlight-subtle: rgb(var(--feedback-highlight) / 0.12);
-}
-
-/*
-  Provisional light mapping. Not designed yet — the values exist so that
-  components written against semantic tokens keep working, and so the ERP
-  screens (which render light by default) keep their current appearance.
-*/
-html.light {
-  --page-background: var(--ref-gray-50);
-  --page-background-subtle: var(--ref-gray-0);
-
-  --surface-primary: var(--ref-gray-0);
-  --surface-secondary: var(--ref-gray-50);
-  --surface-tertiary: var(--ref-gray-100);
-  --surface-elevated: var(--ref-gray-0);
-  --surface-hover: var(--ref-gray-100);
-  --surface-active: var(--ref-gray-200);
-  --surface-disabled: var(--ref-gray-100);
-
-  --text-primary: var(--ref-gray-900);
-  --text-secondary: var(--ref-gray-600);
-  --text-tertiary: var(--ref-gray-500);
-  --text-muted: var(--ref-gray-500);
-  --text-disabled: var(--ref-gray-300);
-  --text-on-color: var(--ref-gray-0);
-  --text-on-light: var(--ref-gray-950);
-
-  --icon-primary: var(--ref-gray-700);
-  --icon-secondary: var(--ref-gray-500);
-  --icon-tertiary: var(--ref-gray-500);
-  --icon-muted: var(--ref-gray-400);
-  --icon-disabled: var(--ref-gray-300);
-
-  --stroke-subtle: rgba(0, 0, 0, 0.08);
-  --stroke-default: rgba(0, 0, 0, 0.12);
-  --stroke-strong: rgba(0, 0, 0, 0.18);
-  --stroke-hover: rgba(0, 0, 0, 0.24);
-  --stroke-focus: var(--ref-gray-700);
-
-  --action-primary: var(--ref-gray-900);
-  --action-primary-hover: var(--ref-gray-800);
-  --action-primary-active: var(--ref-gray-700);
-  --action-primary-text: var(--ref-gray-0);
-  --action-secondary: var(--ref-gray-100);
-  --action-secondary-hover: var(--ref-gray-200);
-
-  /* Chosen to sit within a hair of the ERP's existing success/warning hues,
-     so the 60+ existing `text-success` / `text-warning` call sites do not
-     visibly shift when these utilities start resolving here. */
-  --feedback-success: var(--ref-green-500);
-  --feedback-info: var(--ref-blue-500);
-  --feedback-warning: var(--ref-orange-500);
-  --feedback-critical: var(--ref-red-500);
-  --feedback-highlight: var(--ref-yellow-500);
-}
-
 @layer base {
   :root {
     color-scheme: light;
-    /* Clean neutral light theme */
-    --background: 0 0% 98%;
-    --foreground: 0 0% 15%;
+    /*
+      Light theme, mapped onto the shared reference ramp (styles/tokens.css).
 
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 15%;
+      The page is grey-100 and the surfaces that carry content — sidebar,
+      cards, panels, popovers — are pure white. Separation therefore comes
+      from the step between page and container rather than from a drawn line,
+      and the hairline that remains is a near-invisible 8% black.
+
+      The primary action is near-black, not orange. Orange is the brand mark
+      and the warning hue; spending it on every button leaves the one
+      chromatic value in the palette meaning nothing in particular.
+    */
+    --background: 0 0% 95%;          /* gray-100  #f2f2f2  surface/page */
+    --foreground: 0 0% 6%;           /* gray-950  #101010  text/primary */
+
+    --card: 0 0% 100%;               /* white              surface/container */
+    --card-foreground: 0 0% 6%;
+
+    /* Recessed fill for KPI tiles and inset panels. */
+    --surface-sunken: 0 0% 98%;      /* gray-50   #fafafa  surface/raised */
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 15%;
+    --popover-foreground: 0 0% 6%;
 
-    --primary: 24 100% 52%;
+    --primary: 0 0% 6%;              /* action/primary — near-black */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 15%;
+    --secondary: 0 0% 95%;           /* action/secondary */
+    --secondary-foreground: 0 0% 6%;
 
-    --muted: 0 0% 94%;
-    --muted-foreground: 0 0% 45%;
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 45%;    /* gray-550  #737373  text/tertiary */
 
-    --accent: 24 100% 52%;
-    --accent-foreground: 0 0% 100%;
+    /* Neutral: this is the hover fill for menu, select and command items. */
+    --accent: 0 0% 95%;
+    --accent-foreground: 0 0% 6%;
 
-    --destructive: 6 78% 57%;
+    --destructive: 357 66% 47%;      /* red-700    #c62830 */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 90%;
-    --input: 0 0% 90%;
-    --ring: 24 100% 52%;
+    --border: 0 0% 92%;              /* stroke/muted   ~8% black on white */
+    --input: 0 0% 86%;               /* stroke/default ~14% black on white */
+    --ring: 0 0% 6%;
 
     --radius: 0.5rem;
 
-    --success: 145 62% 42%;
+    --success: 152 45% 30%;          /* green-700  #2b7046 */
     --success-foreground: 0 0% 100%;
-    --warning: 37 90% 51%;
+    --warning: 20 86% 41%;           /* orange-700 #c1460f */
     --warning-foreground: 0 0% 100%;
-    --danger: 6 78% 57%;
+    --danger: 357 66% 47%;           /* red-700    #c62830 */
     --danger-foreground: 0 0% 100%;
 
-    /* Light sidebar */
+    /* The rail is a white container sitting on the grey page — the surface
+       step separates it, so it carries no border of its own. */
     --sidebar-bg: 0 0% 100%;
-    --sidebar-foreground: 0 0% 25%;
-    --sidebar-active: 24 100% 52%;
-    --sidebar-hover: 0 0% 96%;
-    --sidebar-section: 0 0% 45%;
-    --sidebar-border: 0 0% 90%;
+    --sidebar-foreground: 0 0% 27%;  /* gray-700  #464646  text/secondary */
+    --sidebar-active: 0 0% 6%;
+    --sidebar-hover: 0 0% 95%;
+    --sidebar-section: 0 0% 54%;     /* gray-500  #8a8a8a  text/quaternary */
+    --sidebar-border: 0 0% 92%;
 
     --sidebar-background: 0 0% 100%;
-    --sidebar-primary: 24 100% 52%;
+    --sidebar-primary: 0 0% 6%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 96%;
-    --sidebar-accent-foreground: 0 0% 20%;
-    --sidebar-ring: 24 100% 52%;
+    --sidebar-accent: 0 0% 95%;
+    --sidebar-accent-foreground: 0 0% 6%;
+    --sidebar-ring: 0 0% 6%;
 
-    --chart-1: 24 100% 52%;
-    --chart-2: 24 85% 42%;
-    --chart-3: 24 100% 68%;
-    --chart-4: 20 80% 48%;
-    --chart-5: 28 90% 60%;
+    /*
+      Charts draw from the feedback icon hues rather than from a single accent
+      plus greys: blue, green, orange, red, neutral, purple. Series that mean
+      different things are then distinguishable to a reader who cannot rely on
+      order alone, and a series that happens to be a warning is already the
+      warning colour.
+    */
+    --chart-1: 207 71% 44%;          /* blue-600   #2179be */
+    --chart-2: 145 48% 37%;          /* green-600  #318c54 */
+    --chart-3: 21 82% 48%;           /* orange-600 #e95d0f */
+    --chart-4: 357 81% 56%;          /* red-600    #e9343c */
+    --chart-5: 0 0% 38%;             /* gray-600   #626262 */
 
-    --chart-grid: 0 0% 90%;
-    --chart-axis: 0 0% 50%;
-    --chart-muted: 0 0% 80%;
+    --chart-grid: 0 0% 92%;
+    --chart-axis: 0 0% 54%;
+    --chart-muted: 0 0% 83%;
 
-    --ebom: 24 100% 52%;
+    /* Resolved chart values, read by lib/chart-colors so every chart follows
+       the active theme without a JS theme listener. */
+    --chart-primary-color: #2179be;
+    --chart-muted-color: #d4d4d4;
+    --chart-grid-color: #ebebeb;
+    --chart-axis-color: #8a8a8a;
+    --chart-series-1: #2179be;
+    --chart-series-2: #318c54;
+    --chart-series-3: #e95d0f;
+    --chart-series-4: #e9343c;
+    --chart-series-5: #626262;
+    --chart-series-6: #862aa3;
+    --chart-tooltip-bg: #ffffff;
+
+    /*
+      State badges.
+
+      Solid saturated fills with white text, every variant at the same weight,
+      so a status column reads as a row of labels rather than as some labels
+      and some washes.
+
+      The 600 step of each ramp: the brightest the fills can go while white
+      text stays legible on them. It is not a large margin — white on these
+      lands between 3.2:1 and 4.2:1, under the 4.5:1 that WCAG AA asks for at
+      12px — so if a contrast audit ever fails here, the fix is to drop each
+      value to its 700 step, which clears 5:1 across all five without changing
+      anything else about the badge.
+    */
+    --badge-critical-bg: 357 81% 56%;    /* red-600    #e9343c */
+    --badge-critical-fg: 0 0% 100%;
+    --badge-low-bg: 21 82% 48%;          /* orange-600 #e95d0f */
+    --badge-low-fg: 0 0% 100%;
+    --badge-ok-bg: 145 48% 37%;          /* green-600  #318c54 */
+    --badge-ok-fg: 0 0% 100%;
+    --badge-info-bg: 207 71% 44%;        /* blue-600   #2179be */
+    --badge-info-fg: 0 0% 100%;
+    --badge-neutral-bg: 0 0% 38%;        /* gray-600   #626262 */
+    --badge-neutral-fg: 0 0% 100%;
+
+    /* BOM lineage. A neutral hierarchy: darkest is the engineering master,
+       the derived views step back from it. */
+    --ebom: 0 0% 6%;
     --ebom-foreground: 0 0% 100%;
-    --mbom: 24 85% 42%;
+    --mbom: 0 0% 42%;
     --mbom-foreground: 0 0% 100%;
-    --sbom: 24 100% 68%;
+    --sbom: 0 0% 66%;
     --sbom-foreground: 0 0% 100%;
   }
 
   .dark {
     color-scheme: dark;
-    --background: 0 0% 7%;
-    --foreground: 0 0% 95%;
+    /*
+      The same roles inverted. The page drops to true black and containers
+      rise off it in three steps, so light and dark share one structure and
+      only the direction of the ramp changes.
+    */
+    --background: 0 0% 0%;           /* black              surface/page */
+    --foreground: 0 0% 98%;          /* gray-50   #fafafa  text/primary */
 
-    --card: 0 0% 11%;
-    --card-foreground: 0 0% 95%;
+    --card: 0 0% 6%;                 /* gray-950  #101010  surface/container */
+    --card-foreground: 0 0% 98%;
 
-    --popover: 0 0% 11%;
-    --popover-foreground: 0 0% 95%;
+    --surface-sunken: 0 0% 10%;      /* gray-900  #191919  surface/raised */
 
-    --primary: 24 100% 52%;
-    --primary-foreground: 0 0% 100%;
+    --popover: 0 0% 6%;
+    --popover-foreground: 0 0% 98%;
 
-    --secondary: 0 0% 18%;
-    --secondary-foreground: 0 0% 95%;
+    --primary: 0 0% 98%;             /* action/primary inverts to near-white */
+    --primary-foreground: 0 0% 0%;
 
-    --muted: 0 0% 16%;
-    --muted-foreground: 0 0% 65%;
+    --secondary: 0 0% 14%;           /* gray-850  #232323 */
+    --secondary-foreground: 0 0% 98%;
 
-    --accent: 24 100% 52%;
-    --accent-foreground: 0 0% 100%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 54%;    /* gray-500  #8a8a8a  text/tertiary */
 
-    --destructive: 6 78% 57%;
-    --destructive-foreground: 0 0% 100%;
+    --accent: 0 0% 14%;
+    --accent-foreground: 0 0% 98%;
 
-    --border: 0 0% 18%;
-    --input: 0 0% 20%;
-    --ring: 24 100% 52%;
+    --destructive: 357 100% 70%;     /* red-300    #ff969b */
+    --destructive-foreground: 0 0% 0%;
 
-    --success: 145 60% 45%;
-    --success-foreground: 0 0% 100%;
-    --warning: 40 95% 55%;
-    --warning-foreground: 0 0% 12%;
-    --danger: 6 78% 57%;
-    --danger-foreground: 0 0% 100%;
+    --border: 0 0% 13%;              /* stroke/muted   ~8% white on gray-950 */
+    --input: 0 0% 20%;               /* stroke/default ~14% white */
+    --ring: 0 0% 98%;
 
-    /* Dark sidebar */
-    --sidebar-bg: 0 0% 9%;
-    --sidebar-foreground: 0 0% 90%;
-    --sidebar-active: 24 100% 52%;
-    --sidebar-hover: 0 0% 16%;
-    --sidebar-section: 0 0% 55%;
-    --sidebar-border: 0 0% 18%;
+    --success: 141 45% 70%;          /* green-300  #8ed8a9 */
+    --success-foreground: 0 0% 0%;
+    --warning: 30 100% 70%;          /* orange-300 #ffb365 */
+    --warning-foreground: 0 0% 0%;
+    --danger: 357 100% 70%;          /* red-300    #ff969b */
+    --danger-foreground: 0 0% 0%;
 
-    --sidebar-background: 0 0% 9%;
-    --sidebar-primary: 24 100% 52%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 16%;
-    --sidebar-accent-foreground: 0 0% 90%;
-    --sidebar-ring: 24 100% 52%;
+    --sidebar-bg: 0 0% 6%;
+    --sidebar-foreground: 0 0% 83%;  /* gray-300  #d4d4d4  text/secondary */
+    --sidebar-active: 0 0% 98%;
+    --sidebar-hover: 0 0% 14%;
+    --sidebar-section: 0 0% 38%;     /* gray-600  #626262  text/quaternary */
+    --sidebar-border: 0 0% 13%;
 
-    --chart-1: 24 100% 58%;
-    --chart-2: 24 85% 50%;
-    --chart-3: 24 100% 72%;
-    --chart-4: 20 80% 55%;
-    --chart-5: 28 90% 65%;
+    --sidebar-background: 0 0% 6%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 0 0% 14%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-ring: 0 0% 98%;
 
-    --chart-grid: 0 0% 18%;
-    --chart-axis: 0 0% 55%;
-    --chart-muted: 0 0% 22%;
+    --chart-1: 202 78% 63%;          /* blue-400   #55b4eb */
+    --chart-2: 141 45% 57%;          /* green-400  #62c487 */
+    --chart-3: 30 100% 62%;          /* orange-400 #ff963d */
+    --chart-4: 357 100% 70%;         /* red-400    #ff646b */
+    --chart-5: 0 0% 69%;             /* gray-400   #afafaf */
 
-    --ebom: 24 100% 58%;
-    --ebom-foreground: 0 0% 100%;
-    --mbom: 24 85% 50%;
-    --mbom-foreground: 0 0% 100%;
-    --sbom: 24 100% 72%;
+    --chart-grid: 0 0% 13%;
+    --chart-axis: 0 0% 54%;
+    --chart-muted: 0 0% 27%;
+
+    --chart-primary-color: #55b4eb;
+    --chart-muted-color: #3b3b3b;
+    --chart-grid-color: #232323;
+    --chart-axis-color: #8a8a8a;
+    --chart-series-1: #55b4eb;
+    --chart-series-2: #62c487;
+    --chart-series-3: #ff963d;
+    --chart-series-4: #ff646b;
+    --chart-series-5: #afafaf;
+    --chart-series-6: #b65bd8;
+    --chart-tooltip-bg: #101010;
+
+    /*
+      The same solid fills. They hold on black without restating, and keeping
+      one set across both themes means a badge is the same colour wherever a
+      screenshot of it ends up.
+    */
+    --badge-critical-bg: 357 81% 56%;    /* red-600    #e9343c */
+    --badge-critical-fg: 0 0% 100%;
+    --badge-low-bg: 21 82% 48%;          /* orange-600 #e95d0f */
+    --badge-low-fg: 0 0% 100%;
+    --badge-ok-bg: 145 48% 37%;          /* green-600  #318c54 */
+    --badge-ok-fg: 0 0% 100%;
+    --badge-info-bg: 207 71% 44%;        /* blue-600   #2179be */
+    --badge-info-fg: 0 0% 100%;
+    --badge-neutral-bg: 0 0% 38%;        /* gray-600   #626262 */
+    --badge-neutral-fg: 0 0% 100%;
+
+    --ebom: 0 0% 98%;
+    --ebom-foreground: 0 0% 0%;
+    --mbom: 0 0% 62%;
+    --mbom-foreground: 0 0% 8%;
+    --sbom: 0 0% 40%;
     --sbom-foreground: 0 0% 100%;
   }
 }
@@ -335,7 +261,36 @@ html.light {
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background antialiased;
+    color: hsl(var(--sidebar-foreground));
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: -0.01em;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+
+  /*
+    Icon weight.
+
+    lucide ships each glyph with stroke-width="2" as a presentation attribute,
+    which a stylesheet outranks. 1.75 is the weight the rest of the system is
+    drawn at: at 2 the icons sit heavier than the type beside them and the
+    rail reads as a row of bold marks against regular-weight labels.
+  */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+
+  /*
+    Headings inherit Geist. Michroma is opted into deliberately, through
+    `font-display` on a page title or a headline figure, rather than applied
+    to every h1..h6 — a section heading three words long reads as a label,
+    and setting those in a wide display face makes a dense screen shout.
+  */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -353,8 +308,131 @@ html.light {
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
-  .font-michroma {
-    font-family: "Michroma", sans-serif;
+
+  /* The wordmark face. Michroma is display-only — never body, never nav. */
+  .font-brand {
+    font-family: var(--font-brand);
+    letter-spacing: 0.02em;
+  }
+
+  /*
+    Lot numbers, GRNs, serials and part codes.
+
+    These were set in the OS monospace stack, which put a third typeface on
+    screen. Geist's tabular figures give the same column alignment that made
+    mono worth having, and a little extra tracking keeps a string like
+    LOT-2026-0189 scannable — so identifiers stay legible as identifiers
+    without leaving the two-face system.
+  */
+  .identifier {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+
+  /*
+    The eyebrow: the small label above a figure, over a section, and in the
+    header cell of a data table.
+
+    One recipe for all three, so a KPI caption, a section label and a column
+    heading are visibly the same kind of thing. What separates it from the
+    content it labels is size, weight and tone — 12px medium in the quietest
+    text colour — not capitalisation. The product sets every label in sentence
+    case, and a shouted caption above a sentence-case figure reads as two
+    different systems on one screen.
+
+    (The class name predates the change and is left alone: renaming it would
+    touch ten call sites for no behavioural gain. It is the eyebrow, not
+    small caps.)
+  */
+  .label-caps {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: hsl(var(--sidebar-section));
+  }
+}
+
+/*
+  Radix renders popper content inside a positioning wrapper it owns, which no
+  class from the component can reach. That wrapper is sized to the bubble, so
+  a tooltip beside the collapsed nav rail keeps swallowing clicks aimed at the
+  page underneath even once the bubble itself is inert.
+
+  Scoped with :has() to wrappers holding a tooltip: popovers, menus and selects
+  are interactive and must keep their pointer events.
+*/
+[data-radix-popper-content-wrapper]:has(> [data-tooltip]) {
+  pointer-events: none;
+}
+
+@layer components {
+  /* ------------------------------------------------------------------------
+     Surfaces
+
+     One border weight, one radius, no shadow. Depth comes from the hairline
+     and the surrounding whitespace, which is what keeps a dense ERP screen
+     from reading as a pile of cards.
+     ------------------------------------------------------------------------ */
+  .surface-panel {
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+  }
+
+  /* Recessed variant, for KPI tiles and read-only insets. */
+  .surface-sunken {
+    background-color: hsl(var(--surface-sunken));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+  }
+
+  /* Panel header: title, optional description, optional right-aligned action,
+     separated from the body by the same hairline used everywhere else. */
+  .panel-head {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
+  /* The pill. Every control that is not a text field — filter chips, toolbar
+     buttons, segmented toggles, selects — is a 32px fully-rounded pill on the
+     action surface with a hairline. One shape, so a row of mixed controls
+     reads as a single instrument rather than five borrowed ones. */
+  .control-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 2rem;
+    padding: 0 0.75rem;
+    border-radius: 9999px;
+    border: 1px solid hsl(var(--border));
+    background-color: hsl(var(--secondary));
+    color: hsl(var(--sidebar-foreground));
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+  }
+  .control-pill:hover:not(:disabled) {
+    border-color: hsl(var(--input));
+    background-color: hsl(var(--surface-sunken));
+    color: hsl(var(--foreground));
+  }
+
+  /* An advisory strip. The one place a tinted background is allowed, and it
+     stays a wash rather than a block of colour. */
+  .notice-strip {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--feedback-warning-stroke);
+    background-color: var(--feedback-warning-background);
+    color: var(--feedback-warning-content);
+    font-size: 14px;
+    line-height: 20px;
   }
 }
 
@@ -369,12 +447,12 @@ html.light {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
+  background: var(--surface-scroll-bar);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+  background: var(--ref-gray-700);
 }
 
 /* Animation keyframes */
@@ -454,30 +532,24 @@ html.light {
 
   /*
     Always-dark island. The dark semantic mapping is restated on this selector
-    (see the `:root, .cc-root` block above) so this subtree stays dark even
-    while the surrounding ERP app is in light mode.
-
-    What remains below is the non-colour token family — radii, shadows and
-    easing. Colours are consumed directly from the Tier-2 semantic tokens.
+    in tokens.css, so this subtree stays dark while the surrounding ERP app
+    renders light. What remains here is the non-colour token family.
   */
 
-  /* Radii ----------------------------------------------------------------- */
   --cc-radius-sm: 6px;
   --cc-radius-md: 10px;
   --cc-radius-lg: 14px;
   --cc-radius-xl: 16px;
   --cc-radius-pill: 999px;
 
-  /* Shadows — restrained, never glowing ----------------------------------- */
   --cc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --cc-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35);
   --cc-shadow-panel: 0 8px 30px rgba(0, 0, 0, 0.45);
 
-  /* Motion ---------------------------------------------------------------- */
   --cc-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --cc-duration: 180ms;
 
-  background-color: var(--page-background);
+  background-color: var(--surface-page-background);
   color: var(--text-primary);
 }
 
@@ -507,6 +579,122 @@ html.light {
 }
 
 @layer components {
+  /* Baseline table treatment, matching the DataTable component. Applied to
+     tables that have not been migrated to the component yet, so density and
+     hairlines are identical across the app either way. */
+  /*
+     A table is a container, so it takes the container fill and sits on the
+     page the way a card does. Full-bleed rather than rounded: `overflow:
+     hidden` cannot clip a collapsed-border table, and `border-collapse:
+     separate` — the only way to make a radius clip — stops row borders from
+     rendering at all, which is the whole separator system. A band of white
+     with a hairline top and bottom is what the reference draws anyway.
+  */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    background-color: hsl(var(--card));
+    border-top: 1px solid hsl(var(--border));
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .data-table :where(thead tr) {
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  /*
+     Sticky headers need something to stick inside.
+
+     Each hand-rolled table sits in a wrapper that sets `overflow-x: auto` for
+     the sideways-scroll guard — and once one axis is non-visible CSS computes
+     the other as `auto` too, so that wrapper, not the page, becomes the
+     scrolling ancestor. With no height of its own it never scrolls, and the
+     header inside it has a zero-length range to stick within: it just leaves
+     with the page.
+
+     Capping the wrapper gives the header that range. `max-height` only caps,
+     so a short table is unaffected and keeps its natural height.
+  */
+  div:has(> .data-table:only-child) {
+    max-height: 70vh;
+    overflow: auto;
+  }
+
+  /*
+     The header sticks to the top of the scrolling region rather than leaving
+     with the first screenful. Past about twenty rows a column heading is the
+     only thing that says what a number means, and scrolling it away is what
+     makes a long table unreadable.
+
+     It carries its own bottom rule: a border on the row travels with the
+     cells in some engines and leaves the sticky band floating.
+  */
+  .data-table :where(th) {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 0.5rem 0.75rem;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: hsl(var(--sidebar-section));
+    white-space: nowrap;
+    background-color: hsl(var(--card));
+    box-shadow: inset 0 -1px 0 0 hsl(var(--border));
+  }
+
+  /*
+     Rows breathe a little more than they did — 36px rather than 32px. The
+     figures were legible at the tighter setting but a dense screen of them
+     was hard to track across, and four pixels buys the eye a line to follow.
+  */
+  .data-table :where(td) {
+    padding: 0.625rem 0.75rem;
+    font-size: 12px;
+    line-height: 16px;
+    color: hsl(var(--sidebar-foreground));
+    /* A long unbroken identifier should wrap rather than widen the table
+       past its container and force the page to scroll sideways. */
+    overflow-wrap: anywhere;
+  }
+
+  /* The outermost cells sit against the container edge otherwise, which reads
+     as a cropping error rather than as a margin. */
+  .data-table :where(th:first-child),
+  .data-table :where(td:first-child) {
+    padding-left: 1rem;
+  }
+  .data-table :where(th:last-child),
+  .data-table :where(td:last-child) {
+    padding-right: 1rem;
+  }
+
+  .data-table :where(tbody tr) {
+    border-bottom: 1px solid hsl(var(--border));
+    transition: background-color 150ms ease;
+  }
+  .data-table :where(tbody tr:hover) {
+    background-color: hsl(var(--surface-sunken));
+  }
+  /* Master–detail tables mark the row whose detail is on screen. A step
+     darker than hover, so the two states are never confused. */
+  .data-table :where(tbody tr[aria-selected="true"]),
+  .data-table :where(tbody tr.is-selected) {
+    background-color: hsl(var(--secondary));
+    color: hsl(var(--foreground));
+  }
+  .data-table :where(tbody tr:last-child) {
+    border-bottom: 0;
+  }
+
+  /* Numeric columns line up on the decimal only if they share a figure width;
+     this is the opt-in for a hand-rolled table's number cells. */
+  .data-table :where(td.num),
+  .data-table :where(th.num) {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
   /* Quieter cousin of the map plate, for small preview boxes where the survey
      grid would otherwise read as a table. */
   .cc-plate {

@@ -1,5 +1,6 @@
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { CHART_COLORS, SERIES } from "@/lib/chart-colors";
+import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE } from "@/lib/chart-colors";
+import { PageIcon } from "@/components/app/page-icon";
 
 const invByCategory = [
   { name: "Polymers", value: 38 }, { name: "Chemicals", value: 28 },
@@ -42,70 +43,77 @@ const topVendorSpend = [
 
 export default function BIDashboard() {
   return (
-    <div className="p-6 space-y-6">
-      <h2 className="text-lg font-semibold animate-fade-in-up">Business Intelligence Dashboard</h2>
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Business intelligence dashboard</span>
+        </h1>
 
-      <div className="animate-fade-in-up stagger-1">
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Inventory Health</h3>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="bg-card rounded-lg border border-border p-4">
-            <h4 className="text-xs font-medium text-muted-foreground mb-2">Inventory Value by Category</h4>
-            <ResponsiveContainer width="100%" height={180}>
-              <PieChart><Pie data={invByCategory} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" label={({ name, value }) => `${name}: ${value}%`} labelLine={false}>
+      <div >
+        <h3 className="label-caps mb-3 break-words">Inventory health</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 [&>div]:min-w-0">
+          <div>
+            <h4 className="mb-2 text-body-sm font-medium text-muted-foreground break-words">Inventory value by category</h4>
+            <ResponsiveContainer width="100%" height={220} className="[&_.recharts-pie-label-text]:text-[11px]">
+              <PieChart><Pie data={invByCategory} isAnimationActive={false} cx="50%" cy="50%" innerRadius={30} outerRadius={44} dataKey="value" label={({ name, value }) => `${name}: ${value}%`} labelLine={false}>
                 {invByCategory.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
-              </Pie><Tooltip /></PieChart>
+              </Pie><Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} /></PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="bg-card rounded-lg border border-border p-4">
-            <h4 className="text-xs font-medium text-muted-foreground mb-2">ABC Analysis</h4>
-            <ResponsiveContainer width="100%" height={180}>
-              <PieChart><Pie data={abcData} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ name, value }) => `${name}: ${value}%`}>
+          <div>
+            <h4 className="mb-2 text-body-sm font-medium text-muted-foreground break-words">ABC analysis</h4>
+            <ResponsiveContainer width="100%" height={220} className="[&_.recharts-pie-label-text]:text-[11px]">
+              <PieChart><Pie data={abcData} isAnimationActive={false} cx="50%" cy="50%" outerRadius={46} dataKey="value" label={({ name, value }) => `${name}: ${value}%`}>
                 {abcData.map((_, i) => <Cell key={i} fill={ABC_COLORS[i]} />)}
-              </Pie><Tooltip /></PieChart>
+              </Pie><Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} /></PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="bg-card rounded-lg border border-border p-4">
-            <h4 className="text-xs font-medium text-muted-foreground mb-2">Dead Stock Trend (₹L)</h4>
+          <div>
+            <h4 className="mb-2 text-body-sm font-medium text-muted-foreground break-words">Dead stock trend (₹L)</h4>
             <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={deadStock}>
+              <AreaChart data={deadStock} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-                <Area type="monotone" dataKey="value" fill={`${CHART_COLORS.primary}15`} stroke={CHART_COLORS.primary} strokeWidth={2} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} minTickGap={0} tickMargin={6} />
+                <YAxis tick={{ fontSize: 10 }} width={34} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
+                <Area type="monotone" dataKey="value" fill={CHART_COLORS.primary} fillOpacity={0.12} stroke={CHART_COLORS.primary} strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
       </div>
 
-      <div className="animate-fade-in-up stagger-2">
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Production & Procurement</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-card rounded-lg border border-border p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-xs font-medium text-muted-foreground">Schedule Adherence (12 Weeks)</h4>
-              <span className="text-xs font-medium text-success">Savings YTD: ₹18.4L</span>
+      <div >
+        <h3 className="label-caps mb-3 break-words">Production & procurement</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 [&>div]:min-w-0">
+          <div>
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <h4 className="min-w-0 text-body-sm font-medium text-muted-foreground">Schedule adherence (12 weeks)</h4>
+              <span className="shrink-0 whitespace-nowrap text-body-sm font-medium text-success">Savings YTD: ₹18.4L</span>
             </div>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={scheduleAdherence}>
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={scheduleAdherence} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-                <XAxis dataKey="week" tick={{ fontSize: 10 }} />
-                <YAxis domain={[80, 100]} tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} minTickGap={0} tickMargin={6} />
+                <YAxis domain={[80, 100]} tick={{ fontSize: 10 }} width={34} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
                 <Line type="monotone" dataKey="adherence" stroke={CHART_COLORS.primary} strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="bg-card rounded-lg border border-border p-4">
-            <h4 className="text-xs font-medium text-muted-foreground mb-2">Spend by Vendor (₹L, Top 10)</h4>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={topVendorSpend} layout="vertical">
+          <div>
+            <h4 className="mb-2 text-body-sm font-medium text-muted-foreground break-words">Spend by vendor (₹L, top 10)</h4>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={topVendorSpend} layout="vertical" margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-                <XAxis type="number" tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={65} />
-                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-                <Bar dataKey="spend" fill={CHART_COLORS.primary} radius={[0, 3, 3, 0]} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickMargin={6} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={76} interval={0} />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
+                <Bar dataKey="spend" radius={[0, 3, 3, 0]}>
+                  {topVendorSpend.map((_, i) => (
+                    <Cell key={i} fill={i === 0 ? CHART_COLORS.primary : CHART_COLORS.muted} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>

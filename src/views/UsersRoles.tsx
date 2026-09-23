@@ -1,5 +1,8 @@
 import StatusBadge from "@/components/StatusBadge";
-import { Users, Shield } from "lucide-react";
+import { PageHeader } from "@/components/app/page-header";
+import { Section } from "@/components/app/section";
+import { DataTable, type Column } from "@/components/app/data-table";
+import { EmptyState } from "@/components/app/empty-state";
 
 const users = [
   { name: "Rajesh Kumar", email: "rajesh.kumar@matrixops.in", role: "Admin", dept: "Operations", lastLogin: "23 Mar 2026, 08:15", status: "Active" },
@@ -25,46 +28,47 @@ const roles = [
 
 const roleColors: Record<string, "green" | "amber" | "red" | "blue"> = { Admin: "red", Planner: "blue", Procurement: "amber", Operations: "green" };
 
+type User = (typeof users)[number];
+
 export default function UsersRoles() {
+  const columns: Column<User>[] = [
+    { key: "name", header: "Name", value: u => u.name, cell: u => <span className="font-medium">{u.name}</span> },
+    { key: "email", header: "Email", value: u => u.email, cell: u => <span className="text-muted-foreground">{u.email}</span> },
+    { key: "role", header: "Role", width: "w-[130px]", value: u => u.role, cell: u => <StatusBadge status={roleColors[u.role]} label={u.role} /> },
+    { key: "dept", header: "Department", width: "w-[160px]", value: u => u.dept, cell: u => u.dept },
+    { key: "lastLogin", header: "Last login", width: "w-[170px]", value: u => u.lastLogin, cell: u => <span className="whitespace-nowrap">{u.lastLogin}</span> },
+    { key: "status", header: "Status", width: "w-[110px]", value: u => u.status, cell: u => <StatusBadge status={u.status === "Active" ? "green" : "gray"} label={u.status} /> },
+  ];
+
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Users & Roles</h2>
+    <div className="px-6 py-5">
+      <PageHeader title="Users & roles" description={`${users.length} users across ${roles.length} roles`} />
 
-      </div>
-
-      <div className="grid grid-cols-4 gap-3 animate-fade-in-up stagger-1">
-        {roles.map((r, i) => (
-          <div key={i} className="bg-card rounded-lg border border-border p-3">
-            <div className="flex items-center justify-between mb-1">
-              <StatusBadge status={roleColors[r.role]} label={r.role} />
-              <span className="text-lg font-bold tabular-nums">{r.users}</span>
+      <Section title="Roles" className="mb-8">
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+          {roles.map(r => (
+            <div key={r.role} className="border-t border-border pt-3">
+              <dt className="flex items-center justify-between">
+                <StatusBadge status={roleColors[r.role]} label={r.role} />
+                <span className="text-heading-sm tabular-nums text-foreground">{r.users}</span>
+              </dt>
+              <dd className="mt-1.5 text-body-sm text-muted-foreground">{r.permissions}</dd>
             </div>
-            <p className="text-[11px] text-muted-foreground mt-1">{r.permissions}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </dl>
+      </Section>
 
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-2">
-        <table className="w-full text-[13px]">
-          <thead><tr className="bg-secondary/50 border-b border-border">
-            {["Name", "Email", "Role", "Department", "Last Login", "Status"].map(h =>
-              <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {users.map((u, i) => (
-              <tr key={i} className="border-b border-border hover:bg-secondary/30">
-                <td className="px-3 py-2 font-medium">{u.name}</td>
-                <td className="px-3 py-2 text-muted-foreground">{u.email}</td>
-                <td className="px-3 py-2"><StatusBadge status={roleColors[u.role]} label={u.role} /></td>
-                <td className="px-3 py-2">{u.dept}</td>
-                <td className="px-3 py-2">{u.lastLogin}</td>
-                <td className="px-3 py-2"><StatusBadge status={u.status === "Active" ? "green" : "gray"} label={u.status} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Section title="Users">
+        <DataTable
+          columns={columns}
+          rows={users}
+          rowKey={u => u.email}
+          name="Users"
+          searchable
+          exportable
+          empty={<EmptyState title="No users" description="No accounts match this view." />}
+        />
+      </Section>
     </div>
   );
 }

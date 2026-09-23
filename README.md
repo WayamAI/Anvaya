@@ -1,6 +1,6 @@
-# MatrixOps — Production Planning
+# Anvaya — Production Planning
 
-A material planning & production ERP dashboard built for Wayam AI: MRP runs, BOM management, inventory, purchasing, demand forecasting, and analytics, all in one app.
+A material planning & production ERP dashboard: MRP runs, BOM management, inventory, purchasing, demand forecasting, and analytics, all in one app.
 
 **Live:** https://production-planning-six.vercel.app
 
@@ -37,7 +37,7 @@ npm run test:watch    # run unit tests in watch mode
 
 ```
 src/
-  assets/         Wayam AI logos and other static assets
+  assets/         Anvaya logos and other static assets
   components/
     auth/          Route guard (RequireAuth)
     layout/        AppLayout, AppHeader, AppSidebar

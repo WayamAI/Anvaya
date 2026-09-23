@@ -1,16 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { Menu, PanelRight, X } from "lucide-react";
-import { ActionQueue } from "./action-queue";
-import { CommandHeader } from "./command-header";
 import { CommandRail } from "./command-rail";
-import { ExceptionPanel } from "./exception-panel";
-import { HealthScoreCard } from "./health-score-card";
-import { PlantStage } from "./plant-stage";
+import { IncidentPanel } from "@/components/dashboard/incident-panel";
+import { ActionQueue } from "@/components/dashboard/action-queue";
+import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { HealthScoreCard } from "@/components/dashboard/health-score-card";
+import { MapStage } from "@/components/dashboard/map-stage";
+import { IconButton } from "@/components/ui/icon-button";
 import { RecentActivity } from "./recent-activity";
-import { IconButton } from "./ui/icon-button";
-import { activeException, type ActionItem } from "@/lib/command-center-data";
+import {
+  actionQueue,
+  activeException,
+  assetHealth,
+  healthScore,
+  plantMapMarkers,
+  queueFilters,
+  type ActionItem,
+} from "@/lib/command-center-data";
 import { cn } from "@/lib/utils";
 
 /**
@@ -20,6 +27,16 @@ import { cn } from "@/lib/utils";
  * md .. xl   : rail | main, details panel as a right-hand overlay drawer
  * below md   : rail becomes an overlay drawer, content stacks, panel is full-screen
  */
+const healthCardProps = {
+  score: healthScore,
+  delta: 1.2,
+  segments: [
+    { tone: "healthy" as const, label: "Healthy", value: assetHealth.healthy },
+    { tone: "warning" as const, label: "Warning", value: assetHealth.warning },
+    { tone: "critical" as const, label: "Critical", value: assetHealth.critical },
+  ],
+};
+
 export function DashboardShell() {
   const [selectedId, setSelectedId] = useState<string>(activeException.id);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -55,44 +72,60 @@ export function DashboardShell() {
         <div className="flex items-start justify-between gap-3 px-4 pt-5 sm:px-6">
           <div className="flex items-start gap-3">
             <IconButton
+              icon="controls"
               label="Open navigation"
               size="sm"
-              variant="surface"
+              variant="subtle"
               className="mt-1 md:hidden"
               onClick={() => setRailOpen(true)}
-            >
-              <Menu className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </IconButton>
-            <CommandHeader title="Dashboard" breadcrumb="Dashboard" />
+            />
+            <DashboardHeader title="Dashboard" breadcrumb="Dashboard" />
           </div>
 
           <IconButton
+            icon="layers"
             label="Open exception details"
             size="sm"
-            variant="surface"
+            variant="subtle"
             className="mt-1 xl:hidden"
             onClick={() => setPanelOpen(true)}
-          >
-            <PanelRight className="h-3.5 w-3.5" strokeWidth={1.75} />
-          </IconButton>
+          />
         </div>
 
         <main className="flex flex-col gap-3 px-4 py-4 sm:px-6">
-          <PlantStage className="h-[300px] shrink-0 lg:h-[368px]">
-            <HealthScoreCard className="absolute left-4 top-4 hidden sm:block" />
-          </PlantStage>
+          <MapStage
+            markers={plantMapMarkers}
+            label="Plant map"
+            className="h-[300px] shrink-0 lg:h-[368px]"
+          >
+            <HealthScoreCard {...healthCardProps} className="absolute left-4 top-4 hidden sm:block" />
+          </MapStage>
 
           {/* Below sm the card cannot float without covering the map. */}
-          <HealthScoreCard className="w-full sm:hidden" />
+          <HealthScoreCard {...healthCardProps} className="w-full sm:hidden" />
 
-          <ActionQueue selectedId={selectedId} onSelect={handleSelect} />
+          <ActionQueue
+            items={actionQueue}
+            filters={queueFilters}
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            subjectLabel="Asset"
+            assigneeLabel="Operator"
+          />
           <RecentActivity />
         </main>
       </div>
 
       {/* Details panel — persistent at xl, overlay below. */}
       <div className="hidden w-[320px] shrink-0 xl:block">
-        <ExceptionPanel />
+        <IncidentPanel
+            incident={activeException}
+            personLabel="Operator"
+            assistLabel="AI Planner is active"
+            detectedLabel="Exception detected"
+            primaryAction="Confirm line stop"
+            secondaryActions={["View asset", "Raise work order"]}
+          />
       </div>
 
       {panelOpen && (
@@ -108,7 +141,15 @@ export function DashboardShell() {
               "sm:w-[340px]",
             )}
           >
-            <ExceptionPanel onClose={() => setPanelOpen(false)} />
+            <IncidentPanel
+              incident={activeException}
+              personLabel="Operator"
+              assistLabel="AI Planner is active"
+              detectedLabel="Exception detected"
+              primaryAction="Confirm line stop"
+              secondaryActions={["View asset", "Raise work order"]}
+              onClose={() => setPanelOpen(false)}
+            />
           </div>
         </div>
       )}

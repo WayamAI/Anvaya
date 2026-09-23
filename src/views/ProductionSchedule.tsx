@@ -1,6 +1,8 @@
 import { useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
 
+import { btnLink, btnSecondarySm } from "@/components/app/controls";
+import { PageIcon } from "@/components/app/page-icon";
 const orders = [
   { wo: "WO-2026-0847", product: "Industrial Cleaner 5L", batch: "2,000", start: "24 Mar, 08:00", end: "24 Mar, 16:00", line: "Line 3", material: "green" as const, status: "Confirmed" },
   { wo: "WO-2026-0848", product: "Floor Polish 1L", batch: "5,000", start: "24 Mar, 09:00", end: "25 Mar, 12:00", line: "Line 1", material: "amber" as const, status: "Confirmed" },
@@ -45,28 +47,31 @@ export default function ProductionSchedule() {
   const [view, setView] = useState<"gantt" | "list">("gantt");
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
+    <div className="px-6 py-5 space-y-6">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold">Production Schedule</h2>
-          <span className="text-xs text-muted-foreground">Last updated: 2 minutes ago</span>
+          <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Production schedule</span>
+        </h1>
+          <span className="text-body-sm text-muted-foreground">Last updated: 2 minutes ago</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-secondary rounded-lg p-0.5">
-            <button onClick={() => setView("gantt")} className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === "gantt" ? "bg-card shadow-sm" : ""}`}>Gantt</button>
-            <button onClick={() => setView("list")} className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === "list" ? "bg-card shadow-sm" : ""}`}>List</button>
+            <button onClick={() => setView("gantt")} className={`rounded-[6px] px-3 py-1 text-body-sm font-medium transition-colors ${view === "gantt" ? "bg-card text-foreground shadow-[0_0_0_1px_hsl(var(--border))]" : "text-muted-foreground hover:text-foreground"}`}>Gantt</button>
+            <button onClick={() => setView("list")} className={`rounded-[6px] px-3 py-1 text-body-sm font-medium transition-colors ${view === "list" ? "bg-card text-foreground shadow-[0_0_0_1px_hsl(var(--border))]" : "text-muted-foreground hover:text-foreground"}`}>List</button>
           </div>
-          <button className="h-8 px-3 bg-card border border-border rounded-md text-xs font-medium hover:bg-secondary">Refresh</button>
+          <button className={btnSecondarySm}>Refresh</button>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="col-span-3">
           {view === "gantt" ? (
-            <div className="bg-card rounded-lg border border-border p-4 animate-fade-in">
+            <div>
               <div className="flex mb-3">
                 <div className="w-20" />
-                <div className="flex-1 flex text-[10px] text-muted-foreground">
+                <div className="flex-1 flex text-caption text-muted-foreground">
                   {["24 Mar", "25 Mar", "26 Mar", "27 Mar", "28 Mar", "29 Mar", "30 Mar"].map((d) => (
                     <div key={d} className="flex-1 border-l border-border pl-1">{d}</div>
                   ))}
@@ -74,12 +79,12 @@ export default function ProductionSchedule() {
               </div>
               {ganttLines.map((line) => (
                 <div key={line.name} className="flex items-center mb-2">
-                  <div className="w-20 text-xs font-medium text-muted-foreground">{line.name}</div>
+                  <div className="w-20 text-body-sm font-medium text-muted-foreground">{line.name}</div>
                   <div className="flex-1 h-8 bg-secondary/50 rounded relative">
                     {line.orders.map((o, i) => (
                       <div
                         key={i}
-                        className={`absolute top-1 h-6 rounded ${o.color} flex items-center px-1.5 text-[10px] font-medium text-primary-foreground truncate`}
+                        className={`absolute top-1 h-6 rounded ${o.color} flex items-center px-1.5 text-caption font-medium text-primary-foreground truncate`}
                         style={{ left: `${o.start}%`, width: `${o.width}%` }}
                         title={o.product}
                       >
@@ -91,19 +96,19 @@ export default function ProductionSchedule() {
               ))}
             </div>
           ) : (
-            <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in">
-              <table className="w-full text-[13px]">
+            <div className="overflow-x-auto">
+              <table className="data-table w-full text-body-md">
                 <thead>
-                  <tr className="bg-secondary/50 border-b border-border">
-                    {["Work Order", "Product", "Batch Size", "Start", "End", "Line", "Material", "Status", "Actions"].map((h) => (
+                  <tr className="border-b border-border">
+                    {["Work order", "Product", "Batch size", "Start", "End", "Line", "Material", "Status", "Actions"].map((h) => (
                       <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {orders.map((o, i) => (
-                    <tr key={i} className="border-b border-border hover:bg-secondary/30 transition-colors">
-                      <td className="px-3 py-2 font-mono text-xs">{o.wo}</td>
+                    <tr key={i} className="border-b border-border hover:bg-sunken transition-colors">
+                      <td className="px-3 py-2 identifier text-body-sm">{o.wo}</td>
                       <td className="px-3 py-2 font-medium">{o.product}</td>
                       <td className="px-3 py-2 tabular-nums">{o.batch}</td>
                       <td className="px-3 py-2">{o.start}</td>
@@ -113,7 +118,7 @@ export default function ProductionSchedule() {
                         <span className={`inline-block w-2.5 h-2.5 rounded-full ${o.material === "green" ? "bg-primary" : o.material === "amber" ? "bg-primary/50" : "bg-destructive"}`} />
                       </td>
                       <td className="px-3 py-2"><StatusBadge status={o.status === "Confirmed" ? "green" : o.status === "At Risk" ? "red" : "blue"} label={o.status} /></td>
-                      <td className="px-3 py-2"><button className="text-xs text-accent hover:underline">Edit</button></td>
+                      <td className="px-3 py-2"><button className={btnLink}>Edit</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -123,16 +128,16 @@ export default function ProductionSchedule() {
         </div>
 
         {/* Constraints Panel */}
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-1">
-          <h3 className="text-sm font-semibold mb-3">Active Constraints (3)</h3>
+        <div>
+          <h3 className="text-body-md font-semibold mb-3">Active constraints (3)</h3>
           <div className="space-y-3">
             {constraints.map((c, i) => (
-              <div key={i} className="p-2.5 rounded-md bg-secondary/50 border border-border">
+              <div key={i} className="p-2.5 rounded-lg bg-secondary/50 border border-border">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-medium">{c.type}</span>
+                  <span className="text-body-sm font-medium">{c.type}</span>
                   <StatusBadge status={c.severity === "High" ? "red" : c.severity === "Medium" ? "amber" : "green"} label={c.severity} />
                 </div>
-                <p className="text-xs text-muted-foreground">{c.desc}</p>
+                <p className="text-body-sm text-muted-foreground">{c.desc}</p>
               </div>
             ))}
           </div>

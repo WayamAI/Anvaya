@@ -12,7 +12,7 @@ export function BrandMark({ className }: { className?: string }) {
     <div
       className={cn(
         "flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]",
-        "border border-default bg-surface-secondary text-icon-primary",
+        "border border-muted bg-action text-icon-secondary",
         className,
       )}
       role="img"
@@ -20,7 +20,7 @@ export function BrandMark({ className }: { className?: string }) {
     >
       <svg
         viewBox="0 0 20 20"
-        className="h-[18px] w-[18px]"
+        className="h-icon-lg w-icon-lg"
         fill="none"
         aria-hidden="true"
       >

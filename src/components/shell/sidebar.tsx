@@ -1,28 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import {
-  CalendarDays,
-  Car,
-  FileText,
-  LayoutDashboard,
-  Moon,
-  Settings,
-  TriangleAlert,
-  Wrench,
-} from "lucide-react";
 import { BrandMark } from "./brand-mark";
+import type { IconName } from "@/lib/icons";
 import { SidebarItem } from "./sidebar-item";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { id: "vehicles", icon: Car, label: "Vehicles" },
-  { id: "alerts", icon: TriangleAlert, label: "Alerts" },
-  { id: "calendar", icon: CalendarDays, label: "Calendar" },
-  { id: "maintenance", icon: Wrench, label: "Maintenance" },
-  { id: "documents", icon: FileText, label: "Documents" },
-];
+  { id: "dashboard", icon: "dashboard", label: "Dashboard" },
+  { id: "vehicles", icon: "vehicle", label: "Vehicles" },
+  { id: "alerts", icon: "warning", label: "Alerts" },
+  { id: "calendar", icon: "calendar", label: "Calendar" },
+  { id: "maintenance", icon: "maintenance", label: "Maintenance" },
+  { id: "documents", icon: "document", label: "Documents" },
+] satisfies { id: string; icon: IconName; label: string }[];
 
 export function Sidebar({ className }: { className?: string }) {
   const [activeId, setActiveId] = useState("dashboard");
@@ -32,7 +23,7 @@ export function Sidebar({ className }: { className?: string }) {
       aria-label="Primary"
       className={cn(
         "flex h-full w-[68px] shrink-0 flex-col items-center",
-        "border-r border-subtle bg-page-subtle",
+        "border-r border-muted bg-container",
         "px-[15px] py-4",
         className,
       )}
@@ -54,9 +45,9 @@ export function Sidebar({ className }: { className?: string }) {
 
       <div className="mt-auto flex flex-col items-center gap-2.5">
         {/* Utility control. Left unwired for now — this pass is structural. */}
-        <SidebarItem icon={Moon} label="Toggle theme" />
+        <SidebarItem icon="theme" label="Toggle theme" />
         <SidebarItem
-          icon={Settings}
+          icon="settings"
           label="Settings"
           active={activeId === "settings"}
           onClick={() => setActiveId("settings")}

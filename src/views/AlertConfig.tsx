@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Bell, Mail, MessageSquare } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
 import { traceabilityAlerts } from "@/data/traceability";
+import { PageIcon } from "@/components/app/page-icon";
 
 const alertRules = [
   { name: "Stock Exhaustion — Critical", trigger: "Coverage < 3 days", channel: "Email + SMS + In-App", recipients: "Planner, Procurement Head", frequency: "Immediate", enabled: true },
@@ -47,67 +48,70 @@ export default function AlertConfig() {
   const criticalOpen = traceabilityAlerts.filter(a => a.severity === "critical" && !a.resolved);
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="px-6 py-5 space-y-6">
       {/* Critical banner */}
       {criticalOpen.length > 0 && (
-        <div className="bg-danger/10 border border-danger/30 rounded-lg px-4 py-3 flex items-center gap-3 animate-fade-in-up">
-          <span className="text-danger font-bold text-sm">⚠ {criticalOpen.length} critical traceability alert{criticalOpen.length > 1 ? "s" : ""} open</span>
-          <button onClick={() => setActiveTab("feed")} className="text-xs text-danger hover:underline ml-auto">View alerts →</button>
+        <div className="bg-danger/10 border border-danger/30 rounded-lg px-4 py-3 flex items-center gap-3">
+          <span className="text-danger font-semibold text-body-md">⚠ {criticalOpen.length} critical traceability alert{criticalOpen.length > 1 ? "s" : ""} open</span>
+          <button onClick={() => setActiveTab("feed")} className="text-body-sm text-danger hover:underline ml-auto">View alerts →</button>
         </div>
       )}
 
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Alert Configuration</h2>
+      <div className="flex items-center justify-between">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Alert configuration</span>
+        </h1>
 
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-border animate-fade-in-up stagger-1">
-        {[{ key: "rules" as const, label: "Alert Rules" }, { key: "feed" as const, label: `Alert Feed (${traceabilityAlerts.filter(a => !a.resolved).length})` }].map(t => (
+      <div className="flex gap-1 border-b border-border">
+        {[{ key: "rules" as const, label: "Alert rules" }, { key: "feed" as const, label: `Alert feed (${traceabilityAlerts.filter(a => !a.resolved).length})` }].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`px-3 py-2 text-xs font-medium border-b-2 whitespace-nowrap transition-colors ${activeTab === t.key ? "border-accent text-accent" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            className={`px-3 py-2 text-body-sm font-medium border-b-2 whitespace-nowrap transition-colors ${activeTab === t.key ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
           >{t.label}</button>
         ))}
       </div>
 
       {activeTab === "rules" && (
         <>
-          <div className="grid grid-cols-3 gap-3 animate-fade-in-up stagger-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {[
-              { icon: Bell, label: "Active Alert Rules", count: rules.filter(r => r.enabled).length, total: rules.length },
-              { icon: Mail, label: "Email Alerts Sent (Today)", count: 47, total: null },
-              { icon: MessageSquare, label: "SMS Alerts Sent (Today)", count: 8, total: null },
+              { icon: Bell, label: "Active alert rules", count: rules.filter(r => r.enabled).length, total: rules.length },
+              { icon: Mail, label: "Email alerts sent (today)", count: 47, total: null },
+              { icon: MessageSquare, label: "SMS alerts sent (today)", count: 8, total: null },
             ].map((s, i) => (
-              <div key={i} className="bg-card rounded-lg border border-border p-3 flex items-center gap-3">
+              <div key={i} className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
                   <s.icon className="w-5 h-5 text-muted-foreground" />
                 </div>
                 <div>
-                  <div className="text-lg font-bold tabular-nums">{s.count}{s.total !== null && <span className="text-sm text-muted-foreground font-normal"> / {s.total}</span>}</div>
-                  <div className="text-xs text-muted-foreground">{s.label}</div>
+                  <div className="text-display-lg font-semibold tabular-nums">{s.count}{s.total !== null && <span className="text-body-md text-muted-foreground font-normal"> / {s.total}</span>}</div>
+                  <div className="text-body-sm text-muted-foreground">{s.label}</div>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-2">
-            <table className="w-full text-[13px]">
-              <thead><tr className="bg-secondary/50 border-b border-border">
-                {["Enabled", "Alert Rule", "Trigger Condition", "Channel", "Recipients", "Frequency"].map(h =>
+          <div className="overflow-x-auto">
+            <table className="data-table w-full text-body-md">
+              <thead><tr className="border-b border-border">
+                {["Enabled", "Alert rule", "Trigger condition", "Channel", "Recipients", "Frequency"].map(h =>
                   <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
               </tr></thead>
               <tbody>
                 {rules.map((r, i) => (
-                  <tr key={i} className={`border-b border-border hover:bg-secondary/30 ${!r.enabled ? "opacity-50" : ""}`}>
+                  <tr key={i} className={`border-b border-border hover:bg-sunken ${!r.enabled ? "opacity-50" : ""}`}>
                     <td className="px-3 py-2">
-                      <button onClick={() => toggleRule(i)} className={`w-8 h-4.5 rounded-full transition-colors relative ${r.enabled ? "bg-accent" : "bg-muted"}`}>
+                      <button onClick={() => toggleRule(i)} className={`w-8 h-4.5 rounded-full transition-colors relative ${r.enabled ? "bg-primary" : "bg-muted"}`}>
                         <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-card shadow transition-transform ${r.enabled ? "left-4" : "left-0.5"}`} />
                       </button>
                     </td>
                     <td className="px-3 py-2 font-medium">{r.name}</td>
                     <td className="px-3 py-2 text-muted-foreground">{r.trigger}</td>
-                    <td className="px-3 py-2 text-xs">{r.channel}</td>
-                    <td className="px-3 py-2 text-xs">{r.recipients}</td>
+                    <td className="px-3 py-2 text-body-sm">{r.channel}</td>
+                    <td className="px-3 py-2 text-body-sm">{r.recipients}</td>
                     <td className="px-3 py-2">{r.frequency}</td>
                   </tr>
                 ))}
@@ -118,27 +122,27 @@ export default function AlertConfig() {
       )}
 
       {activeTab === "feed" && (
-        <div className="space-y-3 animate-fade-in">
+        <div className="space-y-3">
           {traceabilityAlerts.map(a => (
             <div key={a.id} className={`bg-card rounded-lg border p-4 ${a.severity === "critical" ? "border-danger/40 bg-danger/5" : a.severity === "high" ? "border-warning/40" : "border-border"} ${a.resolved ? "opacity-40" : ""}`}>
               <div className="flex items-start gap-3">
                 <StatusBadge status={severityColors[a.severity]} label={a.severity.toUpperCase()} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium">{a.title}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{a.description}</div>
+                  <div className="text-body-md font-medium">{a.title}</div>
+                  <div className="text-body-sm text-muted-foreground mt-0.5">{a.description}</div>
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
-                    <span className="text-[10px] text-muted-foreground">{new Date(a.timestamp).toLocaleString("en-IN")}</span>
+                    <span className="text-caption text-muted-foreground">{new Date(a.timestamp).toLocaleString("en-IN")}</span>
                     {a.relatedLot && (
                       <button onClick={() => router.push(`/traceability?search=${a.relatedLot}`)}
-                        className="text-[10px] font-mono bg-sbom/10 text-sbom px-1.5 py-0.5 rounded hover:bg-sbom/20">{a.relatedLot}</button>
+                        className="text-caption identifier bg-sbom/10 text-sbom px-1.5 py-0.5 rounded hover:bg-sbom/20">{a.relatedLot}</button>
                     )}
                     {a.relatedSerial && (
                       <button onClick={() => router.push(`/traceability?search=${a.relatedSerial}`)}
-                        className="text-[10px] font-mono bg-mbom/10 text-mbom px-1.5 py-0.5 rounded hover:bg-mbom/20">{a.relatedSerial}</button>
+                        className="text-caption identifier bg-mbom/10 text-mbom px-1.5 py-0.5 rounded hover:bg-mbom/20">{a.relatedSerial}</button>
                     )}
                     {a.relatedPart && (
                       <button onClick={() => router.push(`/traceability?search=${a.relatedPart}`)}
-                        className="text-[10px] font-mono bg-ebom/10 text-ebom px-1.5 py-0.5 rounded hover:bg-ebom/20">{a.relatedPart}</button>
+                        className="text-caption identifier bg-ebom/10 text-ebom px-1.5 py-0.5 rounded hover:bg-ebom/20">{a.relatedPart}</button>
                     )}
                   </div>
                 </div>

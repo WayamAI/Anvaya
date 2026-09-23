@@ -1,4 +1,6 @@
 import StatusBadge from "@/components/StatusBadge";
+import { DataTable, type Column } from "@/components/app/data-table";
+import { PageIcon } from "@/components/app/page-icon";
 
 const orders = [
   { so: "SO-4521", customer: "Reliance Retail", date: "22 Mar 2026", items: 4, value: "₹8.4L", delivery: "28 Mar 2026", priority: "High", status: "Confirmed" },
@@ -20,47 +22,52 @@ const statusMap: Record<string, "green" | "amber" | "red" | "blue" | "gray"> = {
 };
 
 export default function SalesOrderIntake() {
+  type SoRow = (typeof orders)[number];
+  const columns: Column<SoRow>[] = [
+    { key: "so", header: "SO #", width: "w-[130px]", value: o => o.so, cell: o => <span className="identifier text-body-sm text-foreground">{o.so}</span> },
+    { key: "customer", header: "Customer", value: o => o.customer, cell: o => <span className="font-medium">{o.customer}</span> },
+    { key: "date", header: "Order date", width: "w-[125px]", value: o => o.date, cell: o => o.date },
+    { key: "items", header: "Items", align: "right", numeric: true, width: "w-[85px]", value: o => o.items, cell: o => o.items },
+    { key: "value", header: "Value", align: "right", numeric: true, width: "w-[110px]", value: o => o.value, cell: o => o.value },
+    { key: "delivery", header: "Delivery date", width: "w-[135px]", value: o => o.delivery, cell: o => o.delivery },
+    {
+      key: "priority", header: "Priority", width: "w-[110px]", value: o => o.priority,
+      cell: o => <StatusBadge status={o.priority === "High" ? "red" : o.priority === "Medium" ? "amber" : "green"} label={o.priority} />,
+    },
+    { key: "status", header: "Status", width: "w-[130px]", value: o => o.status, cell: o => <StatusBadge status={statusMap[o.status]} label={o.status} /> },
+  ];
+
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Sales Order Intake</h2>
-        <div className="flex gap-2 text-xs">
+    <div className="px-6 py-5 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Sales order intake</span>
+        </h1>
+        <div className="flex gap-2 text-body-sm">
           {[{ l: "New", c: 5 }, { l: "Processing", c: 1 }, { l: "Confirmed", c: 2 }, { l: "Dispatched", c: 1 }, { l: "Delivered", c: 3 }].map(s => (
             <span key={s.l} className="px-2 py-1 bg-secondary rounded-full font-medium">{s.l}: {s.c}</span>
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-4 gap-3 animate-fade-in-up stagger-1">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[{ l: "Total Open Orders", v: "8", s: "₹95.6L" }, { l: "Due This Week", v: "3", s: "₹26.2L" }, { l: "Orders Today", v: "5", s: "₹79.8L" }, { l: "MTD Dispatch Value", v: "₹1.42 Cr", s: "vs ₹1.35 Cr target" }].map(k => (
-          <div key={k.l} className="bg-card rounded-lg border border-border p-3">
-            <div className="text-xs text-muted-foreground">{k.l}</div>
-            <div className="text-xl font-bold mt-1">{k.v}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">{k.s}</div>
+          <div key={k.l}>
+            <div className="text-body-sm text-muted-foreground">{k.l}</div>
+            <div className="text-display-lg font-semibold mt-1">{k.v}</div>
+            <div className="text-body-sm text-muted-foreground mt-0.5">{k.s}</div>
           </div>
         ))}
       </div>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-2">
-        <table className="w-full text-[13px]">
-          <thead><tr className="bg-secondary/50 border-b border-border">
-            {["SO #", "Customer", "Order Date", "Items", "Value", "Delivery Date", "Priority", "Status"].map(h =>
-              <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {orders.map((o, i) => (
-              <tr key={i} className="border-b border-border hover:bg-secondary/30 cursor-pointer">
-                <td className="px-3 py-2 font-mono text-xs text-accent">{o.so}</td>
-                <td className="px-3 py-2 font-medium">{o.customer}</td>
-                <td className="px-3 py-2">{o.date}</td>
-                <td className="px-3 py-2 tabular-nums">{o.items}</td>
-                <td className="px-3 py-2 tabular-nums">{o.value}</td>
-                <td className="px-3 py-2">{o.delivery}</td>
-                <td className="px-3 py-2"><StatusBadge status={o.priority === "High" ? "red" : o.priority === "Medium" ? "amber" : "green"} label={o.priority} /></td>
-                <td className="px-3 py-2"><StatusBadge status={statusMap[o.status]} label={o.status} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        rows={orders}
+        rowKey={o => o.so}
+        name="Sales orders"
+        searchable
+        columnToggle
+        exportable
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { Building, MapPin } from "lucide-react";
 import { useTheme } from "next-themes";
 import anvayaLogoLight from "@/assets/anvaya-logo-light.svg";
 import anvayaLogoDark from "@/assets/anvaya-logo-dark.svg";
+import { PageIcon } from "@/components/app/page-icon";
 
 const company = {
   name: "Anvaya Manufacturing Pvt. Ltd.",
@@ -26,19 +27,22 @@ export default function CompanySettings() {
   const anvayaLogo = (isDark ? anvayaLogoDark : anvayaLogoLight).src;
 
   return (
-    <div className="p-6 space-y-6">
-      <h2 className="text-lg font-semibold animate-fade-in-up">Company & Warehouses</h2>
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Company & warehouses</span>
+        </h1>
 
       {/* Company Info with Logo */}
-      <div className="bg-card rounded-lg border border-border p-6 animate-fade-in-up stagger-2">
+      <div className="p-6">
         <div className="flex items-start gap-4">
           <img src={anvayaLogo} alt="Anvaya" className="w-12 h-12 object-contain flex-shrink-0" />
           <div className="flex-1">
-            <h3 className="text-base font-semibold">{company.name}</h3>
-            <div className="grid grid-cols-3 gap-4 mt-4 text-sm">
-              <div><span className="text-muted-foreground">GSTIN:</span><br /><span className="font-medium font-mono">{company.gst}</span></div>
-              <div><span className="text-muted-foreground">PAN:</span><br /><span className="font-medium font-mono">{company.pan}</span></div>
-              <div><span className="text-muted-foreground">CIN:</span><br /><span className="font-medium font-mono">{company.cin}</span></div>
+            <h3 className="text-body-lg font-semibold">{company.name}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 text-body-md">
+              <div><span className="text-muted-foreground">GSTIN:</span><br /><span className="font-medium identifier">{company.gst}</span></div>
+              <div><span className="text-muted-foreground">PAN:</span><br /><span className="font-medium identifier">{company.pan}</span></div>
+              <div><span className="text-muted-foreground">CIN:</span><br /><span className="font-medium identifier">{company.cin}</span></div>
               <div><span className="text-muted-foreground">Address:</span><br /><span className="font-medium">{company.address}</span></div>
               <div><span className="text-muted-foreground">Phone:</span><br /><span className="font-medium">{company.phone}</span></div>
               <div><span className="text-muted-foreground">Email:</span><br /><span className="font-medium">{company.email}</span></div>
@@ -47,28 +51,28 @@ export default function CompanySettings() {
         </div>
       </div>
 
-      <div className="space-y-3 animate-fade-in-up stagger-2">
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Warehouses & Plants</h3>
-        <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-3">
+        <h3 className="label-caps">Warehouses & plants</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {warehouses.map((w, i) => (
-            <div key={i} className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-shadow">
+            <div key={i}>
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
                   <MapPin className="w-5 h-5 text-muted-foreground" />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">{w.name}</h4>
-                    <span className="text-[10px] font-mono bg-secondary px-1.5 py-0.5 rounded">{w.code}</span>
+                    <h4 className="text-body-md font-semibold">{w.name}</h4>
+                    <span className="text-caption identifier bg-secondary px-1.5 py-0.5 rounded">{w.code}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">{w.type}</span>
-                  <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                  <span className="text-body-sm text-muted-foreground">{w.type}</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-body-sm">
                     <div><span className="text-muted-foreground">Manager:</span> <span className="font-medium">{w.manager}</span></div>
                     <div><span className="text-muted-foreground">SKUs:</span> <span className="font-medium tabular-nums">{w.skus}</span></div>
                     <div><span className="text-muted-foreground">Area:</span> <span className="font-medium">{w.area}</span></div>
                     <div><span className="text-muted-foreground">Status:</span> <span className="font-medium text-success">{w.status}</span></div>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">{w.address}</p>
+                  <p className="text-body-sm text-muted-foreground mt-2">{w.address}</p>
                 </div>
               </div>
             </div>

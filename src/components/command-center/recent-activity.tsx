@@ -19,15 +19,15 @@ const entries: ActivityEntry[] = [
 export function RecentActivity({ className }: { className?: string }) {
   return (
     <section className={cn("cc-panel p-4", className)} aria-labelledby="activity-heading">
-      <h2 id="activity-heading" className="text-[13px] font-medium leading-none text-primary">
-        Recent Activity
+      <h2 id="activity-heading" className="text-label-md font-medium leading-none text-primary">
+        Recent activity
       </h2>
       <ul className="mt-3.5 space-y-0">
         {entries.map((entry, i) => (
           <li
             key={entry.id}
             className={cn(
-              "flex items-baseline gap-3 py-2 text-[12px] leading-none",
+              "flex items-baseline gap-3 py-2 text-body-sm leading-none",
               i !== entries.length - 1 && "border-b border-subtle",
             )}
           >

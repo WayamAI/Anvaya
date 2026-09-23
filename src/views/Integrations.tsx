@@ -2,6 +2,7 @@ import { useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/app/page-header";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -279,7 +280,7 @@ const statusConfig: Record<IntegrationStatus, { color: "green" | "amber" | "red"
 };
 
 const directionIcon = (d: SyncDirection) =>
-  d === "inbound" ? <ArrowDownRight className="w-3 h-3 text-accent" /> :
+  d === "inbound" ? <ArrowDownRight className="w-3 h-3 text-chart-1" /> :
   d === "outbound" ? <ArrowUpRight className="w-3 h-3 text-muted-foreground" /> :
   <RefreshCw className="w-3 h-3 text-ebom" />;
 
@@ -288,7 +289,7 @@ const directionLabel = (d: SyncDirection) =>
 
 function SyncEventRow({ evt }: { evt: SyncEvent }) {
   return (
-    <div className="flex items-center gap-3 py-1.5 text-xs border-b border-border last:border-0">
+    <div className="flex items-center gap-3 py-1.5 text-body-sm border-b border-border last:border-0">
       <span className="text-muted-foreground w-28 shrink-0">{evt.timestamp}</span>
       <span className={`w-2 h-2 rounded-full shrink-0 ${
         evt.status === "success" ? "bg-success" : evt.status === "partial" ? "bg-warning" : "bg-danger"
@@ -308,25 +309,25 @@ function IntegrationCard({ int, isExpanded, onToggle }: { int: Integration; isEx
 
   return (
     <div className={`bg-card rounded-lg border transition-all ${
-      int.status === "error" ? "border-danger/40 shadow-sm shadow-danger/5" :
+      int.status === "error" ? "border-danger/40" :
       int.status === "degraded" ? "border-warning/40" : "border-border"
     }`}>
       {/* Header */}
       <div className="p-4 cursor-pointer" onClick={onToggle}>
         <div className="flex items-start gap-3">
-          <div className="text-2xl mt-0.5">{int.icon}</div>
+          <div className="text-display-xl mt-0.5">{int.icon}</div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
-              <h3 className="text-sm font-semibold text-foreground">{int.name}</h3>
+              <h3 className="text-heading-sm text-foreground">{int.name}</h3>
               <StatusBadge status={cfg.color} label={int.statusLabel} />
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">
+              <Badge variant="outline" className="text-caption px-1.5 py-0 h-4 font-normal text-muted-foreground">
                 {categoryLabels[int.category]}
               </Badge>
             </div>
-            <p className="text-xs text-muted-foreground mb-3">{int.desc}</p>
+            <p className="text-body-sm text-muted-foreground mb-3">{int.desc}</p>
 
             {/* Metrics row */}
-            <div className="grid grid-cols-5 gap-3 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-body-sm">
               <div>
                 <span className="text-muted-foreground block">Uptime</span>
                 <span className={`font-semibold tabular-nums ${int.uptime >= 99.5 ? "text-success" : int.uptime >= 97 ? "text-warning" : "text-danger"}`}>
@@ -355,9 +356,9 @@ function IntegrationCard({ int, isExpanded, onToggle }: { int: Integration; isEx
 
             {/* Rate limit bar */}
             <div className="mt-3 flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground w-20 shrink-0">Rate limit</span>
+              <span className="text-caption text-muted-foreground w-20 shrink-0">Rate limit</span>
               <Progress value={int.rateLimitUsed} className="h-1.5 flex-1" />
-              <span className="text-[10px] text-muted-foreground tabular-nums w-8 text-right">{int.rateLimitUsed}%</span>
+              <span className="text-caption text-muted-foreground tabular-nums w-8 text-right">{int.rateLimitUsed}%</span>
             </div>
           </div>
           <button className="p-1 rounded hover:bg-secondary transition-colors text-muted-foreground" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
@@ -367,7 +368,7 @@ function IntegrationCard({ int, isExpanded, onToggle }: { int: Integration; isEx
 
         {/* Warning banner */}
         {int.warning && (
-          <div className={`mt-3 ml-10 px-3 py-2 rounded text-xs font-medium flex items-start gap-2 ${
+          <div className={`mt-3 ml-10 px-3 py-2 rounded text-body-sm font-medium flex items-start gap-2 ${
             int.status === "error" ? "bg-danger/10 text-danger" : "bg-warning/10 text-warning"
           }`}>
             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -381,21 +382,21 @@ function IntegrationCard({ int, isExpanded, onToggle }: { int: Integration; isEx
         <div className="border-t border-border px-4 pb-4">
           <Tabs defaultValue="flows" className="mt-3">
             <TabsList className="h-8">
-              <TabsTrigger value="flows" className="text-xs h-7 px-3">Data Flows</TabsTrigger>
-              <TabsTrigger value="history" className="text-xs h-7 px-3">Sync History</TabsTrigger>
-              <TabsTrigger value="config" className="text-xs h-7 px-3">Configuration</TabsTrigger>
+              <TabsTrigger value="flows" className="text-body-sm h-7 px-3">Data flows</TabsTrigger>
+              <TabsTrigger value="history" className="text-body-sm h-7 px-3">Sync history</TabsTrigger>
+              <TabsTrigger value="config" className="text-body-sm h-7 px-3">Configuration</TabsTrigger>
             </TabsList>
 
             <TabsContent value="flows" className="mt-3">
               <div className="space-y-2">
                 {int.dataFlows.map((flow, i) => (
-                  <div key={i} className="flex items-center gap-3 p-2.5 rounded-md bg-secondary/50 text-xs">
+                  <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-secondary/50 text-body-sm">
                     <div className="flex items-center gap-1.5 w-32 shrink-0">
                       {directionIcon(flow.direction)}
-                      <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 font-mono">{directionLabel(flow.direction)}</Badge>
+                      <Badge variant="outline" className="text-caption px-1 py-0 h-3.5 identifier">{directionLabel(flow.direction)}</Badge>
                       <span className="font-medium truncate">{flow.entity}</span>
                     </div>
-                    <div className="flex-1 grid grid-cols-3 gap-4">
+                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       <div>
                         <span className="text-muted-foreground">Total: </span>
                         <span className="font-semibold tabular-nums">{flow.lastCount.toLocaleString("en-IN")}</span>
@@ -417,7 +418,7 @@ function IntegrationCard({ int, isExpanded, onToggle }: { int: Integration; isEx
             </TabsContent>
 
             <TabsContent value="history" className="mt-3">
-              <div className="rounded-md border border-border p-3">
+              <div className="rounded-lg border border-border p-3">
                 {int.recentSyncs.map((evt, i) => (
                   <SyncEventRow key={i} evt={evt} />
                 ))}
@@ -425,30 +426,30 @@ function IntegrationCard({ int, isExpanded, onToggle }: { int: Integration; isEx
             </TabsContent>
 
             <TabsContent value="config" className="mt-3">
-              <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs p-3 bg-secondary/50 rounded-md">
-                <div className="flex justify-between"><span className="text-muted-foreground">API Version</span><span className="font-medium">{int.apiVersion}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Auth Method</span><span className="font-medium">{int.authMethod}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Sync Type</span><span className="font-medium">{int.syncType}{int.syncInterval ? ` (${int.syncInterval})` : ""}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Rate Limit</span><span className="font-medium">{int.rateLimit}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Total Records</span><span className="font-medium">{int.totalRecords}</span></div>
-                {int.nextSync && <div className="flex justify-between"><span className="text-muted-foreground">Next Sync</span><span className="font-medium">{int.nextSync}</span></div>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-body-sm p-3 bg-secondary/50 rounded-lg">
+                <div className="flex justify-between"><span className="text-muted-foreground">API version</span><span className="font-medium">{int.apiVersion}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Auth method</span><span className="font-medium">{int.authMethod}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Sync type</span><span className="font-medium">{int.syncType}{int.syncInterval ? ` (${int.syncInterval})` : ""}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Rate limit</span><span className="font-medium">{int.rateLimit}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Total records</span><span className="font-medium">{int.totalRecords}</span></div>
+                {int.nextSync && <div className="flex justify-between"><span className="text-muted-foreground">Next sync</span><span className="font-medium">{int.nextSync}</span></div>}
               </div>
               <div className="flex gap-2 mt-3">
-                <Button variant="outline" size="sm" className="text-xs h-7 gap-1.5">
+                <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5">
                   <RotateCcw className="w-3 h-3" /> Force Sync
                 </Button>
-                <Button variant="outline" size="sm" className="text-xs h-7 gap-1.5">
+                <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5">
                   <Settings className="w-3 h-3" /> Settings
                 </Button>
-                <Button variant="outline" size="sm" className="text-xs h-7 gap-1.5">
+                <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5">
                   <ExternalLink className="w-3 h-3" /> API Docs
                 </Button>
                 {int.status === "active" ? (
-                  <Button variant="outline" size="sm" className="text-xs h-7 gap-1.5 text-warning border-warning/30 hover:bg-warning/10">
+                  <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5 text-warning border-warning/30 hover:bg-warning/10">
                     <Pause className="w-3 h-3" /> Pause
                   </Button>
                 ) : int.status === "paused" ? (
-                  <Button variant="outline" size="sm" className="text-xs h-7 gap-1.5 text-success border-success/30 hover:bg-success/10">
+                  <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5 text-success border-success/30 hover:bg-success/10">
                     <Play className="w-3 h-3" /> Resume
                   </Button>
                 ) : null}
@@ -476,48 +477,46 @@ export default function Integrations() {
     integrations.filter(i => i.category === filterTab);
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="px-6 py-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">Integration Hub</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Live monitoring of all external data pipelines connected to Anvaya</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="text-xs h-8 gap-1.5">
-            <RefreshCw className="w-3 h-3" /> Sync All
-          </Button>
-          <Button size="sm" className="text-xs h-8 gap-1.5">
-            <Zap className="w-3 h-3" /> Add Integration
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Integration Hub"
+        description="Live monitoring of all external data pipelines connected to Anvaya"
+        actions={
+          <>
+            <Button variant="outline" size="sm">
+              <RefreshCw /> Sync All
+            </Button>
+            <Button size="sm">
+              <Zap /> Add Integration
+            </Button>
+          </>
+        }
+      />
 
       {/* KPI strip */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {[
-          { label: "Active Pipelines", value: `${activeCount}/${integrations.length}`, icon: Activity, accent: "text-success" },
+          { label: "Active pipelines", value: `${activeCount}/${integrations.length}`, icon: Activity, accent: "text-success" },
           { label: "Degraded", value: degradedCount, icon: AlertTriangle, accent: degradedCount > 0 ? "text-warning" : "text-success" },
           { label: "Errors", value: errorCount, icon: AlertTriangle, accent: errorCount > 0 ? "text-danger" : "text-success" },
-          { label: "Records Today", value: todayTotal.toLocaleString("en-IN"), icon: Database, accent: "text-accent" },
-          { label: "Avg Uptime", value: `${avgUptime}%`, icon: BarChart3, accent: "text-foreground" },
+          { label: "Records today", value: todayTotal.toLocaleString("en-IN"), icon: Database, accent: "text-foreground" },
+          { label: "Avg uptime", value: `${avgUptime}%`, icon: BarChart3, accent: "text-foreground" },
         ].map((kpi, i) => (
-          <div key={i} className="bg-card rounded-lg border border-border p-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-md bg-secondary flex items-center justify-center shrink-0">
-              <kpi.icon className="w-4 h-4 text-muted-foreground" />
+          <div key={i} className="surface-sunken min-w-0 px-4 py-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <p className="label-caps truncate">{kpi.label}</p>
+              <kpi.icon className="block h-[18px] w-[18px] shrink-0 text-muted-foreground/70" />
             </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{kpi.label}</p>
-              <p className={`text-lg font-bold tabular-nums ${kpi.accent}`}>{kpi.value}</p>
-            </div>
+            <p className={`mt-2 text-display-xl leading-none tabular-nums ${kpi.accent}`}>{kpi.value}</p>
           </div>
         ))}
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1.5 flex-wrap">
+      <div className="mt-6 flex gap-1.5 flex-wrap">
         {[
-          { key: "all", label: "All Integrations" },
+          { key: "all", label: "All integrations" },
           { key: "issues", label: `Issues (${degradedCount + errorCount})` },
           { key: "accounting", label: "Financial" },
           { key: "commerce", label: "Commerce" },
@@ -530,7 +529,7 @@ export default function Integrations() {
           <button
             key={tab.key}
             onClick={() => setFilterTab(tab.key)}
-            className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+            className={`px-3 py-1 rounded-lg text-body-sm font-medium transition-colors ${
               filterTab === tab.key
                 ? "bg-primary text-primary-foreground"
                 : "bg-secondary text-muted-foreground hover:text-foreground"
@@ -542,7 +541,7 @@ export default function Integrations() {
       </div>
 
       {/* Integration cards */}
-      <div className="space-y-3">
+      <div className="mt-6 space-y-3">
         {filtered.map(int => (
           <IntegrationCard
             key={int.id}

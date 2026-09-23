@@ -1,8 +1,8 @@
 import KPICard from "@/components/KPICard";
 import StatusBadge from "@/components/StatusBadge";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { FileText, TrendingDown, Clock, DollarSign } from "lucide-react";
-import { CHART_COLORS, SERIES } from "@/lib/chart-colors";
+import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE, CHART_LEGEND_STYLE } from "@/lib/chart-colors";
+import { PageIcon } from "@/components/app/page-icon";
 
 const monthlyData = [
   { month: "Oct", poCount: 82, value: 95 }, { month: "Nov", poCount: 78, value: 88 },
@@ -23,37 +23,40 @@ const vendorPerformance = [
 
 export default function ProcurementReports() {
   return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold animate-fade-in-up">Procurement Reports</h2>
-      <div className="grid grid-cols-4 gap-4 animate-fade-in-up stagger-1">
-        <KPICard title="Total POs (6M)" value="499" icon={FileText} status="green" />
-        <KPICard title="Total Spend (6M)" value="₹5.88 Cr" icon={DollarSign} status="green" />
-        <KPICard title="Avg Lead Time" value="7.2 days" icon={Clock} status="green" />
-        <KPICard title="Cost Savings YTD" value="₹12.4L" trend={{ value: "+18% vs LY", direction: "up", positive: true }} icon={TrendingDown} status="green" />
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Procurement reports</span>
+        </h1>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard title="Total POs (6M)" value="499" iconName="total-pos" />
+        <KPICard title="Total spend (6M)" value="₹5.88 Cr" iconName="total-spend" />
+        <KPICard title="Avg lead time" value="7.2 days" iconName="avg-lead-time" />
+        <KPICard title="Cost savings YTD" value="₹12.4L" trend={{ value: "+18% vs LY", direction: "up", positive: true }} iconName="cost-savings" />
       </div>
-      <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-2">
-        <h3 className="text-sm font-semibold mb-3">Monthly PO Activity</h3>
+      <div>
+        <h3 className="text-body-md font-semibold mb-3">Monthly PO activity</h3>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={monthlyData}>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-            <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="poCount" fill={SERIES[0]} name="PO Count" radius={[3, 3, 0, 0]} />
+            <YAxis width={44} tick={{ fontSize: 11 }} />
+            <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
+            <Legend iconSize={8} wrapperStyle={CHART_LEGEND_STYLE} />
+            <Bar dataKey="poCount" fill={SERIES[0]} name="PO count" radius={[3, 3, 0, 0]} />
             <Bar dataKey="value" fill={SERIES[1]} name="Value (₹L)" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-3">
-        <table className="w-full text-[13px]">
-          <thead><tr className="bg-secondary/50 border-b border-border">
-            {["Vendor", "POs", "Total Value", "OTD %", "Avg Lead", "Savings"].map(h =>
+      <div className="overflow-x-auto">
+        <table className="data-table w-full text-body-md">
+          <thead><tr className="border-b border-border">
+            {["Vendor", "POs", "Total value", "OTD %", "Avg lead", "Savings"].map(h =>
               <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
           </tr></thead>
           <tbody>
             {vendorPerformance.map((v, i) => (
-              <tr key={i} className="border-b border-border hover:bg-secondary/30">
+              <tr key={i} className="border-b border-border hover:bg-sunken">
                 <td className="px-3 py-2 font-medium">{v.vendor}</td>
                 <td className="px-3 py-2 tabular-nums">{v.pos}</td>
                 <td className="px-3 py-2 tabular-nums">{v.value}</td>

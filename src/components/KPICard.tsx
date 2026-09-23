@@ -1,4 +1,6 @@
 import { ArrowUp, ArrowDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { DashboardIcon, type DashboardIconName } from "@/components/app/dashboard-icon";
 
 interface KPICardProps {
   title: string;
@@ -6,38 +8,63 @@ interface KPICardProps {
   subtitle?: string;
   trend?: { value: string; direction: "up" | "down"; positive?: boolean };
   status?: "green" | "amber" | "red";
+  /**
+   * The illustrated icon for this figure. Takes precedence over `icon`: a
+   * card that has been given one of the commissioned assets should not also
+   * draw the line-art fallback beside it.
+   */
+  iconName?: DashboardIconName;
   icon?: React.ElementType;
 }
 
-const statusColors = {
-  green: "border-l-success",
-  amber: "border-l-warning",
-  red: "border-l-danger",
+/*
+  Status tints the figure, not the card.
+
+  Nine tiles with nine coloured accents give every number equal urgency, which
+  is the same as giving none of them any. The surface stays neutral in all
+  cases; only a figure that is genuinely off-target takes a colour.
+*/
+const statusClass: Record<NonNullable<KPICardProps["status"]>, string> = {
+  green: "text-success",
+  amber: "text-warning",
+  red: "text-danger",
 };
 
-export default function KPICard({ title, value, subtitle, trend, status, icon: Icon }: KPICardProps) {
+/**
+ * A single headline figure.
+ *
+ * Shares its surface, caption style and figure size with MetricRow, so pages
+ * that lay out KPIs individually and pages that use the row are visually the
+ * same system.
+ */
+export default function KPICard({ title, value, subtitle, trend, status, iconName, icon: Icon }: KPICardProps) {
   return (
-    <div className={`bg-card rounded-lg border border-border p-4 shadow-sm border-l-4 ${status ? statusColors[status] : "border-l-border"}`}>
-      <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide truncate">{title}</p>
-          <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">{value}</p>
-          {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
-          {trend && (
-            <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${
-              trend.positive ? "text-success" : "text-danger"
-            }`}>
-              {trend.direction === "up" ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-              {trend.value}
-            </div>
-          )}
-        </div>
-        {Icon && (
-          <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0 ml-3">
-            <Icon className="w-4.5 h-4.5 text-muted-foreground" />
-          </div>
-        )}
+    <div className="surface-panel flex min-w-0 flex-col gap-1.5 px-4 py-3.5">
+      <div className="flex items-start justify-between gap-2">
+        <p className="label-caps truncate" title={title}>
+          {title}
+        </p>
+        {iconName
+          ? <DashboardIcon name={iconName} />
+          : Icon && <Icon className="block h-4 w-4 shrink-0 text-ink-quaternary" />}
       </div>
+      <p
+        className={cn(
+          "font-display text-display-xl tabular-nums",
+          status ? statusClass[status] : "text-foreground",
+        )}
+      >
+        {value}
+      </p>
+      {subtitle && <p className="truncate text-body-sm text-ink-tertiary">{subtitle}</p>}
+      {trend && (
+        <p className="flex items-center gap-1 text-body-sm tabular-nums text-ink-tertiary">
+          {trend.direction === "up"
+            ? <ArrowUp className="block h-3.5 w-3.5 shrink-0" />
+            : <ArrowDown className="block h-3.5 w-3.5 shrink-0" />}
+          {trend.value}
+        </p>
+      )}
     </div>
   );
 }

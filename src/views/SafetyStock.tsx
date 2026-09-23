@@ -1,6 +1,8 @@
 import StatusBadge from "@/components/StatusBadge";
+import { DataTable, type Column } from "@/components/app/data-table";
 import KPICard from "@/components/KPICard";
 import { Shield, AlertTriangle, Info } from "lucide-react";
+import { PageIcon } from "@/components/app/page-icon";
 
 const data = [
   { material: "Polypropylene Granules", cat: "Polymer", avgDaily: "280 kg/d", stdDev: "45 kg", lead: 7, variability: "Medium", current: "500 kg", recommended: "680 kg", gap: -180 },
@@ -21,52 +23,59 @@ const data = [
 ];
 
 export default function SafetyStock() {
+  type SsRow = (typeof data)[number];
+  const columns: Column<SsRow>[] = [
+    {
+      key: "select", header: "", width: "w-[44px]", sortable: false,
+      cell: () => <input type="checkbox" className="rounded" aria-label="Select row" />,
+    },
+    { key: "material", header: "Material", value: d => d.material, cell: d => <span className="font-medium">{d.material}</span> },
+    { key: "cat", header: "Category", width: "w-[110px]", value: d => d.cat, cell: d => <span className="text-muted-foreground">{d.cat}</span> },
+    { key: "avgDaily", header: "Avg. daily", align: "right", numeric: true, width: "w-[110px]", value: d => d.avgDaily, cell: d => d.avgDaily },
+    { key: "stdDev", header: "Std dev", align: "right", numeric: true, width: "w-[100px]", value: d => d.stdDev, cell: d => d.stdDev },
+    { key: "lead", header: "Lead (d)", align: "right", numeric: true, width: "w-[95px]", value: d => d.lead, cell: d => d.lead },
+    {
+      key: "variability", header: "Variability", width: "w-[120px]", value: d => d.variability,
+      cell: d => <StatusBadge status={d.variability === "High" ? "red" : d.variability === "Medium" ? "amber" : "green"} label={d.variability} />,
+    },
+    { key: "current", header: "Current SS", align: "right", numeric: true, width: "w-[115px]", value: d => d.current, cell: d => d.current },
+    { key: "recommended", header: "Recommended", align: "right", numeric: true, width: "w-[135px]", value: d => d.recommended, cell: d => <span className="font-medium">{d.recommended}</span> },
+    {
+      key: "gap", header: "Gap", align: "right", numeric: true, width: "w-[90px]", value: d => d.gap,
+      cell: d => (
+        <span className={`font-medium ${d.gap < 0 ? "text-danger" : "text-success"}`}>
+          {d.gap > 0 ? "+" : ""}{d.gap}
+        </span>
+      ),
+    },
+  ];
+
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Safety Stock Management</h2>
+    <div className="px-6 py-5 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Safety stock management</span>
+        </h1>
 
       </div>
 
-      <div className="grid grid-cols-3 gap-4 animate-fade-in-up stagger-1">
-        <KPICard title="Materials with Safety Stock" value="847" status="green" icon={Shield} />
-        <KPICard title="Below Safety Stock Now" value="34" status="red" icon={AlertTriangle} />
-        <KPICard title="No Buffer Defined" value="112" status="amber" icon={Info} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <KPICard title="Materials with safety stock" value="847" icon={Shield} />
+        <KPICard title="Below safety stock now" value="34" status="red" icon={AlertTriangle} />
+        <KPICard title="No buffer defined" value="112" status="amber" icon={Info} />
       </div>
 
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-2">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="bg-secondary/50 border-b border-border">
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground"><input type="checkbox" className="rounded" /></th>
-                {["Material", "Category", "Avg. Daily", "Std Dev", "Lead (d)", "Variability", "Current SS", "Recommended", "Gap"].map((h) => (
-                  <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((d, i) => (
-                <tr key={i} className="border-b border-border hover:bg-secondary/30 transition-colors">
-                  <td className="px-3 py-2"><input type="checkbox" className="rounded" /></td>
-                  <td className="px-3 py-2 font-medium">{d.material}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{d.cat}</td>
-                  <td className="px-3 py-2 tabular-nums">{d.avgDaily}</td>
-                  <td className="px-3 py-2 tabular-nums">{d.stdDev}</td>
-                  <td className="px-3 py-2 tabular-nums">{d.lead}</td>
-                  <td className="px-3 py-2">
-                    <StatusBadge status={d.variability === "High" ? "red" : d.variability === "Medium" ? "amber" : "green"} label={d.variability} />
-                  </td>
-                  <td className="px-3 py-2 tabular-nums">{d.current}</td>
-                  <td className="px-3 py-2 tabular-nums font-medium">{d.recommended}</td>
-                  <td className={`px-3 py-2 tabular-nums font-medium ${d.gap < 0 ? "text-danger" : "text-success"}`}>
-                    {d.gap > 0 ? "+" : ""}{d.gap}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="overflow-x-auto">
+        <DataTable
+          columns={columns}
+          rows={data}
+          rowKey={d => d.material}
+          name="Safety stock"
+          searchable
+          columnToggle
+          exportable
+        />
       </div>
     </div>
   );

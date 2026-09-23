@@ -1,7 +1,9 @@
 import KPICard from "@/components/KPICard";
 import { Clock, TrendingUp, DollarSign, Truck } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { CHART_COLORS, SERIES } from "@/lib/chart-colors";
+import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE, CHART_LEGEND_STYLE } from "@/lib/chart-colors";
+import { PageIcon } from "@/components/app/page-icon";
+import { useSeriesToggle } from "@/lib/chart-config";
 
 const monthlySpend = [
   { month: "Apr", polymers: 42, chemicals: 28, packaging: 18, other: 12 },
@@ -28,41 +30,61 @@ const priceTrend = [
 ];
 
 export default function ProcurementAnalytics() {
+  const spendLegend = useSeriesToggle(["polymers", "chemicals", "packaging", "other"]);
+
   return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold animate-fade-in-up">Procurement Cycle Analytics</h2>
-      <div className="grid grid-cols-4 gap-4 animate-fade-in-up stagger-1">
-        <KPICard title="Avg PO Cycle Time" value="12.4 days" subtitle="Req to delivery" icon={Clock} status="amber" />
-        <KPICard title="On-Time Delivery" value="83.2%" subtitle="Below 90% target" icon={Truck} status="amber" />
-        <KPICard title="Price Variance" value="+2.1%" subtitle="Over budget" icon={DollarSign} status="amber" />
-        <KPICard title="Top Vendor (Volume)" value="₹1.2 Cr" subtitle="Reliance Polymers" icon={TrendingUp} status="green" />
+    <div className="px-6 py-5 space-y-6">
+      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Procurement cycle analytics</span>
+        </h1>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard title="Avg PO cycle time" value="12.4 days" subtitle="Req to delivery" icon={Clock} status="amber" />
+        <KPICard title="On-time delivery" value="83.2%" subtitle="Below 90% target" icon={Truck} status="amber" />
+        <KPICard title="Price variance" value="+2.1%" subtitle="Over budget" icon={DollarSign} status="amber" />
+        <KPICard title="Top vendor (volume)" value="₹1.2 Cr" subtitle="Reliance Polymers" icon={TrendingUp} />
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-2">
-          <h3 className="text-sm font-semibold mb-3">Procurement Value Trend (₹L/month)</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <h3 className="text-body-md font-semibold mb-3">Procurement value trend (₹L/month)</h3>
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={monthlySpend}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="polymers" stackId="a" fill={SERIES[0]} name="Polymers" />
-              <Bar dataKey="chemicals" stackId="a" fill={SERIES[1]} name="Chemicals" />
-              <Bar dataKey="packaging" stackId="a" fill={SERIES[2]} name="Packaging" />
-              <Bar dataKey="other" stackId="a" fill={SERIES[3]} name="Other" radius={[3, 3, 0, 0]} />
+            <BarChart data={monthlySpend} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickMargin={6} />
+              <YAxis
+                width={52}
+                tick={{ fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+                label={{ value: "₹L", angle: -90, position: "insideLeft", style: { fontSize: 11, fill: CHART_COLORS.axis, textAnchor: "middle" } }}
+              />
+              <Tooltip
+                contentStyle={CHART_TOOLTIP_STYLE}
+                cursor={{ fill: CHART_COLORS.grid, fillOpacity: 0.3 }}
+                formatter={(v: number | string) => (typeof v === "number" ? `₹${v.toLocaleString()}L` : v)}
+              />
+              {/* Click a category to drop it out of the stack. */}
+              <Legend
+                iconSize={8}
+                wrapperStyle={{ ...CHART_LEGEND_STYLE, cursor: "pointer" }}
+                onClick={spendLegend.onLegendClick}
+              />
+              <Bar dataKey="polymers" stackId="a" fill={SERIES[0]} name="Polymers" hide={spendLegend.isHidden("polymers")} />
+              <Bar dataKey="chemicals" stackId="a" fill={SERIES[1]} name="Chemicals" hide={spendLegend.isHidden("chemicals")} />
+              <Bar dataKey="packaging" stackId="a" fill={SERIES[2]} name="Packaging" hide={spendLegend.isHidden("packaging")} />
+              <Bar dataKey="other" stackId="a" fill={SERIES[3]} name="Other" radius={[3, 3, 0, 0]} hide={spendLegend.isHidden("other")} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="bg-card rounded-lg border border-border p-4 animate-fade-in-up stagger-3">
-          <h3 className="text-sm font-semibold mb-3">Price Trends — Top Materials (₹/kg)</h3>
+        <div>
+          <h3 className="text-body-md font-semibold mb-3">Price trends — top materials (₹/kg)</h3>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={priceTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
               <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+              <YAxis width={44} tick={{ fontSize: 11 }} />
+              <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
+              <Legend iconSize={8} wrapperStyle={CHART_LEGEND_STYLE} />
               <Line type="monotone" dataKey="PP" stroke={SERIES[0]} strokeWidth={2} dot={false} name="Polypropylene" />
               <Line type="monotone" dataKey="SA" stroke={SERIES[1]} strokeWidth={1.5} dot={false} name="Stearic Acid" />
               <Line type="monotone" dataKey="TiO2" stroke={SERIES[2]} strokeWidth={1.5} dot={false} name="TiO2" />

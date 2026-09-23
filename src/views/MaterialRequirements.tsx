@@ -1,6 +1,9 @@
 import { useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
+import { DataTable, type Column } from "@/components/app/data-table";
 
+import { selectSm } from "@/components/app/controls";
+import { PageIcon } from "@/components/app/page-icon";
 const materials = [
   { code: "RM-1042", name: "Polypropylene Granules", category: "Polymer", opening: "4,200 kg", gross: "8,400 kg", scheduled: "3,000 kg", net: "1,200 kg", safety: "500 kg", reorder: "5,000 kg", coverage: 15, status: "amber" as const },
   { code: "RM-2087", name: "Stearic Acid", category: "Chemical", opening: "180 kg", gross: "620 kg", scheduled: "0 kg", net: "440 kg", safety: "100 kg", reorder: "500 kg", coverage: 4, status: "red" as const },
@@ -24,60 +27,62 @@ const materials = [
   { code: "RM-4401", name: "Pine Oil", category: "Essential Oil", opening: "45 L", gross: "120 L", scheduled: "80 L", net: "0 L", safety: "10 L", reorder: "0 L", coverage: 14, status: "amber" as const },
 ];
 
+type MrRow = (typeof materials)[number];
+
+const mrStatusLabel = (s: MrRow["status"]) =>
+  s === "green" ? "Adequate" : s === "amber" ? "Low" : "Critical";
+
 export default function MaterialRequirements() {
   const [showShortages, setShowShortages] = useState(false);
   const filtered = showShortages ? materials.filter((m) => m.status === "red" || m.status === "amber") : materials;
 
+  const columns: Column<MrRow>[] = [
+    { key: "code", header: "Code", width: "w-[96px]", value: m => m.code, cell: m => <span className="identifier text-body-sm">{m.code}</span> },
+    { key: "name", header: "Material", value: m => m.name, cell: m => <span className="font-medium">{m.name}</span> },
+    { key: "category", header: "Category", width: "w-[110px]", value: m => m.category, cell: m => <span className="text-muted-foreground">{m.category}</span> },
+    { key: "opening", header: "Opening stock", align: "right", numeric: true, width: "w-[130px]", value: m => m.opening, cell: m => m.opening },
+    { key: "gross", header: "Gross req.", align: "right", numeric: true, width: "w-[115px]", value: m => m.gross, cell: m => m.gross },
+    { key: "scheduled", header: "Scheduled receipts", align: "right", numeric: true, width: "w-[160px]", value: m => m.scheduled, cell: m => m.scheduled },
+    { key: "net", header: "Net req.", align: "right", numeric: true, width: "w-[110px]", value: m => m.net, cell: m => <span className="font-medium">{m.net}</span> },
+    { key: "safety", header: "Safety stock", align: "right", numeric: true, width: "w-[120px]", value: m => m.safety, cell: m => m.safety },
+    { key: "reorder", header: "Reorder qty", align: "right", numeric: true, width: "w-[120px]", value: m => m.reorder, cell: m => m.reorder },
+    { key: "coverage", header: "Coverage", align: "right", numeric: true, width: "w-[100px]", value: m => m.coverage, cell: m => `${m.coverage}d` },
+    { key: "status", header: "Status", width: "w-[110px]", value: m => mrStatusLabel(m.status), cell: m => <StatusBadge status={m.status} label={mrStatusLabel(m.status)} /> },
+  ];
+
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between animate-fade-in-up">
-        <h2 className="text-lg font-semibold">Material Requirements</h2>
+    <div className="px-6 py-5 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+          <PageIcon />
+          <span className="min-w-0">Material requirements</span>
+        </h1>
         <div className="flex items-center gap-3">
-          <select className="h-8 px-2 rounded-md border border-input bg-background text-xs">
-            <option>All Categories</option><option>Polymer</option><option>Chemical</option><option>Packaging</option><option>Fragrance</option>
+          <select className={selectSm}>
+            <option>All categories</option><option>Polymer</option><option>Chemical</option><option>Packaging</option><option>Fragrance</option>
           </select>
-          <select className="h-8 px-2 rounded-md border border-input bg-background text-xs">
-            <option>All Warehouses</option><option>Pune Plant</option><option>Mumbai WH</option><option>Delhi Depot</option>
+          <select className={selectSm}>
+            <option>All warehouses</option><option>Pune Plant</option><option>Mumbai WH</option><option>Delhi Depot</option>
           </select>
-          <label className="flex items-center gap-1.5 text-xs">
+          <label className="flex items-center gap-1.5 text-body-sm">
             <input type="checkbox" checked={showShortages} onChange={() => setShowShortages(!showShortages)} className="rounded" />
             Show only shortages
           </label>
         </div>
       </div>
 
-      <div className="bg-card rounded-lg border border-border overflow-hidden animate-fade-in-up stagger-1">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="bg-secondary/50 border-b border-border">
-                {["Code", "Material", "Category", "Opening Stock", "Gross Req.", "Scheduled Receipts", "Net Req.", "Safety Stock", "Reorder Qty", "Coverage", "Status"].map((h) => (
-                  <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((m, i) => (
-                <tr key={i} className="border-b border-border hover:bg-secondary/30 transition-colors">
-                  <td className="px-3 py-2 font-mono text-xs">{m.code}</td>
-                  <td className="px-3 py-2 font-medium">{m.name}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{m.category}</td>
-                  <td className="px-3 py-2 tabular-nums">{m.opening}</td>
-                  <td className="px-3 py-2 tabular-nums">{m.gross}</td>
-                  <td className="px-3 py-2 tabular-nums">{m.scheduled}</td>
-                  <td className="px-3 py-2 tabular-nums font-medium">{m.net}</td>
-                  <td className="px-3 py-2 tabular-nums">{m.safety}</td>
-                  <td className="px-3 py-2 tabular-nums">{m.reorder}</td>
-                  <td className="px-3 py-2 tabular-nums">{m.coverage}d</td>
-                  <td className="px-3 py-2">
-                    <StatusBadge status={m.status} label={m.status === "green" ? "Adequate" : m.status === "amber" ? "Low" : "Critical"} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-4 py-3 border-t border-border text-xs text-muted-foreground">
+      <div className="overflow-x-auto">
+        <DataTable
+          columns={columns}
+          rows={filtered}
+          rowKey={m => m.code}
+          name="Material requirements"
+          searchable
+          columnToggle
+          exportable
+          pageSize={25}
+        />
+        <div className="px-4 py-3 border-t border-border text-body-sm text-muted-foreground">
           Showing {filtered.length} of {materials.length} materials
         </div>
       </div>
