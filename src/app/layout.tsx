@@ -3,7 +3,10 @@ import Providers from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Anvaya — Production Planning",
+  // The browser tab shows this next to the favicon, where the space is tight
+  // and the product name is what identifies the tab. The longer descriptive
+  // form is kept for link previews below.
+  title: "Anvaya",
   description: "Anvaya — Material Planning & ERP Platform",
   authors: [{ name: "Anvaya" }],
   icons: { icon: "/favicon.svg" },
