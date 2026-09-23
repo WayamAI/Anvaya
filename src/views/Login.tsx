@@ -32,7 +32,10 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-[380px]">
         <div className="mb-9 text-center">
-          <img src={anvayaLogo} alt="Anvaya" className="mx-auto h-16 object-contain" />
+          {/* The lockup is 4.5:1 and cropped to its own artwork, so 48px of
+              height comes out ~216px wide — a little over half the 380px
+              column, which sits over the form without crowding it. */}
+          <img src={anvayaLogo} alt="Anvaya" className="mx-auto block h-12 w-auto object-contain" />
           {/*
             The one Michroma setting in the product. It is the wordmark, so it
             gets the display face; nothing below it does.

@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import anvayaLogoLight from "@/assets/anvaya-logo-light.svg";
 import anvayaLogoDark from "@/assets/anvaya-logo-dark.svg";
+// The mark carries no wordmark, so it needs no light and dark variant: the
+// gradient reads against either background.
+import anvayaMarkAsset from "@/assets/anvaya-mark.svg";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -262,6 +265,7 @@ export default function AppSidebar() {
   const pathname = usePathname();
   const { theme = "light", setTheme } = useTheme();
   const anvayaLogo = (theme === "dark" ? anvayaLogoDark : anvayaLogoLight).src;
+  const anvayaMark = anvayaMarkAsset.src;
 
   /*
     Collapsed is the default state of the product, and it is also the initial
@@ -337,13 +341,15 @@ export default function AppSidebar() {
         collapsed ? "w-[68px]" : "w-[268px]",
       )}
     >
-      {/* Wordmark. Set to the height of the application bar on the other side
-          of the seam so the two line up, and pinned to the same left gutter as
-          the discs below it once the rail is open.
+      {/* Brand. Set to the height of the application bar on the other side of
+          the seam so the two line up.
 
-          The asset is a 1000x1000 square with generous internal margin, so the
-          artwork occupies well under the box it is given and has to be set
-          larger than a tight logo would to read at the same weight. */}
+          Two assets rather than one scaled asset. The full lockup is 4.5:1;
+          squeezed into the 68px rail its letterforms would come out about
+          four pixels tall, which is a smudge rather than a wordmark. So the
+          rail shows the mark alone when collapsed and the lockup once there
+          is width to read it. Both are cropped to their own artwork, so the
+          height class below sets the artwork height exactly. */}
       <div
         className={cn(
           "flex shrink-0 items-center justify-center px-2 transition-[height] duration-300 ease-out",
@@ -354,11 +360,14 @@ export default function AppSidebar() {
         )}
       >
         <img
-          src={anvayaLogo}
+          src={collapsed ? anvayaMark : anvayaLogo}
           alt="Anvaya"
           className={cn(
-            "block w-auto object-contain transition-[height] duration-300 ease-out",
-            collapsed ? "h-10" : "h-16",
+            "block w-auto object-contain",
+            // 32px tall gives the mark the same presence as the 36px discs
+            // below it; 44px of lockup puts the wordmark at ~17px, which
+            // reads comfortably and still leaves the rail generous margins.
+            collapsed ? "h-8" : "h-11",
           )}
         />
       </div>
