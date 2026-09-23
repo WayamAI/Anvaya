@@ -73,6 +73,51 @@ generated when absent. It is always echoed in the response header.
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | `GET` | `/api/v1/health` | none | Liveness and readiness, including a database round-trip |
+| `POST` | `/api/v1/auth/login` | none | Exchange credentials for a session cookie |
+| `POST` | `/api/v1/auth/logout` | optional | Revoke the current session |
+| `GET` | `/api/v1/auth/me` | session | Current user and effective permissions |
+| `POST` | `/api/v1/auth/change-password` | session | Rotate password; revokes all other sessions |
+| `GET` | `/api/v1/auth/sessions` | session | The caller's own active sessions |
+| `DELETE` | `/api/v1/auth/sessions` | session | Sign out everywhere |
+| `GET` | `/api/v1/audit` | `audit:read` | Company audit trail, newest first, cursor-paged |
+
+## Authentication
+
+`POST /api/v1/auth/login` with `{ "email": "...", "password": "..." }` sets an
+`anvaya.session` cookie: httpOnly, SameSite=Lax, Secure in production. The
+token is never in the response body, so no script on the page can read it.
+
+The cookie holds a random 256-bit token; only its SHA-256 is stored. The
+session row is the source of truth, which is what makes revocation real — a
+signed-out or revoked session stops working immediately, where a self-contained
+JWT would stay valid until it expired.
+
+Failure behaviour is uniform on purpose. An unknown email, a wrong password, a
+locked account and a deactivated user all return **401 `UNAUTHENTICATED`** with
+`"Incorrect email or password"`. Distinguishing them would let an attacker
+enumerate valid addresses. The unknown-email path still performs a full argon2
+verification against a placeholder hash so it costs the same time as a real one.
+
+Five consecutive failures lock an account for 15 minutes. While locked, even
+the correct password is rejected — with the same generic message.
+
+## Authorization
+
+Permissions are `resource:action` strings held by roles, which are rows in the
+database rather than hard-coded names. An endpoint declares what it needs:
+
+```ts
+export const GET = withApi(handler, { permission: "audit:read" });
+```
+
+Endpoints are private by default — `withApi` requires a session unless the
+handler passes `{ auth: false }`, so forgetting to think about authorization
+fails closed rather than open.
+
+`/api/v1/auth/me` returns the caller's permission list. The client uses it to
+decide what to *offer*; it never decides what is *allowed*. Every request is
+checked again server-side, so a user who edits that list in devtools gets
+buttons that return 403.
 
 `GET /api/v1/health` →
 

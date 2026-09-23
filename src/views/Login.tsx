@@ -14,18 +14,56 @@ export default function Login() {
   const anvayaLogo = (theme === "dark" ? anvayaLogoDark : anvayaLogoLight).src;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Demo auth: any email + any password is accepted — no credential check.
-  const handleLogin = () => {
-    localStorage.setItem("matrixops_auth", "true");
-    localStorage.setItem("matrixops_email", email || "guest@anvaya.in");
-    localStorage.setItem("matrixops_role", "admin");
-    router.push("/");
-  };
+  /*
+    Credentials are checked by the server. The session arrives as an httpOnly
+    cookie, which no script on this page can read — so there is nothing to put
+    in localStorage, and nothing for a cross-site script to steal.
 
-  const handleSubmit = (e: React.FormEvent) => {
+    `router.refresh()` before navigating discards the cached tree rendered for
+    a signed-out visitor; without it the shell can reappear from cache still
+    believing nobody is signed in.
+  */
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    handleLogin();
+    if (submitting) return;
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const body = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setError(body?.error?.message ?? "Sign in failed. Please try again.");
+        return;
+      }
+
+      /*
+        Return the user to wherever they were headed. The destination comes
+        from the middleware's `from` query parameter, or from the route
+        guard's sessionStorage note. Only same-origin paths are accepted: a
+        value like "//evil.example" would otherwise redirect off-site.
+      */
+      const raw = new URLSearchParams(window.location.search).get("from")
+        ?? sessionStorage.getItem("anvaya_from");
+      sessionStorage.removeItem("anvaya_from");
+      const safe = raw && raw.startsWith("/") && !raw.startsWith("//") && raw !== "/login" ? raw : "/";
+
+      router.refresh();
+      router.replace(safe);
+    } catch {
+      setError("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -74,8 +112,21 @@ export default function Login() {
               />
             </div>
 
-            <button type="submit" className={`${btnPrimary} h-10 w-full`}>
-              Sign in <ArrowRight />
+            {/* Sign-in failures are reported here rather than as a toast: the
+                message belongs next to the fields it refers to, and a screen
+                reader should hear it when it appears. */}
+            {error && (
+              <p role="alert" className="text-body-sm text-danger">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className={`${btnPrimary} h-10 w-full disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {submitting ? "Signing in…" : "Sign in"} <ArrowRight />
             </button>
           </div>
         </form>

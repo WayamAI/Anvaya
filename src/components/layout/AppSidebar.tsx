@@ -10,6 +10,7 @@ import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useSession } from "@/components/auth/session-context";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Layers, Factory, Package, ShoppingCart,
@@ -312,22 +313,28 @@ export default function AppSidebar() {
   };
 
   /*
-    Identity for the account control. Read after mount — localStorage does not
-    exist during server rendering, and reading it inline would desync the
-    first client paint.
+    Identity comes from the session the route guard resolved, so the rail
+    shows who is actually signed in rather than whatever a local flag last
+    claimed. Roles are joined because a user may hold more than one.
   */
-  const [identity, setIdentity] = useState({ email: "guest@matrixops.in", role: "admin" });
-  useEffect(() => {
-    setIdentity({
-      email: localStorage.getItem("matrixops_email") || "guest@matrixops.in",
-      role: localStorage.getItem("matrixops_role") || "admin",
-    });
-  }, []);
-  const { email, role } = identity;
+  const { user } = useSession();
+  const email = user.email;
+  const role = user.roles.length ? user.roles.join(", ").toLowerCase() : "no role";
 
-  const handleLogout = () => {
-    localStorage.removeItem("matrixops_auth");
-    router.push("/login");
+  /*
+    Sign-out revokes the session server-side before navigating. Clearing a
+    cookie alone would leave the session valid for anyone holding a copy of
+    it, so the request matters even though the redirect looks the same.
+  */
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" });
+    } catch {
+      // Even if the call fails, send the user to the login screen; the
+      // session expires on its own and the next request will be rejected.
+    }
+    router.replace("/login");
+    router.refresh();
   };
 
   const isDark = theme === "dark";

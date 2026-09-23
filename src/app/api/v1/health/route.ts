@@ -31,4 +31,6 @@ export const GET = withApi(async () => {
     uptimeSeconds: Math.round(process.uptime()),
     checks: { database },
   });
-});
+  // Public: a health probe runs before anyone can sign in, and a load
+  // balancer has no credentials to offer.
+}, { auth: false });

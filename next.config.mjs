@@ -41,9 +41,16 @@ const nextConfig = {
       logs nothing.
 
       Prisma is here for the same class of reason: it loads its query engine
-      binary relative to its own package directory.
+      binary relative to its own package directory, and @node-rs/argon2 ships
+      a compiled .node addon that webpack cannot parse as JavaScript at all.
     */
-    serverComponentsExternalPackages: ["pino", "pino-pretty", "@prisma/client", "@prisma/adapter-pg"],
+    serverComponentsExternalPackages: [
+      "pino",
+      "pino-pretty",
+      "@prisma/client",
+      "@prisma/adapter-pg",
+      "@node-rs/argon2",
+    ],
   },
 };
 

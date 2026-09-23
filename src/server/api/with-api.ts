@@ -6,6 +6,8 @@ import { AppError, ErrorCode, type ErrorDetail } from "@/server/errors/app-error
 import { logger } from "@/server/logger";
 import { fail } from "./respond";
 import { isProduction } from "@/server/config/env";
+import { resolveSession, touchSession, SESSION_COOKIE, type Actor } from "@/server/auth/session";
+import { requireAuthenticated, requirePermission } from "@/server/auth/rbac";
 
 /**
  * The wrapper every route handler is built from.
@@ -25,22 +27,64 @@ export interface ApiContext<P = Record<string, string>> {
   params: P;
   requestId: string;
   log: typeof logger;
+  /**
+   * The authenticated user, or null. Always resolved from the session cookie,
+   * never from anything the client can assert about itself.
+   */
+  actor: Actor | null;
+  /** Client address and agent, for session records and the audit trail. */
+  clientInfo: { ipAddress: string | null; userAgent: string | null };
 }
 
 type Handler<P> = (ctx: ApiContext<P>) => Promise<NextResponse> | NextResponse;
 
-export function withApi<P = Record<string, string>>(handler: Handler<P>) {
+export interface WithApiOptions {
+  /**
+   * Require a signed-in user. Defaults to true: an endpoint is private unless
+   * it says otherwise, so forgetting to think about auth fails closed.
+   */
+  auth?: boolean;
+  /** Permission the caller must hold. Implies `auth`. */
+  permission?: string;
+}
+
+export function withApi<P = Record<string, string>>(
+  handler: Handler<P>,
+  options: WithApiOptions = {},
+) {
+  const { auth = true, permission } = options;
+
   return async (req: NextRequest, route?: { params: P }): Promise<NextResponse> => {
     const requestId = req.headers.get("x-request-id") ?? randomUUID();
     const started = performance.now();
     const log = logger.child({ requestId, method: req.method, path: new URL(req.url).pathname });
 
     try {
+      const clientInfo = {
+        // Behind a proxy the socket address is the proxy's, so the forwarded
+        // header is preferred where present.
+        ipAddress:
+          req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+          req.headers.get("x-real-ip") ??
+          null,
+        userAgent: req.headers.get("user-agent"),
+      };
+
+      const actor = await resolveSession(req.cookies.get(SESSION_COOKIE)?.value);
+
+      if (auth || permission) requireAuthenticated(actor);
+      if (permission) requirePermission(actor, permission);
+
+      // Sliding expiry, written at most once a minute per session.
+      if (actor) void touchSession(actor.sessionId, new Date());
+
       const res = await handler({
         req,
         params: (route?.params ?? {}) as P,
         requestId,
-        log,
+        log: actor ? log.child({ userId: actor.userId }) : log,
+        actor,
+        clientInfo,
       });
 
       res.headers.set("x-request-id", requestId);
