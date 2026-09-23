@@ -8,7 +8,10 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // `prisma/` is included so the seed definition is validated as part of
+    // the normal suite — a dangling material code in a BOM should fail here,
+    // not halfway through a database seed.
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "prisma/**/*.{test,spec}.{ts,tsx}"],
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
