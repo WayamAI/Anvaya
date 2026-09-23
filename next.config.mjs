@@ -15,6 +15,11 @@ const nextConfig = {
     Holding every route in memory for the session removes the recompile on all
     but the first visit. This affects `next dev` only; production builds are
     compiled ahead of time and ignore it.
+
+    This only removes *repeat* compiles. The first visit to a route still costs
+    one, and with prefetching disabled in dev that cost lands on the sidebar
+    click. `scripts/dev.mjs` (what `npm run dev` runs) closes that gap by
+    walking every route once after startup, so clicks never pay for a compile.
   */
   onDemandEntries: {
     maxInactiveAge: 60 * 60 * 1000,
@@ -23,6 +28,22 @@ const nextConfig = {
   eslint: {
     // Linting is run explicitly via `npm run lint`.
     ignoreDuringBuilds: true,
+  },
+
+  experimental: {
+    /*
+      Left out of the server bundle and required at runtime instead.
+
+      pino sends pretty-printing to a worker thread, which it starts by
+      resolving "pino-pretty" by name. Once webpack has bundled pino that
+      name no longer resolves from inside the bundle, the worker fails to
+      start, and every log line is silently dropped — the app looks fine and
+      logs nothing.
+
+      Prisma is here for the same class of reason: it loads its query engine
+      binary relative to its own package directory.
+    */
+    serverComponentsExternalPackages: ["pino", "pino-pretty", "@prisma/client", "@prisma/adapter-pg"],
   },
 };
 

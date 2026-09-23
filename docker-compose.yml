@@ -1,0 +1,38 @@
+# Local development database for Anvaya.
+#
+#   docker compose up -d      start Postgres
+#   docker compose down       stop it (data is kept in the named volume)
+#   docker compose down -v    stop it and DELETE all data
+#
+# Production does not use this file — it connects to a managed Postgres via
+# DATABASE_URL. See .env.example.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: anvaya-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: anvaya
+      POSTGRES_PASSWORD: anvaya_dev_password
+      POSTGRES_DB: anvaya
+      # Deterministic collation, so ORDER BY does not differ between a
+      # developer's machine and the server.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    ports:
+      # Deliberately not 5432: it avoids a clash with any Postgres already
+      # installed on the host, which otherwise produces a confusing
+      # "password authentication failed" against the wrong server.
+      - "55432:5432"
+    volumes:
+      - anvaya_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `npm run db:up` waits on this, so migrations never race the server.
+      test: ["CMD-SHELL", "pg_isready -U anvaya -d anvaya"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  anvaya_pgdata:
+    name: anvaya_pgdata

@@ -24,6 +24,8 @@ dist-ssr
 *.sw?
 .vercel
 .env*
+# The template carries no secrets and is how a new checkout learns what to set.
+!.env.example
 
 # next.js
 .next/
