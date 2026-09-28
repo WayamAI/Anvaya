@@ -77,5 +77,6 @@ export function toPublicActor(actor: Actor) {
     companyId: actor.companyId,
     roles: actor.roles,
     permissions: [...actor.permissions].sort(),
+    mustChangePassword: actor.mustChangePassword ?? false,
   };
 }

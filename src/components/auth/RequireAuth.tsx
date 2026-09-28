@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SessionProvider, type SessionUser } from "./session-context";
+import { ForcePasswordChange } from "./force-password-change";
 
 /**
  * Route guard.
@@ -66,6 +67,15 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     // Matches the app background so the wait reads as the page still opening
     // rather than as a flash of empty chrome.
     return <div className="h-screen w-full bg-background" aria-busy="true" />;
+  }
+
+  if (state.user.mustChangePassword) {
+    return (
+      <ForcePasswordChange
+        name={state.user.name}
+        onDone={() => setState({ status: "authed", user: { ...state.user!, mustChangePassword: false } })}
+      />
+    );
   }
 
   return <SessionProvider user={state.user}>{children}</SessionProvider>;

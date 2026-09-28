@@ -75,10 +75,15 @@ export function withApi<P = Record<string, string>>(
       const actor = await resolveSession(req.cookies.get(SESSION_COOKIE)?.value);
 
       if (auth || permission) requireAuthenticated(actor);
+      if (actor?.mustChangePassword && !PASSWORD_CHANGE_ALLOWED.has(new URL(req.url).pathname)) {
+        throw AppError.forbidden("You must set a new password before continuing");
+      }
       if (permission) requirePermission(actor, permission);
 
       // Sliding expiry, written at most once a minute per session.
-      if (actor) void touchSession(actor.sessionId, new Date());
+      if (actor?.lastActivityAt && actor.sessionCreatedAt) {
+        void touchSession(actor.sessionId, actor.lastActivityAt, actor.sessionCreatedAt);
+      }
 
       const res = await handler({
         req,
@@ -99,6 +104,9 @@ export function withApi<P = Record<string, string>>(
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** All a user with an administrator-issued password may do until they replace it. */
+const PASSWORD_CHANGE_ALLOWED = new Set(["/api/v1/auth/change-password", "/api/v1/auth/me", "/api/v1/auth/logout"]);
 
 /**
  * Cross-site request forgery guard for state-changing requests.

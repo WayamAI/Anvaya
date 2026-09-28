@@ -128,6 +128,15 @@ generated when absent. It is always echoed in the response header.
 | `POST` | `/api/v1/work-orders/:id/complete` | `work-order:update` | IN_PROGRESS → COMPLETED without more output |
 | `POST` | `/api/v1/work-orders/:id/close` | `work-order:update` | COMPLETED → CLOSED |
 | `POST` | `/api/v1/work-orders/:id/cancel` | `work-order:update` | `{ reason }`; only while nothing is issued or produced |
+| `GET` | `/api/v1/users` | `user:read` | Users with roles, lock state and whether they hold a temporary password |
+| `POST` | `/api/v1/users` | `user:create` | Create a user; a server-generated temporary password is returned once |
+| `PATCH` | `/api/v1/users/:id` | `user:update` | Name, active flag, roles. Deactivation revokes every session |
+| `POST` | `/api/v1/users/:id/reset-password` | `user:update` | Issue a temporary password, clear lock-out, revoke sessions |
+| `POST` | `/api/v1/users/:id/unlock` | `user:update` | Clear a failed-sign-in lock-out |
+| `GET` | `/api/v1/roles` | `role:read` | Roles with permissions and user counts |
+| `POST` | `/api/v1/roles` | `role:create` | Custom role from permissions the caller holds |
+| `PATCH` `DELETE` | `/api/v1/roles/:id` | `role:update` / `role:delete` | Custom roles only; a role in use cannot be deleted |
+| `GET` | `/api/v1/permissions` | `role:read` | The permission catalogue |
 
 All master-data and inventory reads are scoped to the caller's company. A
 record in another company reads as 404, the same as a missing one.
@@ -405,6 +414,28 @@ PLANNED ─firm─▶ FIRMED ─release─▶ RELEASED ─issue/output─▶ IN_
   each lot on the finished lot's backward trace, and each of those lots lists
   the order on its forward trace. Backward completeness requires a CoA
   behind every lot drawn.
+
+### User administration
+
+- **You can only hand out what you hold.** Assigning roles, composing or
+  editing a custom role, resetting someone's password, and activating or
+  deactivating them are all refused (403) if the role or user carries a
+  permission the acting administrator lacks.
+- **There is always an administrator.** The last active user with the ADMIN
+  role cannot be deactivated or lose it; nobody can deactivate themselves.
+- System roles cannot be edited or deleted; create a custom role instead.
+- **Temporary passwords.** A user created or reset by an administrator must
+  set their own password before anything else: until then every endpoint
+  except `/auth/change-password`, `/auth/me` and `/auth/logout` answers 403,
+  and the app shows only the set-password form. Server-generated passwords
+  are returned once, with `Cache-Control: no-store`, and never logged.
+
+### Sessions
+
+A session ends after `SESSION_MAX_AGE_SECONDS` (default 8 h) without
+activity; each request (at most once a minute) pushes expiry out again, up
+to `SESSION_ABSOLUTE_MAX_SECONDS` (default 24 h) after sign-in, when it ends
+regardless.
 
 ## Authentication
 

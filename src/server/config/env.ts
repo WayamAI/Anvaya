@@ -26,6 +26,8 @@ const schema = z.object({
   // a too-short secret is caught at boot rather than at first login.
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters").optional(),
   SESSION_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(28_800),
+  /** Hard ceiling on a session however active it is; activity cannot extend past it. */
+  SESSION_ABSOLUTE_MAX_SECONDS: z.coerce.number().int().positive().default(86_400),
 
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])

@@ -127,7 +127,7 @@ export async function changePassword(actor: Actor, input: ChangePasswordInput, c
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash: await hashPassword(input.newPassword) },
+    data: { passwordHash: await hashPassword(input.newPassword), mustChangePassword: false },
   });
 
   const revoked = await revokeAllSessionsForUser(actor.userId, actor.sessionId);

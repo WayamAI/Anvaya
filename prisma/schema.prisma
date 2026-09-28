@@ -363,6 +363,11 @@ model User {
   isActive    Boolean   @default(true)
   lastLoginAt DateTime?
 
+  /// Set when an administrator issues a password. Until the user sets their
+  /// own, the API allows nothing but changing it, reading /auth/me and
+  /// signing out.
+  mustChangePassword Boolean @default(false)
+
   /// Consecutive failed logins, used to throttle credential stuffing.
   failedLoginCount Int       @default(0)
   lockedUntil      DateTime?

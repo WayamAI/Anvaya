@@ -17,6 +17,8 @@ export interface SessionUser {
   companyId: string;
   roles: string[];
   permissions: string[];
+  /** Set while the user holds an administrator-issued password. */
+  mustChangePassword?: boolean;
 }
 
 interface SessionValue {

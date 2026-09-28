@@ -59,6 +59,21 @@ export interface Actor {
   roles: string[];
   /** Flattened permission codes, e.g. "material:create". */
   permissions: Set<string>;
+  /** An administrator-issued password must be replaced before anything else. */
+  mustChangePassword?: boolean;
+  /** For the sliding idle window; see `touchSession`. */
+  lastActivityAt?: Date;
+  sessionCreatedAt?: Date;
+}
+
+/**
+ * Where a session's expiry moves to on activity: the idle window from now,
+ * but never past the absolute cap from sign-in.
+ */
+export function slidingExpiry(now: Date, createdAt: Date): Date {
+  const idle = now.getTime() + env.SESSION_MAX_AGE_SECONDS * 1000;
+  const cap = createdAt.getTime() + env.SESSION_ABSOLUTE_MAX_SECONDS * 1000;
+  return new Date(Math.min(idle, cap));
 }
 
 /**
@@ -102,19 +117,25 @@ export async function resolveSession(rawToken: string | undefined | null): Promi
     sessionId: session.id,
     roles,
     permissions,
+    mustChangePassword: session.user.mustChangePassword,
+    lastActivityAt: session.lastActivityAt,
+    sessionCreatedAt: session.createdAt,
   };
 }
 
 /**
- * Extend a session's sliding window.
+ * Extend a session's sliding window: activity pushes expiry out to the idle
+ * window from now, capped at the absolute maximum from sign-in.
  *
- * Only written when the recorded activity is more than a minute old: a busy
- * page would otherwise issue an UPDATE per request for no benefit.
+ * `lastActivityAt` is the value stored on the session, as resolved for this
+ * request. Only written when that is more than a minute old: a busy page
+ * would otherwise issue an UPDATE per request for no benefit.
  */
-export async function touchSession(sessionId: string, lastActivityAt: Date) {
-  if (Date.now() - lastActivityAt.getTime() < 60_000) return;
+export async function touchSession(sessionId: string, lastActivityAt: Date, createdAt: Date) {
+  const now = new Date();
+  if (now.getTime() - lastActivityAt.getTime() < 60_000) return;
   await prisma.session
-    .update({ where: { id: sessionId }, data: { lastActivityAt: new Date() } })
+    .update({ where: { id: sessionId }, data: { lastActivityAt: now, expiresAt: slidingExpiry(now, createdAt) } })
     .catch(() => {
       // A session revoked between resolve and touch is not an error worth
       // failing the request over; the next resolve will reject it.
