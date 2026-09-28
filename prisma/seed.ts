@@ -28,7 +28,9 @@ import {
 import {
   AS_OF_DATE, BALANCES, LOTS, PURCHASE_ORDERS, GOODS_RECEIPTS,
   SALES_ORDERS, FORECASTS, WORK_ORDERS, CONSTRAINTS, INTEGRATIONS, SETTINGS,
+  PRODUCED_LOTS, COMPONENT_LOTS, LOT_DISPATCHES,
 } from "./seed/operational-data";
+import { MOVEMENT_REF } from "../src/server/inventory/lots";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -540,6 +542,107 @@ async function main() {
     }
   }
   done(`${WORK_ORDERS.length} orders / ${operationCount} operations`);
+
+  // -- Lot traceability ---------------------------------------------------
+  //
+  // Links the completed work order to the lot it produced and the lots it
+  // consumed, and the delivered sales order to the lot it shipped. The links
+  // are ledger movements, so like the opening stock they are rebuilt rather
+  // than appended: this step deletes exactly the rows it owns, writes them
+  // again, then re-derives running balances and the balance cache for every
+  // material and location it touched.
+  step("lot traceability");
+  const touched = new Set<string>();
+  const orderId = async (orderNumber: string) =>
+    (await prisma.workOrder.findUniqueOrThrow({ where: { companyId_orderNumber: { companyId: company.id, orderNumber } } })).id;
+
+  for (const p of PRODUCED_LOTS) {
+    const woId = await orderId(p.workOrder);
+    const key = { materialId: materialId.get(p.material)!, locationId: locationId.get(p.location)! };
+    const shipped = LOT_DISPATCHES.filter((x) => x.lotNumber === p.lotNumber).reduce((s, x) => s + x.quantity, 0);
+    const data = {
+      locationId: key.locationId, vendorId: null,
+      receivedQty: dec(p.quantity), consumedQty: dec(shipped), remainingQty: dec(p.quantity - shipped),
+      receiptDate: d(p.productionDate), expiryDate: d(p.expiryDate), qcStatus: p.qcStatus,
+    };
+    const lot = await prisma.inventoryLot.upsert({
+      where: { materialId_lotNumber: { materialId: key.materialId, lotNumber: p.lotNumber } },
+      update: data,
+      create: { materialId: key.materialId, lotNumber: p.lotNumber, ...data },
+    });
+    lotId.set(p.lotNumber, lot.id);
+
+    const material = MATERIALS.find((m) => m.code === p.material)!;
+    await prisma.stockMovement.deleteMany({
+      where: { lotId: lot.id, type: StockMovementType.PRODUCTION_RECEIPT, referenceType: MOVEMENT_REF.WORK_ORDER, referenceId: woId },
+    });
+    await prisma.stockMovement.create({
+      data: {
+        ...key, lotId: lot.id, type: StockMovementType.PRODUCTION_RECEIPT,
+        quantity: dec(p.quantity), unitCost: dec(material.standardCost), balanceAfter: dec(0),
+        referenceType: MOVEMENT_REF.WORK_ORDER, referenceId: woId,
+        occurredAt: d(p.productionDate), notes: `Output of ${p.workOrder}`,
+      },
+    });
+    touched.add(`${key.materialId}|${key.locationId}`);
+  }
+
+  for (const c of COMPONENT_LOTS) {
+    await prisma.workOrderComponent.update({
+      where: { workOrderId_materialId: { workOrderId: await orderId(c.workOrder), materialId: materialId.get(c.material)! } },
+      data: { lotId: lotId.get(c.lotNumber)! },
+    });
+  }
+
+  for (const x of LOT_DISPATCHES) {
+    const so = await prisma.salesOrder.findUniqueOrThrow({
+      where: { companyId_orderNumber: { companyId: company.id, orderNumber: x.salesOrder } },
+    });
+    const line = await prisma.salesOrderLine.findUniqueOrThrow({
+      where: { salesOrderId_lineNumber: { salesOrderId: so.id, lineNumber: x.lineNumber } },
+      include: { material: true },
+    });
+    const lot = lotId.get(x.lotNumber)!;
+    await prisma.stockMovement.deleteMany({
+      where: { lotId: lot, type: StockMovementType.ISSUE, referenceType: MOVEMENT_REF.SALES_ORDER_LINE, referenceId: line.id },
+    });
+    await prisma.stockMovement.create({
+      data: {
+        materialId: line.materialId, locationId: line.locationId, lotId: lot, type: StockMovementType.ISSUE,
+        quantity: dec(-x.quantity), unitCost: line.material.standardCost, balanceAfter: dec(0),
+        referenceType: MOVEMENT_REF.SALES_ORDER_LINE, referenceId: line.id,
+        occurredAt: d(x.dispatchDate), notes: `Dispatch against ${x.salesOrder}`,
+      },
+    });
+    touched.add(`${line.materialId}|${line.locationId}`);
+  }
+
+  // Running balances and the balance cache follow the ledger, never the
+  // other way round.
+  for (const k of touched) {
+    const [mId, lId] = k.split("|");
+    const movements = await prisma.stockMovement.findMany({
+      where: { materialId: mId, locationId: lId },
+      orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+    });
+    let running = new Prisma.Decimal(0);
+    for (const m of movements) {
+      running = running.plus(m.quantity);
+      if (!m.balanceAfter.equals(running)) {
+        await prisma.stockMovement.update({ where: { id: m.id }, data: { balanceAfter: running } });
+      }
+    }
+    const cost = (await prisma.material.findUniqueOrThrow({ where: { id: mId } })).standardCost ?? new Prisma.Decimal(0);
+    await prisma.inventoryBalance.update({
+      where: { materialId_locationId: { materialId: mId, locationId: lId } },
+      data: {
+        onHandQty: running,
+        valuation: running.times(cost),
+        lastMovementAt: movements[movements.length - 1]?.occurredAt ?? null,
+      },
+    });
+  }
+  done(`${PRODUCED_LOTS.length} produced lot / ${COMPONENT_LOTS.length} input links / ${LOT_DISPATCHES.length} dispatch`);
 
   // -- Constraints --------------------------------------------------------
   step("production constraints");

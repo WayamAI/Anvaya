@@ -1,87 +1,125 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useDeferredValue } from "react";
+import { useQuery } from "@tanstack/react-query";
 import StatusBadge from "@/components/StatusBadge";
-import { Search, ChevronDown, ChevronRight, ExternalLink, AlertTriangle, Shield, Package, X, FileText, Ban } from "lucide-react";
-import { productionBatches, getProductionBatch, getBatchesByRMBatch } from "@/data/production_batches";
-import { rmBatches, getRMBatch } from "@/data/rm_batches";
-import { grns, getGRN, getGRNsByRMBatch } from "@/data/grn";
-import { purchaseOrders, getPO } from "@/data/purchase_orders";
-import { salesOrders, getSOsByBatch } from "@/data/sales_orders";
-import { vendors as vendorData, getVendor } from "@/data/vendors";
-import { btnSecondarySm } from "@/components/app/controls";
+import { Search, ChevronDown, ChevronRight, AlertTriangle, Shield, Package, X, Ban } from "lucide-react";
+import { btnSecondary, btnSecondarySm } from "@/components/app/controls";
 import { PageIcon } from "@/components/app/page-icon";
+import { EmptyState } from "@/components/app/empty-state";
+import { SkeletonBlock, SkeletonTable } from "@/components/app/skeleton-block";
+import { apiGet, ApiError } from "@/lib/api";
+import type {
+  LotRow, LotDetail, LotIndicators, QcStatus, VendorRef, ReceiptRef, Dispatch,
+} from "@/server/inventory/lots";
+import type { GoodsReceiptDetail, VendorDetail } from "@/server/services/trace-lookup.service";
+import type { SalesOrderDetail } from "@/server/sales/sales-orders";
 
 // ─── Helpers ───
-const daysBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
-const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+const fmtDate = (d: string | null) =>
+  d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
+const fmtQty = (n: number) => n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+const dash = (v: string | null | undefined) => (v ? v : "—");
+const lakh = (v: number | null) => (v === null ? "—" : `₹${(v / 100000).toFixed(2)}L`);
 
-// ─── Expiring within 30 days from "today" (2026-03-31) ───
-const today = "2026-03-31";
-const expiringBatches = productionBatches.filter(b => {
-  const daysToExpiry = daysBetween(today, b.expiry_date);
-  return daysToExpiry >= 0 && daysToExpiry <= 30;
-});
+const needsContainment = (s: QcStatus) => s === "QUARANTINE" || s === "REJECTED";
 
-// ─── Completeness calculations ───
-function calcCompleteness() {
-  let backwardComplete = 0;
-  let forwardComplete = 0;
-  let containmentActions = 0;
-  const total = productionBatches.length;
+const qcBadge = (s: QcStatus): { status: "green" | "amber" | "red"; label: string } =>
+  s === "APPROVED" ? { status: "green", label: "Approved" }
+    : s === "QUARANTINE" ? { status: "amber", label: "Quarantine" }
+      : s === "PENDING" ? { status: "amber", label: "Pending" }
+        : { status: "red", label: "Rejected" };
 
-  for (const pb of productionBatches) {
-    // Backward: every RM/PM input has a valid GRN + CoA
-    const allInputs = [...pb.rm_consumption, ...pb.pm_consumption];
-    const backOk = allInputs.every(inp => {
-      const rm = getRMBatch(inp.rm_batch_number);
-      return rm && getGRN(rm.grn_number) && rm.coa_reference;
-    });
-    if (backOk) backwardComplete++;
+const deliveryBadge = (s: Dispatch["deliveryStatus"]): { status: "green" | "amber" | "gray"; label: string } =>
+  s === "DELIVERED" ? { status: "green", label: "Delivered" }
+    : s === "IN_TRANSIT" ? { status: "amber", label: "In Transit" }
+      : { status: "gray", label: "Pending" };
 
-    // Forward: all dispatched qty accounted for in SOs
-    const sos = getSOsByBatch(pb.batch_number);
-    const totalSOQty = sos.reduce((s, so) => s + so.line_items.filter(li => li.batch_number === pb.batch_number).reduce((a, li) => a + li.quantity, 0), 0);
-    if (totalSOQty >= pb.quantity_dispatched) forwardComplete++;
+/** RM / PM as before; other kinds are labelled for what they are rather than forced into one of the two. */
+const kindBadge = (kind: string): { status: "green" | "blue" | "gray"; label: string } =>
+  kind === "RAW" ? { status: "green", label: "RM" }
+    : kind === "PACKAGING" ? { status: "blue", label: "PM" }
+      : kind === "SEMI_FINISHED" ? { status: "gray", label: "SFG" }
+        : kind === "FINISHED" ? { status: "gray", label: "FG" }
+          : { status: "gray", label: kind.slice(0, 3) };
 
-    // Containment
-    if (pb.qc_status === "Quarantine" || pb.qc_status === "Failed") containmentActions++;
-  }
+const titleCase = (s: string) => s.toLowerCase().replace(/_/g, " ");
 
-  return {
-    backwardPct: Math.round((backwardComplete / total) * 100),
-    forwardPct: Math.round((forwardComplete / total) * 100),
-    containmentActions,
-  };
+// ─── Queries ───
+const useLotDetail = (lotId: string | null) =>
+  useQuery({
+    queryKey: ["inventory", "lot", lotId],
+    queryFn: ({ signal }) => apiGet<LotDetail>(`/inventory/lots/${lotId}`, undefined, { signal }),
+    enabled: !!lotId,
+  });
+
+const useGrn = (grnNumber: string | null) =>
+  useQuery({
+    queryKey: ["goods-receipt", grnNumber],
+    queryFn: ({ signal }) => apiGet<GoodsReceiptDetail>(`/goods-receipts/${encodeURIComponent(grnNumber!)}`, undefined, { signal }),
+    enabled: !!grnNumber,
+    retry: (count, err) => !(err instanceof ApiError && err.status < 500) && count < 2,
+  });
+
+// ─── Shared states ───
+function LoadingLines({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="space-y-2" aria-busy="true">
+      {Array.from({ length: rows }).map((_, i) => <SkeletonBlock key={i} className="h-4 w-full" />)}
+    </div>
+  );
+}
+
+function LoadError({ error, onRetry }: { error: Error; onRetry?: () => void }) {
+  return (
+    <EmptyState
+      title="Could not be loaded"
+      description={error.message}
+      action={onRetry && <button className={btnSecondary} onClick={onRetry}>Try again</button>}
+    />
+  );
 }
 
 // ─── Drawer Types ───
 type DrawerType =
   | { kind: "grn"; grnNumber: string }
-  | { kind: "so"; soNumber: string }
+  | { kind: "so"; salesOrderId: string }
   | { kind: "vendor"; vendorId: string; grnNumber?: string }
-  | { kind: "qc"; batchNumber: string }
-  | { kind: "containment"; batchNumber: string }
-  | { kind: "product"; batchNumber: string }
+  | { kind: "qc"; lotId: string }
+  | { kind: "containment"; lotId: string }
+  | { kind: "product"; lotId: string }
   | null;
 
 // ─── GRN Search result component ───
-function GRNSearchResult({ grnNumber, onClose }: { grnNumber: string; onClose: () => void }) {
-  const grn = getGRN(grnNumber);
-  if (!grn) return <div className="p-4 text-body-md text-muted-foreground">GRN not found: {grnNumber}</div>;
-  const po = getPO(grn.purchase_order_number);
-  // Find all production batches that consumed RM/PM from this GRN
-  const producedFrom = grn.line_items.flatMap(li => getBatchesByRMBatch(li.rm_batch_number));
-  const unique = [...new Map(producedFrom.map(b => [b.batch_number, b])).values()];
+function GRNSearchResult({ grnNumber, onClose, onSelectLot }: { grnNumber: string; onClose: () => void; onSelectLot: (id: string) => void }) {
+  const q = useGrn(grnNumber);
 
+  const header = (
+    <div className="flex items-center justify-between mb-3">
+      <h3 className="text-body-md font-semibold">GRN Detail: <span className="text-foreground identifier">{grnNumber}</span></h3>
+      <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+    </div>
+  );
+
+  if (q.isPending) return <div>{header}<LoadingLines /></div>;
+  if (q.error) {
+    const notFound = q.error instanceof ApiError && q.error.status === 404;
+    return (
+      <div>
+        {header}
+        {notFound
+          ? <div className="p-4 text-body-md text-muted-foreground">GRN not found: {grnNumber}</div>
+          : <LoadError error={q.error} onRetry={() => void q.refetch()} />}
+      </div>
+    );
+  }
+
+  const grn = q.data;
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-body-md font-semibold">GRN Detail: <span className="text-foreground identifier">{grnNumber}</span></h3>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
-      </div>
+      {header}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-body-sm mb-4">
-        <div><span className="text-muted-foreground">PO number</span><div className="identifier text-foreground">{grn.purchase_order_number}</div></div>
-        <div><span className="text-muted-foreground">Vendor</span><div className="font-medium">{grn.vendor_name}</div></div>
-        <div><span className="text-muted-foreground">Receipt date</span><div>{fmtDate(grn.grn_date)}</div></div>
+        <div><span className="text-muted-foreground">PO number</span><div className="identifier text-foreground">{grn.purchaseOrder.orderNumber}</div></div>
+        <div><span className="text-muted-foreground">Vendor</span><div className="font-medium">{grn.vendor.name}</div></div>
+        <div><span className="text-muted-foreground">Receipt date</span><div>{fmtDate(grn.receiptDate)}</div></div>
       </div>
       <div className="overflow-x-auto">
         <table className="data-table w-full text-body-sm mb-4">
@@ -89,32 +127,34 @@ function GRNSearchResult({ grnNumber, onClose }: { grnNumber: string; onClose: (
             {["Material", "Type", "Qty", "RM batch #", "Supplier lot", "Inspection", "CoA"].map(h =>
               <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
           </tr></thead>
-          <tbody>{grn.line_items.map((li, i) => (
-            <tr key={i} className="border-b border-border">
-              <td className="px-2 py-1.5 font-medium">{li.material_name}</td>
-              <td className="px-2 py-1.5"><StatusBadge status={li.material_type === "RM" ? "green" : "blue"} label={li.material_type} /></td>
-              <td className="px-2 py-1.5 tabular-nums">{li.quantity} {li.unit}</td>
-              <td className="px-2 py-1.5 identifier text-foreground">{li.rm_batch_number}</td>
-              <td className="px-2 py-1.5 identifier text-body-sm">{li.supplier_lot_number}</td>
-              <td className="px-2 py-1.5"><StatusBadge status={li.inspection_status === "passed" ? "green" : li.inspection_status === "failed" ? "red" : "amber"} label={li.inspection_status} /></td>
-              <td className="px-2 py-1.5 text-muted-foreground">{li.coa_reference}</td>
+          <tbody>{grn.lines.map((li) => (
+            <tr key={li.lineNumber} className="border-b border-border">
+              <td className="px-2 py-1.5 font-medium">{li.material.name}</td>
+              <td className="px-2 py-1.5"><StatusBadge {...kindBadge(li.material.kind)} /></td>
+              <td className="px-2 py-1.5 tabular-nums">{fmtQty(li.receivedQty)} {li.uom}</td>
+              <td className="px-2 py-1.5 identifier text-foreground">
+                {li.lot ? <button onClick={() => onSelectLot(li.lot!.id)} className="hover:underline">{li.lot.lotNumber}</button> : "—"}
+              </td>
+              <td className="px-2 py-1.5 identifier text-body-sm">{dash(li.supplierLotNumber)}</td>
+              <td className="px-2 py-1.5"><StatusBadge {...qcBadge(li.inspectionStatus)} /></td>
+              <td className="px-2 py-1.5 text-muted-foreground">{dash(li.coaReference)}</td>
             </tr>
           ))}</tbody>
         </table>
       </div>
-      {unique.length > 0 && (
-        <div>
-          <h4 className="text-body-sm font-semibold text-muted-foreground mb-2">Batches produced using these inputs</h4>
-          <div className="space-y-1">{unique.map(b => (
-            <div key={b.batch_number} className="flex items-center gap-3 text-body-sm p-1.5 rounded bg-secondary/30">
-              <span className="identifier text-foreground">{b.batch_number}</span>
-              <span className="font-medium">{b.product_name}</span>
-              <span className="tabular-nums">{b.quantity_produced.toLocaleString()} {b.unit}</span>
-              <StatusBadge status={b.qc_status === "Approved" ? "green" : b.qc_status === "Quarantine" ? "amber" : "red"} label={b.qc_status} />
+      <div>
+        <h4 className="text-body-sm font-semibold text-muted-foreground mb-2">Batches produced using these inputs</h4>
+        {grn.producedLots.length > 0 ? (
+          <div className="space-y-1">{grn.producedLots.map(b => (
+            <div key={b.id} className="flex items-center gap-3 text-body-sm p-1.5 rounded bg-secondary/30 cursor-pointer" onClick={() => onSelectLot(b.id)}>
+              <span className="identifier text-foreground">{b.lotNumber}</span>
+              <span className="font-medium">{b.material}</span>
+              <span className="tabular-nums">{fmtQty(b.quantity)} {b.uom}</span>
+              <StatusBadge {...qcBadge(b.qcStatus)} />
             </div>
           ))}</div>
-        </div>
-      )}
+        ) : <div className="text-body-sm text-muted-foreground">No recorded production has used lots from this receipt.</div>}
+      </div>
     </div>
   );
 }
@@ -138,11 +178,11 @@ function SideDrawer({ drawer, onClose, onNavigate }: { drawer: NonNullable<Drawe
         </div>
         <div className="p-5 space-y-4">
           {drawer.kind === "grn" && <GRNDrawerContent grnNumber={drawer.grnNumber} onNavigate={onNavigate} />}
-          {drawer.kind === "so" && <SODrawerContent soNumber={drawer.soNumber} />}
+          {drawer.kind === "so" && <SODrawerContent salesOrderId={drawer.salesOrderId} />}
           {drawer.kind === "vendor" && <VendorDrawerContent vendorId={drawer.vendorId} grnNumber={drawer.grnNumber} />}
-          {drawer.kind === "qc" && <QCDrawerContent batchNumber={drawer.batchNumber} />}
-          {drawer.kind === "containment" && <ContainmentDrawerContent batchNumber={drawer.batchNumber} />}
-          {drawer.kind === "product" && <ProductDrawerContent batchNumber={drawer.batchNumber} />}
+          {drawer.kind === "qc" && <QCDrawerContent lotId={drawer.lotId} />}
+          {drawer.kind === "containment" && <ContainmentDrawerContent lotId={drawer.lotId} />}
+          {drawer.kind === "product" && <ProductDrawerContent lotId={drawer.lotId} />}
         </div>
       </div>
     </div>
@@ -150,82 +190,77 @@ function SideDrawer({ drawer, onClose, onNavigate }: { drawer: NonNullable<Drawe
 }
 
 function GRNDrawerContent({ grnNumber, onNavigate }: { grnNumber: string; onNavigate: (d: DrawerType) => void }) {
-  const grn = getGRN(grnNumber);
-  if (!grn) return <p className="text-body-md text-muted-foreground">Not found</p>;
-  const po = getPO(grn.purchase_order_number);
+  const q = useGrn(grnNumber);
+  if (q.isPending) return <LoadingLines rows={6} />;
+  if (q.error) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  const grn = q.data;
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
-        <div><span className="text-muted-foreground block">GRN number</span><span className="identifier text-foreground font-semibold">{grn.grn_number}</span></div>
-        <div><span className="text-muted-foreground block">Receipt date</span><span>{fmtDate(grn.grn_date)}</span></div>
-        <div><span className="text-muted-foreground block">PO number</span><span className="identifier text-foreground">{grn.purchase_order_number}</span></div>
+        <div><span className="text-muted-foreground block">GRN number</span><span className="identifier text-foreground font-semibold">{grn.grnNumber}</span></div>
+        <div><span className="text-muted-foreground block">Receipt date</span><span>{fmtDate(grn.receiptDate)}</span></div>
+        <div><span className="text-muted-foreground block">PO number</span><span className="identifier text-foreground">{grn.purchaseOrder.orderNumber}</span></div>
         <div><span className="text-muted-foreground block">Vendor</span>
-          <button onClick={() => onNavigate({ kind: "vendor", vendorId: grn.vendor_id, grnNumber })} className="text-foreground underline underline-offset-2 hover:text-foreground">{grn.vendor_name}</button>
+          <button onClick={() => onNavigate({ kind: "vendor", vendorId: grn.vendor.id, grnNumber })} className="text-foreground underline underline-offset-2 hover:text-foreground">{grn.vendor.name}</button>
         </div>
-        {po && <>
-          <div><span className="text-muted-foreground block">PO value</span><span className="tabular-nums">₹{po.line_items.reduce((s, li) => s + li.ordered_qty * li.unit_price, 0).toLocaleString()}</span></div>
-          <div><span className="text-muted-foreground block">PO status</span><StatusBadge status="green" label={po.status} /></div>
-        </>}
+        <div><span className="text-muted-foreground block">PO value</span><span className="tabular-nums">₹{grn.purchaseOrder.totalAmount.toLocaleString("en-IN")}</span></div>
+        <div><span className="text-muted-foreground block">PO status</span><StatusBadge status="green" label={titleCase(grn.purchaseOrder.status)} /></div>
       </div>
       <h4 className="text-body-sm font-semibold mt-4 mb-2">Line items</h4>
-      {grn.line_items.map((li, i) => (
-        <div key={i} className={`p-3 rounded-lg border ${li.inspection_status === "failed" ? "border-danger/30 bg-danger/5" : "border-border"}`}>
+      {grn.lines.map((li) => (
+        <div key={li.lineNumber} className={`p-3 rounded-lg border ${li.inspectionStatus === "REJECTED" ? "border-danger/30 bg-danger/5" : "border-border"}`}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <StatusBadge status={li.material_type === "RM" ? "green" : "blue"} label={li.material_type} />
-              <span className="text-body-md font-medium">{li.material_name}</span>
+              <StatusBadge {...kindBadge(li.material.kind)} />
+              <span className="text-body-md font-medium">{li.material.name}</span>
             </div>
-            <StatusBadge status={li.inspection_status === "passed" ? "green" : li.inspection_status === "failed" ? "red" : "amber"} label={li.inspection_status} />
+            <StatusBadge {...qcBadge(li.inspectionStatus)} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-body-sm">
-            <div><span className="text-muted-foreground">Batch #</span> <span className="identifier text-foreground">{li.rm_batch_number}</span></div>
-            <div><span className="text-muted-foreground">Supplier lot</span> <span className="identifier">{li.supplier_lot_number}</span></div>
-            <div><span className="text-muted-foreground">Qty</span> <span className="tabular-nums">{li.quantity} {li.unit}</span></div>
-            <div><span className="text-muted-foreground">Heat #</span> <span className="identifier">{li.heat_number}</span></div>
-            <div><span className="text-muted-foreground">CoA ref</span> <span>{li.coa_reference}</span></div>
-            <div><span className="text-muted-foreground">Inspector</span> <span>{li.inspector_name}</span></div>
-            <div><span className="text-muted-foreground">Location</span> <span>{li.storage_location} / {li.bin}</span></div>
-            <div><span className="text-muted-foreground">Inspected</span> <span>{fmtDate(li.inspection_date)}</span></div>
+            <div><span className="text-muted-foreground">Batch #</span> <span className="identifier text-foreground">{li.lot?.lotNumber ?? "—"}</span></div>
+            <div><span className="text-muted-foreground">Supplier lot</span> <span className="identifier">{dash(li.supplierLotNumber)}</span></div>
+            <div><span className="text-muted-foreground">Qty</span> <span className="tabular-nums">{fmtQty(li.receivedQty)} {li.uom}</span></div>
+            {/* Heat numbers are not stored yet. */}
+            <div><span className="text-muted-foreground">Heat #</span> <span className="identifier">—</span></div>
+            <div><span className="text-muted-foreground">CoA ref</span> <span>{dash(li.coaReference)}</span></div>
+            <div><span className="text-muted-foreground">Inspector</span> <span>{dash(li.inspectorName)}</span></div>
+            <div><span className="text-muted-foreground">Location</span> <span>{li.storageLocation || li.bin ? `${dash(li.storageLocation)} / ${dash(li.bin)}` : "—"}</span></div>
+            <div><span className="text-muted-foreground">Inspected</span> <span>{fmtDate(li.inspectionDate)}</span></div>
           </div>
-          {Object.keys(li.coa_parameters).length > 0 && (
-            <div className="mt-2 p-2 bg-secondary/30 rounded text-body-sm">
-              <span className="font-semibold text-muted-foreground">CoA parameters:</span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 mt-1">
-                {Object.entries(li.coa_parameters).map(([k, v]) => (
-                  <div key={k}><span className="text-muted-foreground">{k.replace(/_/g, " ")}:</span> <span className="font-medium">{v}</span></div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       ))}
     </>
   );
 }
 
-function SODrawerContent({ soNumber }: { soNumber: string }) {
-  const so = salesOrders.find(s => s.so_number === soNumber);
-  if (!so) return <p className="text-body-md text-muted-foreground">Not found</p>;
+function SODrawerContent({ salesOrderId }: { salesOrderId: string }) {
+  const q = useQuery({
+    queryKey: ["sales-order", salesOrderId],
+    queryFn: ({ signal }) => apiGet<SalesOrderDetail>(`/sales-orders/${salesOrderId}`, undefined, { signal }),
+  });
+  if (q.isPending) return <LoadingLines rows={6} />;
+  if (q.error) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  const so = q.data;
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
-        <div><span className="text-muted-foreground block">SO number</span><span className="identifier text-foreground font-semibold">{so.so_number}</span></div>
-        <div><span className="text-muted-foreground block">Customer</span><span className="font-medium">{so.customer_name}</span></div>
-        <div><span className="text-muted-foreground block">Type</span><StatusBadge status="blue" label={so.customer_type} /></div>
-        <div><span className="text-muted-foreground block">Date</span><span>{fmtDate(so.so_date)}</span></div>
-        <div><span className="text-muted-foreground block">Invoice</span><span className="identifier">{so.invoice_number}</span></div>
-        <div><span className="text-muted-foreground block">Dispatch</span><span>{fmtDate(so.dispatch_date)}</span></div>
-        <div><span className="text-muted-foreground block">Delivery</span><StatusBadge status={so.delivery_status === "delivered" ? "green" : so.delivery_status === "in_transit" ? "amber" : "gray"} label={so.delivery_status.replace("_", " ")} /></div>
-        <div><span className="text-muted-foreground block">Total value</span><span className="tabular-nums font-semibold">₹{so.line_items.reduce((s, li) => s + li.quantity * li.unit_price, 0).toLocaleString()}</span></div>
+        <div><span className="text-muted-foreground block">SO number</span><span className="identifier text-foreground font-semibold">{so.orderNumber}</span></div>
+        <div><span className="text-muted-foreground block">Customer</span><span className="font-medium">{so.customer.name}</span></div>
+        <div><span className="text-muted-foreground block">Type</span><StatusBadge status="blue" label={titleCase(so.customer.type)} /></div>
+        <div><span className="text-muted-foreground block">Date</span><span>{fmtDate(so.orderDate)}</span></div>
+        <div><span className="text-muted-foreground block">Invoice</span><span className="identifier">{dash(so.invoiceNumber)}</span></div>
+        <div><span className="text-muted-foreground block">Dispatch</span><span>{fmtDate(so.dispatchDate)}</span></div>
+        <div><span className="text-muted-foreground block">Delivery</span><StatusBadge {...deliveryBadge(so.deliveryStatus)} /></div>
+        <div><span className="text-muted-foreground block">Total value</span><span className="tabular-nums font-semibold">₹{so.totalAmount.toLocaleString("en-IN")}</span></div>
       </div>
       <h4 className="text-body-sm font-semibold mt-4 mb-2">Line items</h4>
-      {so.line_items.map((li, i) => (
-        <div key={i} className="p-3 rounded-lg border border-border">
-          <div className="text-body-md font-medium">{li.product_name}</div>
+      {so.lines.map((li) => (
+        <div key={li.lineNumber} className="p-3 rounded-lg border border-border">
+          <div className="text-body-md font-medium">{li.material.name}</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-body-sm mt-1">
-            <div><span className="text-muted-foreground">Qty</span> <span className="tabular-nums">{li.quantity.toLocaleString()} {li.unit}</span></div>
-            <div><span className="text-muted-foreground">Batch</span> <span className="identifier text-foreground">{li.batch_number}</span></div>
-            <div><span className="text-muted-foreground">Unit price</span> <span className="tabular-nums">₹{li.unit_price}</span></div>
+            <div><span className="text-muted-foreground">Qty</span> <span className="tabular-nums">{fmtQty(li.quantity)} {li.uom}</span></div>
+            <div><span className="text-muted-foreground">Batch</span> <span className="identifier text-foreground">{li.lots.length ? li.lots.map(l => l.lotNumber).join(", ") : "—"}</span></div>
+            <div><span className="text-muted-foreground">Unit price</span> <span className="tabular-nums">₹{li.unitPrice.toLocaleString("en-IN")}</span></div>
           </div>
         </div>
       ))}
@@ -234,112 +269,97 @@ function SODrawerContent({ soNumber }: { soNumber: string }) {
 }
 
 function VendorDrawerContent({ vendorId, grnNumber }: { vendorId: string; grnNumber?: string }) {
-  const v = getVendor(vendorId);
-  if (!v) return <p className="text-body-md text-muted-foreground">Not found</p>;
-  const grn = grnNumber ? getGRN(grnNumber) : null;
+  const q = useQuery({
+    queryKey: ["vendor", vendorId],
+    queryFn: ({ signal }) => apiGet<VendorDetail>(`/vendors/${vendorId}`, undefined, { signal }),
+  });
+  const grnQ = useGrn(grnNumber ?? null);
+  if (q.isPending) return <LoadingLines rows={6} />;
+  if (q.error) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  const v = q.data;
+  const sc = v.scorecard;
+  const grn = grnQ.data;
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
-        <div><span className="text-muted-foreground block">Name</span><span className="font-semibold">{v.vendor_name}</span></div>
-        <div><span className="text-muted-foreground block">Code</span><span className="identifier">{v.vendor_code}</span></div>
-        <div><span className="text-muted-foreground block">Location</span><span>{v.location}</span></div>
-        <div><span className="text-muted-foreground block">ASL status</span><StatusBadge status={v.asl ? "green" : "red"} label={v.asl ? "Approved" : "Not on ASL"} /></div>
-        <div><span className="text-muted-foreground block">Contact</span><span>{v.contact_person}</span></div>
-        <div><span className="text-muted-foreground block">Terms</span><span>{v.payment_terms}</span></div>
+        <div><span className="text-muted-foreground block">Name</span><span className="font-semibold">{v.name}</span></div>
+        <div><span className="text-muted-foreground block">Code</span><span className="identifier">{v.vendorCode ?? v.code}</span></div>
+        <div><span className="text-muted-foreground block">Location</span><span>{[v.city, v.state].filter(Boolean).join(", ") || "—"}</span></div>
+        <div><span className="text-muted-foreground block">ASL status</span><StatusBadge status={v.isApproved ? "green" : "red"} label={v.isApproved ? "Approved" : "Not on ASL"} /></div>
+        <div><span className="text-muted-foreground block">Contact</span><span>{dash(v.contactPerson)}</span></div>
+        <div><span className="text-muted-foreground block">Terms</span><span>{dash(v.paymentTerms)}</span></div>
       </div>
       <h4 className="text-body-sm font-semibold mt-4 mb-1">Approved materials</h4>
-      <div className="flex flex-wrap gap-1">{v.approved_materials.length > 0 ? v.approved_materials.map(m => (
-        <span key={m} className="px-2 py-0.5 bg-secondary text-foreground rounded-full text-caption identifier">{m}</span>
+      <div className="flex flex-wrap gap-1">{v.approvedMaterials.length > 0 ? v.approvedMaterials.map(m => (
+        <span key={m.code} title={m.name} className="px-2 py-0.5 bg-secondary text-foreground rounded-full text-caption identifier">{m.code}</span>
       )) : <span className="text-body-sm text-danger italic">No approved materials</span>}</div>
 
       <h4 className="text-body-sm font-semibold mt-4 mb-1">Quality scorecard</h4>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-body-sm p-3 bg-secondary/30 rounded-lg">
-        <div><span className="text-muted-foreground">Defect rate</span><div className={`font-semibold ${v.quality_scorecard.defect_rate_percent > 3 ? "text-danger" : v.quality_scorecard.defect_rate_percent > 1.5 ? "text-warning" : "text-success"}`}>{v.quality_scorecard.defect_rate_percent}%</div></div>
-        <div><span className="text-muted-foreground">COPQ</span><div className="font-semibold text-danger">{v.quality_scorecard.copq_amount}</div></div>
-        <div><span className="text-muted-foreground">OTD</span><div className={`font-semibold ${v.quality_scorecard.on_time_delivery_percent >= 90 ? "text-success" : "text-warning"}`}>{v.quality_scorecard.on_time_delivery_percent}%</div></div>
-        <div><span className="text-muted-foreground">Last audit</span><div>{fmtDate(v.quality_scorecard.last_audit_date)} — <StatusBadge status={v.quality_scorecard.audit_result === "Pass" ? "green" : v.quality_scorecard.audit_result === "Fail" ? "red" : "amber"} label={v.quality_scorecard.audit_result} /></div></div>
-      </div>
+      {sc ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-body-sm p-3 bg-secondary/30 rounded-lg">
+          <div><span className="text-muted-foreground">Defect rate</span><div className={`font-semibold ${sc.defectRatePercent === null ? "" : sc.defectRatePercent > 3 ? "text-danger" : sc.defectRatePercent > 1.5 ? "text-warning" : "text-success"}`}>{sc.defectRatePercent === null ? "—" : `${sc.defectRatePercent}%`}</div></div>
+          <div><span className="text-muted-foreground">COPQ</span><div className="font-semibold text-danger">{sc.copqAmount === null ? "—" : `₹${sc.copqAmount.toLocaleString("en-IN")}`}</div></div>
+          <div><span className="text-muted-foreground">OTD</span><div className={`font-semibold ${sc.onTimeDeliveryPercent === null ? "" : sc.onTimeDeliveryPercent >= 90 ? "text-success" : "text-warning"}`}>{sc.onTimeDeliveryPercent === null ? "—" : `${sc.onTimeDeliveryPercent}%`}</div></div>
+          <div><span className="text-muted-foreground">Last audit</span><div>{fmtDate(sc.lastAuditDate)}{sc.auditResult && <> — <StatusBadge status={sc.auditResult === "PASS" ? "green" : sc.auditResult === "FAIL" ? "red" : "amber"} label={titleCase(sc.auditResult)} /></>}</div></div>
+        </div>
+      ) : <div className="text-body-sm text-muted-foreground">No scorecard recorded</div>}
 
       {grn && (
         <>
-          <h4 className="text-body-sm font-semibold mt-4 mb-1">GRN {grn.grn_number}</h4>
+          <h4 className="text-body-sm font-semibold mt-4 mb-1">GRN {grn.grnNumber}</h4>
           <div className="text-body-sm space-y-1">
-            {grn.line_items.map((li, i) => (
-              <div key={i} className="p-2 bg-secondary/20 rounded flex justify-between">
-                <span>{li.material_name} — {li.quantity} {li.unit}</span>
-                <span className="identifier text-body-sm">{li.supplier_lot_number}</span>
+            {grn.lines.map((li) => (
+              <div key={li.lineNumber} className="p-2 bg-secondary/20 rounded flex justify-between">
+                <span>{li.material.name} — {fmtQty(li.receivedQty)} {li.uom}</span>
+                <span className="identifier text-body-sm">{dash(li.supplierLotNumber)}</span>
               </div>
             ))}
           </div>
         </>
       )}
 
-      {v.scar_history.length > 0 && (
-        <>
-          <h4 className="text-body-sm font-semibold mt-4 mb-1">SCAR history</h4>
-          {v.scar_history.map(s => (
-            <div key={s.scar_id} className="p-2 rounded border border-border text-body-sm">
-              <div className="flex justify-between"><span className="identifier text-foreground">{s.scar_id}</span><StatusBadge status={s.status === "Closed" ? "green" : s.status === "Open" ? "red" : "amber"} label={s.status} /></div>
-              <div className="text-muted-foreground mt-1">{s.description}</div>
-            </div>
-          ))}
-        </>
-      )}
+      <h4 className="text-body-sm font-semibold mt-4 mb-1">SCAR history</h4>
+      <div className="text-body-sm text-muted-foreground">Supplier corrective actions aren't tracked in Anvaya yet.</div>
     </>
   );
 }
 
-function QCDrawerContent({ batchNumber }: { batchNumber: string }) {
-  const pb = getProductionBatch(batchNumber);
-  if (!pb) return <p className="text-body-md text-muted-foreground">Not found</p>;
+function QCDrawerContent({ lotId }: { lotId: string }) {
+  const q = useLotDetail(lotId);
+  if (q.isPending) return <LoadingLines rows={5} />;
+  if (q.error) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  const lot = q.data;
+  const tested = lot.receipt?.inspectionDate ?? lot.releaseDate;
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
-        <div><span className="text-muted-foreground block">Batch</span><span className="identifier text-foreground font-semibold">{pb.batch_number}</span></div>
-        <div><span className="text-muted-foreground block">QC lot</span><span className="identifier">{pb.qc_lot_number}</span></div>
-        <div><span className="text-muted-foreground block">Product</span><span className="font-medium">{pb.product_name}</span></div>
-        <div><span className="text-muted-foreground block">Test date</span><span>{fmtDate(pb.qc_date)}</span></div>
-        <div><span className="text-muted-foreground block">Overall</span><StatusBadge status={pb.qc_status === "Approved" ? "green" : pb.qc_status === "Quarantine" ? "amber" : "red"} label={pb.qc_status} /></div>
+        <div><span className="text-muted-foreground block">Batch</span><span className="identifier text-foreground font-semibold">{lot.lotNumber}</span></div>
+        <div><span className="text-muted-foreground block">QC lot</span><span className="identifier">—</span></div>
+        <div><span className="text-muted-foreground block">Product</span><span className="font-medium">{lot.material.name}</span></div>
+        <div><span className="text-muted-foreground block">Test date</span><span>{fmtDate(tested)}</span></div>
+        <div><span className="text-muted-foreground block">Overall</span><StatusBadge {...qcBadge(lot.qcStatus)} /></div>
+        <div><span className="text-muted-foreground block">Released</span><span>{lot.releaseDate ? `${fmtDate(lot.releaseDate)}${lot.releasedBy ? ` by ${lot.releasedBy}` : ""}` : "—"}</span></div>
       </div>
       <h4 className="text-body-sm font-semibold mt-4 mb-2">Test parameters</h4>
-      <table className="data-table w-full text-body-sm">
-        <thead><tr className="border-b border-border">
-          {["Parameter", "Specification", "Result", "Status"].map(h => <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
-        </tr></thead>
-        <tbody>{pb.qc_result.map((p, i) => (
-          <tr key={i} className={`border-b border-border ${p.status === "Fail" ? "bg-danger/5" : ""}`}>
-            <td className="px-2 py-1.5 font-medium">{p.parameter}</td>
-            <td className="px-2 py-1.5 text-muted-foreground">{p.spec}</td>
-            <td className="px-2 py-1.5 tabular-nums font-semibold">{p.result}</td>
-            <td className="px-2 py-1.5"><StatusBadge status={p.status === "Pass" ? "green" : "red"} label={p.status} /></td>
-          </tr>
-        ))}</tbody>
-      </table>
+      <div className="rounded-lg border border-border">
+        <EmptyState title="No test results recorded" description="QC test parameters aren't stored in Anvaya yet. The overall status above is the lot's recorded QC status." className="py-8" />
+      </div>
     </>
   );
 }
 
-function ContainmentDrawerContent({ batchNumber }: { batchNumber: string }) {
-  const pb = getProductionBatch(batchNumber);
-  if (!pb) return <p className="text-body-md text-muted-foreground">Not found</p>;
+function ContainmentDrawerContent({ lotId }: { lotId: string }) {
+  const q = useLotDetail(lotId);
+  if (q.isPending) return <LoadingLines rows={8} />;
+  if (q.error) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  const lot = q.data;
 
-  // Find suspect inputs
-  const suspectInputs = pb.rm_consumption.filter(inp => {
-    const rm = getRMBatch(inp.rm_batch_number);
-    return rm && (rm.qc_status === "Quarantine" || rm.qc_status === "Rejected");
-  });
-  const nonAslInputs = pb.rm_consumption.filter(inp => {
-    const rm = getRMBatch(inp.rm_batch_number);
-    const v = rm ? getVendor(rm.vendor_id) : null;
-    return v && !v.asl;
-  });
+  const inputs = lot.production?.inputs ?? [];
+  const suspectInputs = inputs.filter(i => i.suspect && i.lot);
+  const nonAslInputs = inputs.filter(i => i.nonApprovedVendor && i.lot);
 
-  const sos = getSOsByBatch(pb.batch_number);
-  const dispatchedByCustomer = sos.flatMap(so => so.line_items.filter(li => li.batch_number === pb.batch_number).map(li => ({
-    customer: so.customer_name, qty: li.quantity, status: so.delivery_status, invoice: so.invoice_number
-  })));
-  const totalDispatched = dispatchedByCustomer.reduce((s, c) => s + c.qty, 0);
-  const atRiskField = dispatchedByCustomer.filter(c => c.status === "delivered").reduce((s, c) => s + c.qty, 0);
+  const totalDispatched = lot.dispatches.reduce((s, c) => s + c.quantity, 0);
+  const atRiskField = lot.dispatches.filter(c => c.deliveryStatus === "DELIVERED").reduce((s, c) => s + c.quantity, 0);
   const ratio = totalDispatched > 0 ? (atRiskField / totalDispatched) * 100 : 0;
   const priority = ratio > 8 ? "Critical" : ratio > 4 ? "High" : "Monitor";
   const prColor = priority === "Critical" ? "red" : priority === "High" ? "amber" : "gray";
@@ -348,38 +368,32 @@ function ContainmentDrawerContent({ batchNumber }: { batchNumber: string }) {
     <>
       <div className="p-3 rounded-lg border border-danger/30 bg-danger/5 mb-4">
         <div className="flex items-center gap-2 text-danger text-body-md font-semibold"><AlertTriangle className="w-4 h-4" /> Containment required</div>
-        <div className="text-body-sm text-muted-foreground mt-1">Batch {pb.batch_number} — {pb.product_name} — QC Status: {pb.qc_status}</div>
+        <div className="text-body-sm text-muted-foreground mt-1">Batch {lot.lotNumber} — {lot.material.name} — QC Status: {qcBadge(lot.qcStatus).label}</div>
       </div>
 
       <h4 className="text-body-sm font-semibold mb-2">Suspect inputs</h4>
-      {suspectInputs.length > 0 ? suspectInputs.map(inp => {
-        const rm = getRMBatch(inp.rm_batch_number)!;
-        return (
-          <div key={inp.rm_batch_number} className="p-2 rounded border border-danger/20 bg-danger/5 text-body-sm mb-1">
-            <span className="identifier text-danger">{inp.rm_batch_number}</span> — {inp.material_name} — QC: <StatusBadge status="red" label={rm.qc_status} /> — {rm.vendor_name}
-          </div>
-        );
-      }) : <div className="text-body-sm text-muted-foreground">No suspect RM batches — QC failure at FG level</div>}
+      {suspectInputs.length > 0 ? suspectInputs.map(inp => (
+        <div key={inp.lot!.id} className="p-2 rounded border border-danger/20 bg-danger/5 text-body-sm mb-1">
+          <span className="identifier text-danger">{inp.lot!.lotNumber}</span> — {inp.material.name} — QC: <StatusBadge status="red" label={qcBadge(inp.lot!.qcStatus).label} /> — {inp.lot!.vendor?.name ?? "—"}
+        </div>
+      )) : <div className="text-body-sm text-muted-foreground">{lot.production ? "No suspect input lots — QC status is at this lot's level" : "Purchased lot — no production inputs to check"}</div>}
 
       {nonAslInputs.length > 0 && (
         <>
           <h4 className="text-body-sm font-semibold mt-3 mb-2">Non-ASL inputs</h4>
-          {nonAslInputs.map(inp => {
-            const rm = getRMBatch(inp.rm_batch_number)!;
-            return (
-              <div key={inp.rm_batch_number} className="p-2 rounded border border-warning/20 bg-warning/5 text-body-sm mb-1">
-                <span className="identifier text-warning">{inp.rm_batch_number}</span> — {inp.material_name} — Vendor: {rm.vendor_name} (Not on ASL)
-              </div>
-            );
-          })}
+          {nonAslInputs.map(inp => (
+            <div key={inp.lot!.id} className="p-2 rounded border border-warning/20 bg-warning/5 text-body-sm mb-1">
+              <span className="identifier text-warning">{inp.lot!.lotNumber}</span> — {inp.material.name} — Vendor: {inp.lot!.vendor?.name} (Not on ASL)
+            </div>
+          ))}
         </>
       )}
 
       <h4 className="text-body-sm font-semibold mt-4 mb-2">Dispatch status</h4>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-center mb-3">
-        <div className="p-2 bg-secondary/30 rounded"><div className="text-display-lg font-semibold tabular-nums">{pb.quantity_remaining.toLocaleString()}</div><div className="text-caption text-muted-foreground">In stock</div></div>
-        <div className="p-2 bg-secondary/30 rounded"><div className="text-display-lg font-semibold tabular-nums">{totalDispatched.toLocaleString()}</div><div className="text-caption text-muted-foreground">Dispatched</div></div>
-        <div className="p-2 bg-danger/10 rounded"><div className="text-display-lg font-semibold tabular-nums text-danger">{atRiskField.toLocaleString()}</div><div className="text-caption text-muted-foreground">At risk (field)</div></div>
+        <div className="p-2 bg-secondary/30 rounded"><div className="text-display-lg font-semibold tabular-nums">{fmtQty(lot.remainingQty)}</div><div className="text-caption text-muted-foreground">In stock</div></div>
+        <div className="p-2 bg-secondary/30 rounded"><div className="text-display-lg font-semibold tabular-nums">{fmtQty(totalDispatched)}</div><div className="text-caption text-muted-foreground">Dispatched</div></div>
+        <div className="p-2 bg-danger/10 rounded"><div className="text-display-lg font-semibold tabular-nums text-danger">{fmtQty(atRiskField)}</div><div className="text-caption text-muted-foreground">At risk (field)</div></div>
       </div>
 
       <div className="flex items-center gap-2 mb-3">
@@ -391,111 +405,307 @@ function ContainmentDrawerContent({ batchNumber }: { batchNumber: string }) {
       </div>
 
       <h4 className="text-body-sm font-semibold mb-2">Dispatched units by customer</h4>
-      <table className="data-table w-full text-body-sm">
-        <thead><tr className="border-b border-border">
-          {["Customer", "Qty", "Invoice", "Status"].map(h => <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
-        </tr></thead>
-        <tbody>{dispatchedByCustomer.map((c, i) => (
-          <tr key={i} className="border-b border-border">
-            <td className="px-2 py-1.5 font-medium">{c.customer}</td>
-            <td className="px-2 py-1.5 tabular-nums">{c.qty.toLocaleString()}</td>
-            <td className="px-2 py-1.5 identifier text-body-sm">{c.invoice}</td>
-            <td className="px-2 py-1.5"><StatusBadge status={c.status === "delivered" ? "green" : c.status === "in_transit" ? "amber" : "gray"} label={c.status.replace("_", " ")} /></td>
-          </tr>
-        ))}</tbody>
-      </table>
+      {lot.dispatches.length > 0 ? (
+        <table className="data-table w-full text-body-sm">
+          <thead><tr className="border-b border-border">
+            {["Customer", "Qty", "Invoice", "Status"].map(h => <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
+          </tr></thead>
+          <tbody>{lot.dispatches.map((c, i) => (
+            <tr key={i} className="border-b border-border">
+              <td className="px-2 py-1.5 font-medium">{c.customer}</td>
+              <td className="px-2 py-1.5 tabular-nums">{fmtQty(c.quantity)}</td>
+              <td className="px-2 py-1.5 identifier text-body-sm">{dash(c.invoiceNumber)}</td>
+              <td className="px-2 py-1.5"><StatusBadge {...deliveryBadge(c.deliveryStatus)} /></td>
+            </tr>
+          ))}</tbody>
+        </table>
+      ) : <div className="text-body-sm text-muted-foreground">No recorded dispatches from this lot</div>}
 
       <div className="flex gap-2 mt-4">
-        <button className="flex-1 h-8 bg-warning text-warning-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1"><Ban className="w-3 h-3" />Place dispatch hold</button>
-        <button className="flex-1 h-8 bg-danger text-danger-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1"><AlertTriangle className="w-3 h-3" />Raise quality event</button>
+        <button disabled title="Containment actions aren't available yet" className="flex-1 h-8 bg-warning text-warning-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1 opacity-50 cursor-not-allowed"><Ban className="w-3 h-3" />Place dispatch hold</button>
+        <button disabled title="Containment actions aren't available yet" className="flex-1 h-8 bg-danger text-danger-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1 opacity-50 cursor-not-allowed"><AlertTriangle className="w-3 h-3" />Raise quality event</button>
       </div>
+      <p className="text-caption text-muted-foreground text-center">Containment actions aren't available yet.</p>
     </>
   );
 }
 
-function ProductDrawerContent({ batchNumber }: { batchNumber: string }) {
-  const pb = getProductionBatch(batchNumber);
-  if (!pb) return <p className="text-body-md text-muted-foreground">Not found</p>;
+function ProductDrawerContent({ lotId }: { lotId: string }) {
+  const q = useLotDetail(lotId);
+  if (q.isPending) return <LoadingLines rows={6} />;
+  if (q.error) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  const lot = q.data;
+  const bom = lot.production?.bom ?? null;
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-body-sm">
-        <div><span className="text-muted-foreground block">Product</span><span className="font-semibold">{pb.product_name}</span></div>
-        <div><span className="text-muted-foreground block">Code</span><span className="identifier">{pb.product_code}</span></div>
-        <div><span className="text-muted-foreground block">Formula</span><span className="identifier">{pb.formula_code}</span></div>
-        <div><span className="text-muted-foreground block">Revision</span><span className="identifier font-semibold">{pb.formula_revision}</span></div>
+        <div><span className="text-muted-foreground block">Product</span><span className="font-semibold">{lot.material.name}</span></div>
+        <div><span className="text-muted-foreground block">Code</span><span className="identifier">{lot.material.code}</span></div>
+        <div><span className="text-muted-foreground block">Formula</span><span className="identifier">{bom?.code ?? "—"}</span></div>
+        <div><span className="text-muted-foreground block">Revision</span><span className="identifier font-semibold">{bom?.version ?? "—"}</span></div>
       </div>
       <h4 className="text-body-sm font-semibold mt-4 mb-2">Approved ingredient list (from formula)</h4>
-      <table className="data-table w-full text-body-sm">
-        <thead><tr className="border-b border-border">
-          {["Material", "Code", "Qty used", "Type"].map(h => <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
-        </tr></thead>
-        <tbody>
-          {[...pb.rm_consumption, ...pb.pm_consumption].map((inp, i) => (
-            <tr key={i} className="border-b border-border">
-              <td className="px-2 py-1.5 font-medium">{inp.material_name}</td>
-              <td className="px-2 py-1.5 identifier text-body-sm text-foreground">{inp.material_code}</td>
-              <td className="px-2 py-1.5 tabular-nums">{inp.quantity_used} {inp.unit}</td>
-              <td className="px-2 py-1.5"><StatusBadge status={inp.material_code.startsWith("PM") ? "blue" : "green"} label={inp.material_code.startsWith("PM") ? "PM" : "RM"} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {lot.production ? (
+        <table className="data-table w-full text-body-sm">
+          <thead><tr className="border-b border-border">
+            {["Material", "Code", "Qty used", "Type"].map(h => <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground">{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {lot.production.inputs.map((inp) => (
+              <tr key={inp.material.id} className="border-b border-border">
+                <td className="px-2 py-1.5 font-medium">{inp.material.name}</td>
+                <td className="px-2 py-1.5 identifier text-body-sm text-foreground">{inp.material.code}</td>
+                <td className="px-2 py-1.5 tabular-nums">
+                  {inp.issuedQty > 0
+                    ? `${fmtQty(inp.issuedQty)} ${inp.uom}`
+                    : <span title="No issue recorded — quantity the work order required">{fmtQty(inp.requiredQty)} {inp.uom} <span className="text-muted-foreground">(required)</span></span>}
+                </td>
+                <td className="px-2 py-1.5"><StatusBadge {...kindBadge(inp.material.kind)} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div className="rounded-lg border border-border">
+          <EmptyState title="Purchased material — no formula" description="This lot was received from a supplier, not produced, so there is no ingredient list." className="py-8" />
+        </div>
+      )}
     </>
+  );
+}
+
+// ─── Backward trace rows ───
+interface BackRow {
+  key: string;
+  kind: string;
+  materialCode: string;
+  materialName: string;
+  qty: React.ReactNode;
+  lotId: string | null;
+  lotNumber: string | null;
+  vendor: VendorRef | null;
+  receipt: ReceiptRef | null;
+  supplierLotNumber: string | null;
+  coaReference: string | null;
+  qcStatus: QcStatus | null;
+  location: string;
+  suspect: boolean;
+  nonApproved: boolean;
+}
+
+function backwardRows(lot: LotDetail): BackRow[] {
+  const where = (s: string | null, b: string | null) => (s || b ? `${dash(s)} / ${dash(b)}` : "—");
+
+  if (lot.production) {
+    return lot.production.inputs.map((inp) => ({
+      key: inp.material.id,
+      kind: inp.material.kind,
+      materialCode: inp.material.code,
+      materialName: inp.material.name,
+      qty: inp.issuedQty > 0
+        ? `${fmtQty(inp.issuedQty)} ${inp.uom}`
+        : <span title="No issue recorded — quantity the work order required">{fmtQty(inp.requiredQty)} {inp.uom} req.</span>,
+      lotId: inp.lot?.id ?? null,
+      lotNumber: inp.lot?.lotNumber ?? null,
+      vendor: inp.lot?.vendor ?? null,
+      receipt: inp.lot?.receipt ?? null,
+      supplierLotNumber: inp.lot?.supplierLotNumber ?? null,
+      coaReference: inp.lot?.coaReference ?? null,
+      qcStatus: inp.lot?.qcStatus ?? null,
+      location: inp.lot ? where(inp.lot.storageLocation, inp.lot.bin) : "—",
+      suspect: inp.suspect,
+      nonApproved: inp.nonApprovedVendor,
+    }));
+  }
+
+  // A purchased lot's backward trace is its own receipt.
+  if (lot.source === "PURCHASED") {
+    return [{
+      key: lot.id,
+      kind: lot.material.kind,
+      materialCode: lot.material.code,
+      materialName: lot.material.name,
+      qty: `${fmtQty(lot.receivedQty)} ${lot.uom}`,
+      lotId: lot.id,
+      lotNumber: lot.lotNumber,
+      vendor: lot.vendor,
+      receipt: lot.receipt,
+      supplierLotNumber: lot.supplierLotNumber,
+      coaReference: lot.coaReference,
+      qcStatus: lot.qcStatus,
+      location: where(lot.storageLocation, lot.bin),
+      suspect: needsContainment(lot.qcStatus),
+      nonApproved: lot.vendor ? !lot.vendor.isApproved : false,
+    }];
+  }
+
+  return [];
+}
+
+// ─── Traceability panel ───
+function TraceabilityPanel({ lotId, setDrawer }: { lotId: string; setDrawer: (d: DrawerType) => void }) {
+  const q = useLotDetail(lotId);
+  const [expandedInputs, setExpandedInputs] = useState<Record<string, boolean>>({});
+  const toggleInput = (key: string) => setExpandedInputs(prev => ({ ...prev, [key]: !prev[key] }));
+
+  if (q.isPending) return <div><LoadingLines rows={5} /></div>;
+  if (q.error) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+
+  const lot = q.data;
+  const rows = backwardRows(lot);
+  const forwardCount = lot.dispatches.length + lot.usedIn.length;
+  const formula = lot.production?.bom ? `${lot.production.bom.code} ${lot.production.bom.version}` : null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-body-md font-semibold">
+          Traceability: <button onClick={() => setDrawer({ kind: "product", lotId: lot.id })} className="text-foreground underline underline-offset-2 hover:text-foreground">{lot.lotNumber}</button>
+          <span className="text-muted-foreground font-normal ml-2">— {lot.material.name}{formula ? ` — ${formula}` : ""}</span>
+        </h3>
+        <div className="flex items-center gap-2">
+          {needsContainment(lot.qcStatus) && (
+            <button onClick={() => setDrawer({ kind: "containment", lotId: lot.id })} className="h-7 px-2.5 bg-danger text-danger-foreground rounded text-body-sm font-medium flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> Containment
+            </button>
+          )}
+          <button onClick={() => setDrawer({ kind: "qc", lotId: lot.id })} className={btnSecondarySm}>QC report</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-body-md">
+        {/* Backward Trace */}
+        <div>
+          <h4 className="text-body-sm font-semibold text-muted-foreground mb-2">
+            ← Backward Trace ({lot.production ? `${rows.length} inputs` : rows.length ? "supplier receipt" : "no source recorded"})
+          </h4>
+          <div className="space-y-1.5">
+            {rows.map((r) => (
+              <div key={r.key} className={`rounded-lg border text-body-sm ${r.suspect ? "border-danger/30 bg-danger/5" : r.nonApproved ? "border-warning/30 bg-warning/5" : "border-border"}`}>
+                <div className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer" onClick={() => toggleInput(r.key)}>
+                  {expandedInputs[r.key] ? <ChevronDown className="w-3 h-3 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 text-muted-foreground" />}
+                  <StatusBadge {...kindBadge(r.kind)} />
+                  {r.lotNumber
+                    ? (r.receipt
+                      ? <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "grn", grnNumber: r.receipt!.grnNumber }); }} className="identifier text-foreground hover:underline">{r.lotNumber}</button>
+                      : <span className="identifier text-foreground">{r.lotNumber}</span>)
+                    : <span className="text-muted-foreground italic">No lot recorded</span>}
+                  <span className="font-medium truncate">{r.materialName}</span>
+                  <span className="tabular-nums text-muted-foreground ml-auto">{r.qty}</span>
+                  {r.suspect && <AlertTriangle className="w-3 h-3 text-danger" />}
+                  {r.nonApproved && <AlertTriangle className="w-3 h-3 text-warning" />}
+                </div>
+                {expandedInputs[r.key] && (
+                  <div className="px-2.5 pb-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 text-caption border-t border-border/50 pt-1.5 ml-5">
+                    {r.lotNumber ? (
+                      <>
+                        <div><span className="text-muted-foreground">Supplier</span> {r.vendor
+                          ? <button onClick={() => setDrawer({ kind: "vendor", vendorId: r.vendor!.id, grnNumber: r.receipt?.grnNumber })} className="text-foreground underline underline-offset-2 hover:text-foreground">{r.vendor.name}</button>
+                          : "—"}</div>
+                        <div><span className="text-muted-foreground">GRN</span> {r.receipt
+                          ? <button onClick={() => setDrawer({ kind: "grn", grnNumber: r.receipt!.grnNumber })} className="text-foreground underline underline-offset-2 hover:text-foreground">{r.receipt.grnNumber}</button>
+                          : <span>No receipt recorded</span>}</div>
+                        <div><span className="text-muted-foreground">Supplier lot</span> <span className="identifier">{dash(r.supplierLotNumber)}</span></div>
+                        <div><span className="text-muted-foreground">CoA</span> <span>{dash(r.coaReference)}</span></div>
+                        <div><span className="text-muted-foreground">PO</span> <span className="identifier">{r.receipt?.purchaseOrderNumber ?? "—"}</span></div>
+                        <div><span className="text-muted-foreground">QC</span> {r.qcStatus ? <StatusBadge {...qcBadge(r.qcStatus)} /> : "—"}</div>
+                        <div><span className="text-muted-foreground">Location</span> <span>{r.location}</span></div>
+                        {r.nonApproved && <div className="col-span-2 text-warning font-semibold">⚠ Supplier not on ASL for {r.materialCode}</div>}
+                        {r.suspect && r.qcStatus && <div className="col-span-2 text-danger font-semibold">⚠ Lot QC: {qcBadge(r.qcStatus).label} — suspect material</div>}
+                      </>
+                    ) : (
+                      <div className="col-span-2 text-muted-foreground">The work order has no lot recorded for {r.materialCode}, so this input can't be traced to a supplier.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            {rows.length === 0 && (
+              <div className="px-2.5 py-1.5 rounded-lg border border-border text-body-sm text-muted-foreground">No receipt or production record for this lot</div>
+            )}
+            {/* QC */}
+            <div className="px-2.5 py-1.5 rounded-lg border border-border text-body-sm flex items-center gap-2">
+              <span className={lot.qcStatus === "APPROVED" ? "text-success" : "text-warning"}>{lot.qcStatus === "APPROVED" ? "✅" : "⚠"}</span>
+              <span>QC:</span>
+              <button onClick={() => setDrawer({ kind: "qc", lotId: lot.id })} className="text-foreground hover:underline">{qcBadge(lot.qcStatus).label}</button>
+              <span className="text-muted-foreground">— no test results recorded{lot.releaseDate ? ` — released ${fmtDate(lot.releaseDate)}` : ""}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Forward Trace */}
+        <div>
+          <h4 className="text-body-sm font-semibold text-muted-foreground mb-2">Forward Trace → ({forwardCount} orders)</h4>
+          <div className="space-y-1.5">
+            {lot.dispatches.map((d, i) => (
+              <div key={`${d.salesOrderId}-${i}`} className="px-2.5 py-1.5 rounded-lg border border-border text-body-sm flex items-center gap-2 flex-wrap">
+                <span className="text-muted-foreground">📤</span>
+                <button onClick={() => setDrawer({ kind: "so", salesOrderId: d.salesOrderId })} className="identifier text-foreground hover:underline">{d.orderNumber}</button>
+                <span className="font-medium">{d.customer}</span>
+                <span className="tabular-nums">{fmtQty(d.quantity)} {lot.uom}</span>
+                <span className="identifier text-caption text-muted-foreground">{dash(d.invoiceNumber)}</span>
+                <StatusBadge {...deliveryBadge(d.deliveryStatus)} />
+                <span className="text-muted-foreground">{fmtDate(d.dispatchedAt)}</span>
+              </div>
+            ))}
+            {lot.usedIn.map((u) => (
+              <div key={u.workOrderId} className="px-2.5 py-1.5 rounded-lg border border-border text-body-sm flex items-center gap-2 flex-wrap">
+                <span className="text-muted-foreground">🏭</span>
+                <span className="identifier text-foreground">{u.orderNumber}</span>
+                <span className="font-medium">{u.product.name}</span>
+                <span className="tabular-nums">{u.issuedQty > 0 ? `${fmtQty(u.issuedQty)} ${lot.uom} issued` : "used — no issue quantity recorded"}</span>
+                <StatusBadge status="gray" label={titleCase(u.status)} />
+              </div>
+            ))}
+            {forwardCount === 0 && (
+              <div className="px-2.5 py-1.5 rounded-lg border border-border text-body-sm text-muted-foreground">No recorded dispatches or production use</div>
+            )}
+            {/* Remaining stock */}
+            <div className="px-2.5 py-1.5 rounded-lg border border-border bg-secondary/20 text-body-sm flex items-center gap-2">
+              <span>📍</span>
+              <span>Remaining: <strong className="tabular-nums">{fmtQty(lot.remainingQty)} {lot.uom}</strong> in {lot.location.name} ({dash(lot.bin)})</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
 // ─── Main Component ───
 export default function BatchTracking() {
   const [search, setSearch] = useState("");
-  const [selectedBatch, setSelectedBatch] = useState<string | null>("B-2026-0412");
-  const [expandedInputs, setExpandedInputs] = useState<Record<string, boolean>>({});
+  const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerType>(null);
-  const [grnSearchResult, setGrnSearchResult] = useState<string | null>(null);
 
-  const completeness = useMemo(calcCompleteness, []);
-  const selectedPB = selectedBatch ? getProductionBatch(selectedBatch) : null;
+  const term = useDeferredValue(search.trim());
+  // "GRN-xxxx" opens the receipt instead of filtering the register.
+  const grnSearch = /^GRN-/i.test(term) && term.length >= 8 ? term.toUpperCase() : null;
 
-  // Handle search
-  const handleSearch = (val: string) => {
-    setSearch(val);
-    if (val.toUpperCase().startsWith("GRN-") && val.length >= 8) {
-      const grn = getGRN(val.toUpperCase());
-      if (grn) { setGrnSearchResult(grn.grn_number); setSelectedBatch(null); return; }
-    }
-    setGrnSearchResult(null);
-    // Try to match batch
-    const match = productionBatches.find(b => b.batch_number.toLowerCase().includes(val.toLowerCase()) || b.product_name.toLowerCase().includes(val.toLowerCase()));
-    if (match) setSelectedBatch(match.batch_number);
-  };
+  const lotsQuery = useQuery({
+    queryKey: ["inventory", "lots", grnSearch ? "" : term],
+    queryFn: ({ signal }) => apiGet<LotRow[]>("/inventory/lots", { q: grnSearch ? undefined : term, limit: 500 }, { signal }),
+  });
 
-  const filteredBatches = useMemo(() => {
-    if (!search) return productionBatches;
-    const s = search.toLowerCase();
-    return productionBatches.filter(b => b.batch_number.toLowerCase().includes(s) || b.product_name.toLowerCase().includes(s) || b.warehouse.toLowerCase().includes(s));
-  }, [search]);
+  const indicatorsQuery = useQuery({
+    queryKey: ["inventory", "lots", "indicators"],
+    queryFn: ({ signal }) => apiGet<LotIndicators>("/inventory/lots/indicators", undefined, { signal }),
+  });
 
-  const toggleInput = (key: string) => setExpandedInputs(prev => ({ ...prev, [key]: !prev[key] }));
+  const lots = useMemo(() => lotsQuery.data ?? [], [lotsQuery.data]);
+  const indicators = indicatorsQuery.data;
 
-  // Build backward trace for selected batch
-  const backwardTrace = useMemo(() => {
-    if (!selectedPB) return [];
-    return [...selectedPB.rm_consumption, ...selectedPB.pm_consumption].map(inp => {
-      const rm = getRMBatch(inp.rm_batch_number);
-      const grn = rm ? getGRN(rm.grn_number) : null;
-      const grnLine = grn?.line_items.find(li => li.rm_batch_number === inp.rm_batch_number);
-      const po = rm ? getPO(rm.po_number) : null;
-      const vendor = rm ? getVendor(rm.vendor_id) : null;
-      const isNonASL = vendor && !vendor.asl;
-      const isSuspect = rm && (rm.qc_status === "Quarantine" || rm.qc_status === "Rejected");
-      return { inp, rm, grn, grnLine, po, vendor, isNonASL, isSuspect };
-    });
-  }, [selectedPB]);
+  // Keep a selection whenever the register has rows: the current one if it is
+  // still listed, otherwise the first match — as the search always did.
+  useEffect(() => {
+    if (!lotsQuery.data) return;
+    setSelectedLotId(prev => (prev && lotsQuery.data.some(l => l.id === prev) ? prev : lotsQuery.data[0]?.id ?? null));
+  }, [lotsQuery.data]);
 
-  // Forward trace
-  const forwardTrace = useMemo(() => {
-    if (!selectedPB) return [];
-    return getSOsByBatch(selectedPB.batch_number);
-  }, [selectedPB]);
+  const selectLot = (id: string) => { setSelectedLotId(id); setSearch(""); };
+
+  const pct = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v}%`);
+  const containment = indicators?.containmentLots;
 
   return (
     <div className="px-6 py-5 space-y-6">
@@ -507,7 +717,7 @@ export default function BatchTracking() {
         </h1>
         <div className="relative w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input value={search} onChange={e => handleSearch(e.target.value)}
+          <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search batch, material, or GRN-xxxx..."
             className="w-full h-9 pl-9 pr-3 rounded-lg border border-input bg-card text-body-md" />
         </div>
@@ -517,178 +727,103 @@ export default function BatchTracking() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center"><Shield className="w-5 h-5 text-success" /></div>
-          <div><div className="text-body-sm text-muted-foreground">Backward trace complete</div><div className="text-display-lg font-semibold tabular-nums text-success">{completeness.backwardPct}%</div></div>
+          <div><div className="text-body-sm text-muted-foreground">Backward trace complete</div><div className="text-display-lg font-semibold tabular-nums text-success">{pct(indicators?.backwardPct)}</div></div>
         </div>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center"><Package className="w-5 h-5 text-muted-foreground" /></div>
-          <div><div className="text-body-sm text-muted-foreground">Forward trace complete</div><div className="text-display-lg font-semibold tabular-nums text-foreground">{completeness.forwardPct}%</div></div>
+          <div><div className="text-body-sm text-muted-foreground">Forward trace complete</div><div className="text-display-lg font-semibold tabular-nums text-foreground">{pct(indicators?.forwardPct)}</div></div>
         </div>
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${completeness.containmentActions > 0 ? "bg-danger/10" : "bg-success/10"}`}>
-            <AlertTriangle className={`w-5 h-5 ${completeness.containmentActions > 0 ? "text-danger" : "text-success"}`} />
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${containment ? "bg-danger/10" : "bg-success/10"}`}>
+            <AlertTriangle className={`w-5 h-5 ${containment ? "text-danger" : "text-success"}`} />
           </div>
-          <div><div className="text-body-sm text-muted-foreground">Open containment actions</div><div className={`text-display-lg font-semibold tabular-nums ${completeness.containmentActions > 0 ? "text-danger" : "text-success"}`}>{completeness.containmentActions}</div></div>
+          <div><div className="text-body-sm text-muted-foreground">Open containment actions</div><div className={`text-display-lg font-semibold tabular-nums ${containment ? "text-danger" : "text-success"}`}>{containment ?? "—"}</div></div>
         </div>
       </div>
 
       {/* GRN Search Result */}
-      {grnSearchResult && <GRNSearchResult grnNumber={grnSearchResult} onClose={() => { setGrnSearchResult(null); setSearch(""); }} />}
+      {grnSearch && <GRNSearchResult grnNumber={grnSearch} onClose={() => setSearch("")} onSelectLot={selectLot} />}
 
       {/* Traceability Panel */}
-      {selectedPB && !grnSearchResult && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-body-md font-semibold">
-              Traceability: <button onClick={() => setDrawer({ kind: "product", batchNumber: selectedPB.batch_number })} className="text-foreground underline underline-offset-2 hover:text-foreground">{selectedPB.batch_number}</button>
-              <span className="text-muted-foreground font-normal ml-2">— {selectedPB.product_name} — {selectedPB.formula_code} {selectedPB.formula_revision}</span>
-            </h3>
-            <div className="flex items-center gap-2">
-              {(selectedPB.qc_status === "Quarantine" || selectedPB.qc_status === "Failed") && (
-                <button onClick={() => setDrawer({ kind: "containment", batchNumber: selectedPB.batch_number })} className="h-7 px-2.5 bg-danger text-danger-foreground rounded text-body-sm font-medium flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" /> Containment
-                </button>
-              )}
-              <button onClick={() => setDrawer({ kind: "qc", batchNumber: selectedPB.batch_number })} className={btnSecondarySm}>QC report</button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-body-md">
-            {/* Backward Trace */}
-            <div>
-              <h4 className="text-body-sm font-semibold text-muted-foreground mb-2">← Backward Trace ({backwardTrace.length} inputs)</h4>
-              <div className="space-y-1.5">
-                {backwardTrace.map(({ inp, rm, grn, grnLine, po, vendor, isNonASL, isSuspect }) => (
-                  <div key={inp.rm_batch_number} className={`rounded-lg border text-body-sm ${isSuspect ? "border-danger/30 bg-danger/5" : isNonASL ? "border-warning/30 bg-warning/5" : "border-border"}`}>
-                    <div className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer" onClick={() => toggleInput(inp.rm_batch_number)}>
-                      {expandedInputs[inp.rm_batch_number] ? <ChevronDown className="w-3 h-3 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 text-muted-foreground" />}
-                      <StatusBadge status={inp.material_code.startsWith("PM") ? "blue" : "green"} label={inp.material_code.startsWith("PM") ? "PM" : "RM"} />
-                      <button onClick={e => { e.stopPropagation(); if (rm) setDrawer({ kind: "grn", grnNumber: rm.grn_number }); }} className="identifier text-foreground hover:underline">{inp.rm_batch_number}</button>
-                      <span className="font-medium truncate">{inp.material_name}</span>
-                      <span className="tabular-nums text-muted-foreground ml-auto">{inp.quantity_used} {inp.unit}</span>
-                      {isSuspect && <AlertTriangle className="w-3 h-3 text-danger" />}
-                      {isNonASL && <AlertTriangle className="w-3 h-3 text-warning" />}
-                    </div>
-                    {expandedInputs[inp.rm_batch_number] && rm && (
-                      <div className="px-2.5 pb-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 text-caption border-t border-border/50 pt-1.5 ml-5">
-                        <div><span className="text-muted-foreground">Supplier</span> <button onClick={() => setDrawer({ kind: "vendor", vendorId: rm.vendor_id, grnNumber: rm.grn_number })} className="text-foreground underline underline-offset-2 hover:text-foreground">{rm.vendor_name}</button></div>
-                        <div><span className="text-muted-foreground">GRN</span> <button onClick={() => setDrawer({ kind: "grn", grnNumber: rm.grn_number })} className="text-foreground underline underline-offset-2 hover:text-foreground">{rm.grn_number}</button></div>
-                        <div><span className="text-muted-foreground">Supplier lot</span> <span className="identifier">{rm.supplier_lot_number}</span></div>
-                        <div><span className="text-muted-foreground">CoA</span> <span>{rm.coa_reference}</span></div>
-                        <div><span className="text-muted-foreground">PO</span> <span className="identifier">{rm.po_number}</span></div>
-                        <div><span className="text-muted-foreground">QC</span> <StatusBadge status={rm.qc_status === "Approved" ? "green" : rm.qc_status === "Quarantine" ? "amber" : "red"} label={rm.qc_status} /></div>
-                        <div><span className="text-muted-foreground">Location</span> <span>{rm.storage_location} / {rm.bin}</span></div>
-                        {isNonASL && <div className="col-span-2 text-warning font-semibold">⚠ Supplier not on ASL for {inp.material_code}</div>}
-                        {isSuspect && <div className="col-span-2 text-danger font-semibold">⚠ RM batch QC: {rm.qc_status} — suspect material</div>}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {/* QC Lot */}
-                <div className="px-2.5 py-1.5 rounded-lg border border-border text-body-sm flex items-center gap-2">
-                  <span className="text-success">✅</span>
-                  <span>QC lot:</span>
-                  <button onClick={() => setDrawer({ kind: "qc", batchNumber: selectedPB.batch_number })} className="identifier text-foreground hover:underline">{selectedPB.qc_lot_number}</button>
-                  <span className="text-muted-foreground">— {selectedPB.qc_result.filter(r => r.status === "Pass").length}/{selectedPB.qc_result.length} parameters passed — {fmtDate(selectedPB.qc_date)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Forward Trace */}
-            <div>
-              <h4 className="text-body-sm font-semibold text-muted-foreground mb-2">Forward Trace → ({forwardTrace.length} orders)</h4>
-              <div className="space-y-1.5">
-                {forwardTrace.map(so => {
-                  const lines = so.line_items.filter(li => li.batch_number === selectedPB.batch_number);
-                  const totalQty = lines.reduce((s, li) => s + li.quantity, 0);
-                  return (
-                    <div key={so.so_number} className="px-2.5 py-1.5 rounded-lg border border-border text-body-sm flex items-center gap-2 flex-wrap">
-                      <span className="text-muted-foreground">📤</span>
-                      <button onClick={() => setDrawer({ kind: "so", soNumber: so.so_number })} className="identifier text-foreground hover:underline">{so.so_number}</button>
-                      <span className="font-medium">{so.customer_name}</span>
-                      <span className="tabular-nums">{totalQty.toLocaleString()} units</span>
-                      <span className="identifier text-caption text-muted-foreground">{so.invoice_number}</span>
-                      <StatusBadge status={so.delivery_status === "delivered" ? "green" : so.delivery_status === "in_transit" ? "amber" : "gray"} label={so.delivery_status === "delivered" ? "Delivered" : so.delivery_status === "in_transit" ? "In Transit" : "Pending"} />
-                      {so.dispatch_date && <span className="text-muted-foreground">{fmtDate(so.dispatch_date)}</span>}
-                    </div>
-                  );
-                })}
-                {/* Remaining stock */}
-                <div className="px-2.5 py-1.5 rounded-lg border border-border bg-secondary/20 text-body-sm flex items-center gap-2">
-                  <span>📍</span>
-                  <span>Remaining: <strong className="tabular-nums">{selectedPB.quantity_remaining.toLocaleString()} {selectedPB.unit}</strong> in {selectedPB.warehouse} ({selectedPB.bin})</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {selectedLotId && !grnSearch && <TraceabilityPanel key={selectedLotId} lotId={selectedLotId} setDrawer={setDrawer} />}
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Batch Register Table */}
         <div className="col-span-2 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="data-table w-full text-body-md">
-              <thead><tr className="border-b border-border">
-                {["Batch", "Material", "Qty", "Mfg date", "Expiry", "Warehouse", "Bin", "Formula rev", "Inputs", "QC", "Age"].map(h =>
-                  <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
-                )}
-              </tr></thead>
-              <tbody>
-                {filteredBatches.map(b => {
-                  const age = daysBetween(b.production_date, today);
-                  const inputCount = b.rm_consumption.length + b.pm_consumption.length;
-                  const isContainment = b.qc_status === "Quarantine" || b.qc_status === "Failed";
-                  return (
-                    <tr key={b.batch_number} className={`border-b border-border hover:bg-sunken cursor-pointer ${selectedBatch === b.batch_number ? "bg-sunken" : ""} ${isContainment ? "bg-danger/3" : ""}`}
-                      onClick={() => { setSelectedBatch(b.batch_number); setGrnSearchResult(null); }}>
-                      <td className="px-3 py-2 identifier text-body-sm text-foreground">{b.batch_number}</td>
-                      <td className="px-3 py-2 font-medium">
-                        <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "product", batchNumber: b.batch_number }); }} className="hover:underline text-left">{b.product_name}</button>
-                      </td>
-                      <td className="px-3 py-2 tabular-nums">{b.quantity_produced.toLocaleString()} {b.unit}</td>
-                      <td className="px-3 py-2">{fmtDate(b.production_date)}</td>
-                      <td className="px-3 py-2">{fmtDate(b.expiry_date)}</td>
-                      <td className="px-3 py-2">{b.warehouse}</td>
-                      <td className="px-3 py-2 identifier text-body-sm">{b.bin}</td>
-                      <td className="px-3 py-2 identifier text-body-sm">{b.formula_revision}</td>
-                      <td className="px-3 py-2">
-                        <button onClick={e => { e.stopPropagation(); setSelectedBatch(b.batch_number); setGrnSearchResult(null); }}
-                          className="px-1.5 py-0.5 bg-secondary text-foreground rounded text-caption font-semibold hover:bg-sunken">{inputCount} inputs</button>
-                      </td>
-                      <td className="px-3 py-2">
-                        <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "qc", batchNumber: b.batch_number }); }}>
-                          <StatusBadge status={b.qc_status === "Approved" ? "green" : b.qc_status === "Quarantine" ? "amber" : "red"} label={b.qc_status} />
-                        </button>
-                        {isContainment && (
-                          <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "containment", batchNumber: b.batch_number }); }}
-                            className="ml-1 text-danger"><AlertTriangle className="w-3 h-3 inline" /></button>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 tabular-nums">{age}d</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {lotsQuery.error ? (
+            <LoadError error={lotsQuery.error} onRetry={() => void lotsQuery.refetch()} />
+          ) : lotsQuery.isPending ? (
+            <SkeletonTable rows={6} cols={8} />
+          ) : lots.length === 0 ? (
+            <EmptyState
+              title={term && !grnSearch ? "No lots match your search" : "No lots recorded yet"}
+              description={term && !grnSearch ? "Try a lot number, material, location or supplier." : "Lots appear here when goods are received or produced."}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="data-table w-full text-body-md">
+                <thead><tr className="border-b border-border">
+                  {["Batch", "Material", "Qty", "Mfg / receipt", "Expiry", "Warehouse", "Bin", "Formula rev", "Inputs", "QC", "Age"].map(h =>
+                    <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
+                  )}
+                </tr></thead>
+                <tbody>
+                  {lots.map(b => {
+                    const isContainment = needsContainment(b.qcStatus);
+                    return (
+                      <tr key={b.id} className={`border-b border-border hover:bg-sunken cursor-pointer ${selectedLotId === b.id ? "bg-sunken" : ""} ${isContainment ? "bg-danger/3" : ""}`}
+                        onClick={() => setSelectedLotId(b.id)}>
+                        <td className="px-3 py-2 identifier text-body-sm text-foreground whitespace-nowrap">{b.lotNumber}</td>
+                        <td className="px-3 py-2 font-medium [overflow-wrap:normal]">
+                          <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "product", lotId: b.id }); }} className="hover:underline text-left">{b.material.name}</button>
+                        </td>
+                        <td className="px-3 py-2 tabular-nums whitespace-nowrap">{fmtQty(b.receivedQty)} {b.uom}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{fmtDate(b.receiptDate)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{fmtDate(b.expiryDate)}</td>
+                        <td className="px-3 py-2 [overflow-wrap:normal]">{b.location.name}</td>
+                        <td className="px-3 py-2 identifier text-body-sm whitespace-nowrap">{dash(b.bin)}</td>
+                        <td className="px-3 py-2 identifier text-body-sm">{b.workOrder?.bomVersion ?? "—"}</td>
+                        <td className="px-3 py-2">
+                          {b.inputCount !== null ? (
+                            <button onClick={e => { e.stopPropagation(); setSelectedLotId(b.id); }}
+                              className="px-1.5 py-0.5 bg-secondary text-foreground rounded text-caption font-semibold hover:bg-sunken whitespace-nowrap">{b.inputCount} inputs</button>
+                          ) : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "qc", lotId: b.id }); }}>
+                            <StatusBadge {...qcBadge(b.qcStatus)} />
+                          </button>
+                          {isContainment && (
+                            <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "containment", lotId: b.id }); }}
+                              className="ml-1 text-danger"><AlertTriangle className="w-3 h-3 inline" /></button>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums whitespace-nowrap">{b.ageDays}d</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Expiring Batches */}
         <div>
-          <h3 className="text-body-md font-semibold mb-3 text-danger">Expiring within 30 days</h3>
+          <h3 className="text-body-md font-semibold mb-3 text-danger">Expiring within {indicators?.expiryWindowDays ?? 30} days</h3>
           <div className="space-y-3">
-            {expiringBatches.length > 0 ? expiringBatches.map(b => {
-              const daysLeft = daysBetween(today, b.expiry_date);
-              const value = b.quantity_remaining * 300; // approx
-              return (
-                <div key={b.batch_number} className="p-2.5 rounded-lg bg-danger/5 border border-danger/10 cursor-pointer" onClick={() => { setSelectedBatch(b.batch_number); setGrnSearchResult(null); }}>
-                  <div className="text-body-sm identifier text-foreground">{b.batch_number}</div>
-                  <div className="text-body-md font-medium">{b.product_name}</div>
-                  <div className="text-body-sm text-muted-foreground">{b.quantity_remaining} {b.unit} · Expires {fmtDate(b.expiry_date)} · {daysLeft}d left · ~₹{(value / 100000).toFixed(2)}L</div>
-                </div>
-              );
-            }) : <div className="text-body-sm text-muted-foreground py-4 text-center">No batches expiring within 30 days</div>}
+            {indicatorsQuery.error ? (
+              <LoadError error={indicatorsQuery.error} onRetry={() => void indicatorsQuery.refetch()} />
+            ) : indicatorsQuery.isPending ? (
+              <LoadingLines rows={3} />
+            ) : indicators && indicators.expiring.length > 0 ? indicators.expiring.map(b => (
+              <div key={b.id} className="p-2.5 rounded-lg bg-danger/5 border border-danger/10 cursor-pointer" onClick={() => selectLot(b.id)}>
+                <div className="text-body-sm identifier text-foreground">{b.lotNumber}</div>
+                <div className="text-body-md font-medium">{b.material}</div>
+                <div className="text-body-sm text-muted-foreground">{fmtQty(b.remainingQty)} {b.uom} · Expires {fmtDate(b.expiryDate)} · {b.daysLeft}d left · {lakh(b.value)}</div>
+              </div>
+            )) : <div className="text-body-sm text-muted-foreground py-4 text-center">No batches expiring within {indicators?.expiryWindowDays ?? 30} days</div>}
           </div>
         </div>
       </div>

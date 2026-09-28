@@ -323,7 +323,7 @@ export const VENDORS: SeedVendor[] = [
   },
 ];
 
-/** Customers from src/data/sales_orders.ts. */
+/** Customers, originally from the sales order sample data the frontend shipped with. */
 export const CUSTOMERS = [
   { code: "CUST-001", name: "Reliance Retail", type: CustomerType.MODERN_TRADE, city: "Mumbai", paymentTerms: "Net 45" },
   { code: "CUST-002", name: "DMart Distribution", type: CustomerType.MODERN_TRADE, city: "Thane", paymentTerms: "Net 30" },

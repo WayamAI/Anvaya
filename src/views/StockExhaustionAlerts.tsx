@@ -1,118 +1,82 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import StatusBadge from "@/components/StatusBadge";
 import { DataTable, type Column } from "@/components/app/data-table";
-import { btnSecondarySm } from "@/components/app/controls";
+import { EmptyState } from "@/components/app/empty-state";
+import { btnSecondary, btnSecondarySm } from "@/components/app/controls";
 import { PageIcon } from "@/components/app/page-icon";
+import { apiGet } from "@/lib/api";
+import { formatQty } from "@/lib/format";
+import type { ExhaustionAlert, ExhaustionAlerts, AlertLevel } from "@/server/inventory/exhaustion";
 
-const MATERIALS = [
-  "Stearic Acid", "Fragrance Blend FG-04", "EDTA Disodium Salt", "Shrink Labels (Type B)",
-  "Pine Oil", "Methyl Salicylate", "Preservative BKC-50", "Titanium Dioxide",
-  "Citric Acid Monohydrate", "Polypropylene Granules", "Sodium Hypochlorite",
-  "Shrink Labels (Type A)", "LDPE Caps 5L", "Caustic Soda Flakes", "Isopropyl Alcohol"
-];
-
-const WAREHOUSES = ["Pune Plant", "Mumbai WH", "Delhi Depot", "Chennai Hub"];
-const VENDORS = [
-  "Rashtriya Chemicals", "Givaudan India", "Aarti Industries", "Uflex Packaging",
-  "Camphor & Allied", "Jayant Agro", "Thor Specialties", "Tronox India",
-  "Jungbunzlauer India", "Reliance Polymers", "Gujarat Alkalies", "Mold-Tek Containers"
-];
-
-interface AlertRow {
-  level: "red" | "amber" | "green";
-  levelLabel: string;
-  material: string;
-  warehouse: string;
-  stock: string;
-  daily: string;
-  days: number;
-  reqBy: string;
-  reorderBy: string;
-  lead: number;
-  vendor: string;
-  /** Sort key only; stripped before the rows are handed out. */
-  _days: number;
-}
-
-const generateAlerts = () => {
-  const result: AlertRow[] = [];
-  let seed = 777;
-  const random = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
-
-  const addAlerts = (count: number, level: string, levelLabel: string, minDays: number, maxDays: number) => {
-    for (let i = 0; i < count; i++) {
-      const material = MATERIALS[Math.floor(random() * MATERIALS.length)];
-      const warehouse = WAREHOUSES[Math.floor(random() * WAREHOUSES.length)];
-      const isKg = random() > 0.4;
-      const dailyUsage = Math.floor(random() * 200) + 10;
-      const days = minDays + random() * (maxDays - minDays);
-      const stock = Math.floor(dailyUsage * days);
-      const lead = Math.floor(random() * 12) + 3;
-      const vendor = VENDORS[Math.floor(random() * VENDORS.length)];
-
-      const reqObj = new Date(2026, 2, 23 + Math.floor(days));
-      const reqBy = reqObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }).replace(/ /g, " ");
-
-      let reorderBy;
-      if (levelLabel === "Critical") {
-        reorderBy = "Immediate";
-      } else {
-        const reorderObj = new Date(reqObj.getTime() - lead * 86400000);
-        reorderBy = reorderObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }).replace(/ /g, " ");
-      }
-
-      result.push({
-        level: level as AlertRow["level"], levelLabel, material, warehouse,
-        stock: `${stock.toLocaleString()} ${isKg ? 'kg' : 'L'}`,
-        daily: `${dailyUsage} ${isKg ? 'kg' : 'L'}/d`,
-        days: parseFloat(days.toFixed(1)),
-        reqBy, reorderBy, lead, vendor,
-        _days: days // for sorting
-      });
-    }
-  };
-
-  addAlerts(7, "red", "Critical", 0.5, 2.9);
-  addAlerts(12, "amber", "High", 3.0, 7.0);
-  addAlerts(23, "amber", "Medium", 7.1, 14.0);
-
-  return result.sort((a, b) => a._days - b._days).map(({ _days, ...rest }) => rest);
+const levelBadge: Record<AlertLevel, { status: "red" | "amber"; label: string }> = {
+  critical: { status: "red", label: "Critical" },
+  high: { status: "amber", label: "High" },
+  medium: { status: "amber", label: "Medium" },
 };
 
-const alerts = generateAlerts();
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 export default function StockExhaustionAlerts() {
   const router = useRouter();
 
-  const counts = {
-    critical: alerts.filter(a => a.levelLabel === "Critical").length,
-    high: alerts.filter(a => a.levelLabel === "High").length,
-    medium: alerts.filter(a => a.levelLabel === "Medium").length,
-    total: alerts.length
-  };
+  const q = useQuery({
+    queryKey: ["inventory", "exhaustion-alerts"],
+    queryFn: ({ signal }) => apiGet<ExhaustionAlerts>("/inventory/exhaustion-alerts", undefined, { signal }),
+  });
 
-  type Alert = (typeof alerts)[number];
-  const columns: Column<Alert>[] = [
-    { key: "level", header: "Level", width: "w-[110px]", value: a => a.levelLabel, cell: a => <StatusBadge status={a.level} label={a.levelLabel} /> },
-    { key: "material", header: "Material", value: a => a.material, cell: a => <span className="font-medium">{a.material}</span> },
-    { key: "warehouse", header: "Warehouse", width: "w-[120px]", value: a => a.warehouse, cell: a => <span className="text-muted-foreground">{a.warehouse}</span> },
-    { key: "stock", header: "Current stock", align: "right", numeric: true, width: "w-[130px]", value: a => a.stock, cell: a => a.stock },
-    { key: "daily", header: "Daily use", align: "right", numeric: true, width: "w-[110px]", value: a => a.daily, cell: a => a.daily },
-    { key: "days", header: "Days cover", align: "right", numeric: true, width: "w-[115px]", value: a => a.days, cell: a => <span className="font-medium">{a.days}d</span> },
-    { key: "reqBy", header: "Required by", width: "w-[125px]", value: a => a.reqBy, cell: a => a.reqBy },
-    { key: "reorderBy", header: "Reorder by", width: "w-[125px]", value: a => a.reorderBy, cell: a => <span className="font-medium">{a.reorderBy}</span> },
-    { key: "lead", header: "Lead (d)", align: "right", numeric: true, width: "w-[95px]", value: a => a.lead, cell: a => a.lead },
-    { key: "vendor", header: "Vendor", value: a => a.vendor, cell: a => a.vendor },
+  const data = q.data;
+  const alerts = data?.alerts ?? [];
+  const t = data?.thresholds ?? { critical: 3, high: 7, medium: 14 };
+
+  const columns: Column<ExhaustionAlert>[] = [
+    { key: "level", header: "Level", width: "w-[110px]", value: a => levelBadge[a.level].label, cell: a => <StatusBadge {...levelBadge[a.level]} /> },
+    { key: "material", header: "Material", value: a => a.name, cell: a => <span className="font-medium">{a.name}</span> },
+    { key: "warehouse", header: "Warehouse", width: "w-[120px]", value: a => a.location.name, cell: a => <span className="text-muted-foreground">{a.location.name}</span> },
+    { key: "stock", header: "Current stock", align: "right", numeric: true, width: "w-[130px]", value: a => a.stock, cell: a => `${formatQty(a.stock)} ${a.uom}` },
+    { key: "daily", header: "Daily use", align: "right", numeric: true, width: "w-[110px]", value: a => a.dailyUse, cell: a => `${formatQty(a.dailyUse)} ${a.uom}/d` },
+    { key: "days", header: "Days cover", align: "right", numeric: true, width: "w-[115px]", value: a => a.coverDays, cell: a => <span className="font-medium">{a.coverDays}d</span> },
+    { key: "reqBy", header: "Required by", width: "w-[125px]", value: a => a.requiredBy, cell: a => fmtDate(a.requiredBy) },
+    {
+      key: "reorderBy", header: "Reorder by", width: "w-[125px]",
+      value: a => (a.reorderImmediate ? "0000" : a.reorderBy ?? "9999"),
+      cell: a => a.reorderImmediate
+        ? <span className="font-medium text-danger">Immediate</span>
+        : a.reorderBy
+          ? <span className="font-medium">{fmtDate(a.reorderBy)}</span>
+          : <span className="text-muted-foreground" title="No lead time on record">—</span>,
+    },
+    {
+      key: "lead", header: "Lead (d)", align: "right", numeric: true, width: "w-[95px]",
+      value: a => a.leadTimeDays ?? -1,
+      cell: a => a.leadTimeDays === null
+        ? <span className="text-muted-foreground" title="No vendor lead time on record">—</span>
+        : <span title={a.leadTimeSource === "PRODUCTION" ? "Production lead time" : "Vendor lead time"}>{a.leadTimeDays}</span>,
+    },
+    {
+      key: "vendor", header: "Vendor", value: a => a.vendor?.name ?? "",
+      cell: a => a.vendor
+        ? a.vendor.name
+        : <span className="text-muted-foreground">{a.procurementType === "MAKE" ? "Made in-house" : "—"}</span>,
+    },
     {
       key: "action", header: "Action", width: "w-[110px]", sortable: false,
-      cell: () => (
-        <button onClick={() => router.push("/purchase-orders")} className={btnSecondarySm}>
-          Raise PO
-        </button>
+      cell: a => a.procurementType === "MAKE" ? (
+        <button onClick={() => router.push("/work-orders")} className={btnSecondarySm}>Plan WO</button>
+      ) : (
+        <button onClick={() => router.push("/purchase-orders")} className={btnSecondarySm}>Raise PO</button>
       ),
     },
+  ];
+
+  const cards = [
+    { label: `Critical (< ${t.critical} days)`, count: data?.counts.critical, icon: "alert-critical", color: "bg-danger/10 text-danger border-danger/20" },
+    { label: `High (${t.critical}–${t.high} days)`, count: data?.counts.high, icon: "alert-high", color: "bg-warning/10 text-warning border-warning/20" },
+    { label: `Medium (${t.high}–${t.medium} days)`, count: data?.counts.medium, icon: "alert-medium", color: "bg-warning/10 text-warning border-warning/20" },
+    { label: "Total active alerts", count: data?.counts.total, icon: "alert-total", color: "bg-secondary text-foreground border-border" },
   ];
 
   return (
@@ -125,19 +89,14 @@ export default function StockExhaustionAlerts() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: "Critical (< 3 days)", count: counts.critical, icon: "alert-critical", color: "bg-danger/10 text-danger border-danger/20" },
-          { label: "High (3–7 days)", count: counts.high, icon: "alert-high", color: "bg-warning/10 text-warning border-warning/20" },
-          { label: "Medium (7–14 days)", count: counts.medium, icon: "alert-medium", color: "bg-warning/10 text-warning border-warning/20" },
-          { label: "Total active alerts", count: counts.total, icon: "alert-total", color: "bg-secondary text-foreground border-border" },
-        ].map((s) => (
+        {cards.map((s) => (
           <div key={s.label} className={`rounded-lg border p-3 ${s.color}`}>
             {/* The icon is pulled out beside the figure and the label rather
                 than stacked above them, so the card keeps the height it had
                 and the number stays the first thing read. */}
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-display-xl leading-none tabular-nums">{s.count}</div>
+                <div className="text-display-xl leading-none tabular-nums">{s.count ?? "—"}</div>
                 <div className="text-body-sm mt-0.5">{s.label}</div>
               </div>
               <img
@@ -152,18 +111,33 @@ export default function StockExhaustionAlerts() {
         ))}
       </div>
 
-      <div className="overflow-x-auto">
-        <DataTable
-          columns={columns}
-          rows={alerts}
-          rowKey={a => `${a.material}-${a.warehouse}-${a.reqBy}`}
-          name="Stock exhaustion alerts"
-          searchable
-          columnToggle
-          exportable
-          pageSize={25}
-        />
-      </div>
+      {q.error ? (
+        <div className="surface-panel">
+          <EmptyState title="Alerts could not be loaded" description={q.error.message}
+            action={<button className={btnSecondary} onClick={() => void q.refetch()}>Try again</button>} />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          {data && (
+            <p className="mb-2 text-body-sm text-muted-foreground">
+              Projected from current stock at each location's average daily demand; open purchase and work orders are not netted.
+              {data.notAssessed > 0 && ` ${data.notAssessed} stocked material-location${data.notAssessed === 1 ? " has" : "s have"} no demand figure and ${data.notAssessed === 1 ? "isn't" : "aren't"} assessed.`}
+            </p>
+          )}
+          <DataTable
+            columns={columns}
+            rows={alerts}
+            rowKey={a => `${a.materialId}-${a.location.id}`}
+            name="Stock exhaustion alerts"
+            loading={q.isPending}
+            empty={<EmptyState title="No exhaustion alerts" description={`Every assessed material has more than ${t.medium} days of cover.`} />}
+            searchable
+            columnToggle
+            exportable
+            pageSize={25}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,137 +1,207 @@
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import StatusBadge from "@/components/StatusBadge";
 import { PageHeader } from "@/components/app/page-header";
 import { DataTable, type Column } from "@/components/app/data-table";
 import { EmptyState } from "@/components/app/empty-state";
+import { SkeletonBlock } from "@/components/app/skeleton-block";
+import { btnSecondary } from "@/components/app/controls";
+import { apiGet } from "@/lib/api";
+import { formatQty, inrCompact } from "@/lib/format";
+import type { PoStatus, PurchaseOrderDetail, PurchaseOrderList, PurchaseOrderRow } from "@/server/purchasing/purchase-orders";
 
-const tabs = [
-  { key: "all", label: "All", count: 412 }, { key: "draft", label: "Draft", count: 8 },
-  { key: "pending", label: "Pending Approval", count: 12 }, { key: "approved", label: "Approved", count: 24 },
-  { key: "ordered", label: "Ordered", count: 87 }, { key: "partial", label: "Partially Received", count: 34 },
-  { key: "received", label: "Fully Received", count: 241 }, { key: "cancelled", label: "Cancelled", count: 6 },
+type TabKey = "all" | "overdue" | PoStatus;
+
+const tabs: { key: TabKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "DRAFT", label: "Draft" },
+  { key: "APPROVED", label: "Approved" },
+  { key: "ORDERED", label: "Ordered" },
+  { key: "PARTIALLY_RECEIVED", label: "Partially Received" },
+  { key: "FULLY_RECEIVED", label: "Fully Received" },
+  { key: "CANCELLED", label: "Cancelled" },
+  { key: "overdue", label: "Overdue" },
 ];
 
-const VENDORS = [
-  "Reliance Polymers", "Rashtriya Chemicals", "Galaxy Surfactants", "Aarti Industries",
-  "Mold-Tek Containers", "Tronox India", "Uflex Packaging", "Deepak Nitrite",
-  "Givaudan India", "Gujarat Alkalies", "SRF Limited", "Hindustan Zinc",
-  "Pidilite Industries", "Tata Chemicals", "Bayer CropScience", "Atul Ltd"
-];
-
-const generateMockPOs = () => {
-  const result = [];
-  let poCounter = 1000;
-  
-  // Seed for deterministic random to avoid jumping on every render
-  let seed = 12345;
-  const random = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-
-  const addItems = (count: number, status: string) => {
-    for (let i = 0; i < count; i++) {
-        poCounter--;
-        const vendor = VENDORS[Math.floor(random() * VENDORS.length)];
-        const items = Math.floor(random() * 5) + 1;
-        
-        let received = 0;
-        let payment = "Pending";
-        
-        if (status === "Fully Received") {
-            received = 100;
-            payment = "Paid";
-        } else if (status === "Partially Received") {
-            received = Math.floor(random() * 80) + 10;
-            payment = "Partial";
-        } else if (status === "Cancelled") {
-            received = 0;
-            payment = "Pending";
-        }
-        
-        // Random days ago for order date
-        const dateObj = new Date(2026, 2, 25 - Math.floor(random() * 60)); 
-        const deliveryObj = new Date(dateObj.getTime() + (Math.floor(random() * 15) + 5) * 86400000);
-        
-        const dateStr = dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }).replace(/ /g, " ");
-        const deliveryStr = deliveryObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }).replace(/ /g, " ");
-        
-        const valueLakhs = (random() * 10 + 0.5).toFixed(2);
-        const value = `₹${valueLakhs}L`;
-        
-        result.push({
-            po: `PO-2026-${String(poCounter).padStart(4, '0')}`,
-            vendor,
-            date: dateStr,
-            delivery: deliveryStr,
-            value,
-            items,
-            received,
-            payment,
-            status,
-            _timestamp: dateObj.getTime()
-        });
-    }
-  };
-
-  addItems(8, "Draft");
-  addItems(12, "Pending Approval");
-  addItems(24, "Approved");
-  addItems(87, "Ordered");
-  addItems(34, "Partially Received");
-  addItems(241, "Fully Received");
-  addItems(6, "Cancelled");
-
-  // Sort by date descending
-  return result.sort((a, b) => b._timestamp - a._timestamp).map(({ _timestamp, ...rest }) => rest);
+const statusMap: Record<PoStatus, { status: "green" | "amber" | "red" | "blue" | "gray"; label: string }> = {
+  DRAFT: { status: "gray", label: "Draft" },
+  APPROVED: { status: "blue", label: "Approved" },
+  ORDERED: { status: "blue", label: "Ordered" },
+  PARTIALLY_RECEIVED: { status: "amber", label: "Partially Received" },
+  FULLY_RECEIVED: { status: "green", label: "Fully Received" },
+  CANCELLED: { status: "red", label: "Cancelled" },
 };
 
-const allPOs = generateMockPOs();
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
+const rupees = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
-const statusMap: Record<string, "green" | "amber" | "red" | "blue" | "gray"> = {
-  "Draft": "gray", "Pending Approval": "amber", "Approved": "blue", "Ordered": "blue",
-  "Partially Received": "amber", "Fully Received": "green", "Cancelled": "red",
-};
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <span className="text-muted-foreground block">{label}</span>
+      <span className="font-medium">{children}</span>
+    </div>
+  );
+}
+
+function PurchaseOrderPanel({ id }: { id: string }) {
+  const q = useQuery({
+    queryKey: ["purchase-order", id],
+    queryFn: ({ signal }) => apiGet<PurchaseOrderDetail>(`/purchase-orders/${id}`, undefined, { signal }),
+  });
+
+  if (q.isPending) {
+    return (
+      <div className="surface-panel mt-4 p-4 space-y-2" aria-busy="true">
+        {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-4 w-full" />)}
+      </div>
+    );
+  }
+  if (q.error) {
+    return (
+      <div className="surface-panel mt-4">
+        <EmptyState title="Purchase order could not be loaded" description={q.error.message}
+          action={<button className={btnSecondary} onClick={() => void q.refetch()}>Try again</button>} />
+      </div>
+    );
+  }
+
+  const po = q.data;
+  // A draft has not been approved; anything past draft should name who approved it.
+  const approval = po.approvedBy
+    ? `${po.approvedBy.name}${po.approvedAt ? ` · ${fmtDate(po.approvedAt)}` : ""}`
+    : po.status === "DRAFT" ? "Not yet approved" : "Not recorded";
+
+  return (
+    <div className="surface-panel mt-4 p-4 space-y-4">
+      <h3 className="text-body-md font-semibold flex items-center gap-2 flex-wrap">
+        Purchase order — <span className="identifier">{po.orderNumber}</span>
+        <StatusBadge {...statusMap[po.status]} />
+        {po.overdue && <StatusBadge status="red" label="Overdue" />}
+      </h3>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-body-sm">
+        <Fact label="Vendor">
+          {po.vendor.name} <span className="identifier text-muted-foreground">{po.vendor.code}</span>
+          {!po.vendor.isApproved && <span className="text-danger"> · not on ASL</span>}
+        </Fact>
+        <Fact label="Deliver to">{po.location.name}</Fact>
+        <Fact label="Ordered">{fmtDate(po.orderDate)}</Fact>
+        <Fact label="Expected delivery">
+          <span className={po.overdue ? "text-danger" : ""}>{fmtDate(po.expectedDeliveryDate)}</span>
+        </Fact>
+        <Fact label="Delivered">
+          {po.delivered
+            ? <>{fmtDate(po.delivered.date)} <span className="text-muted-foreground font-normal">{po.delivered.source === "ACTUAL" ? "(recorded delivery)" : "(latest GRN receipt date)"}</span></>
+            : <span className="text-muted-foreground">No receipt yet</span>}
+        </Fact>
+        <Fact label="Value">
+          {rupees(po.totalAmount)} {po.currencyCode !== "INR" && po.currencyCode}
+          {po.totalMismatch && <span className="text-danger font-normal"> · differs from its lines</span>}
+        </Fact>
+        <Fact label="Created by">{po.createdBy.name}</Fact>
+        <Fact label="Approved by"><span className={po.approvedBy ? "" : "text-muted-foreground"}>{approval}</span></Fact>
+      </div>
+
+      <div>
+        <span className="text-body-sm text-muted-foreground font-medium">Lines</span>
+        <div className="mt-1 overflow-x-auto">
+          <table className="data-table w-full text-body-sm">
+            <thead><tr className="border-b border-border">
+              {["#", "Material", "Ordered", "Received", "Outstanding", "Unit price", "Line total", "Expected"].map((h) =>
+                <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {po.lines.map((l) => (
+                <tr key={l.lineNumber} className="border-b border-border">
+                  <td className="px-2 py-1.5 tabular-nums">{l.lineNumber}</td>
+                  <td className="px-2 py-1.5"><span className="identifier text-muted-foreground">{l.material.code}</span> <span className="font-medium">{l.material.name}</span></td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{formatQty(l.orderedQty)} {l.uom}</td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{formatQty(l.receivedQty)} {l.uom}</td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{l.outstandingQty > 0 ? `${formatQty(l.outstandingQty)} ${l.uom}` : "—"}</td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{rupees(l.unitPrice)}/{l.uom}</td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{rupees(l.lineTotal)}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    <span className={l.overdue ? "text-danger font-medium" : ""}>{fmtDate(l.expectedDeliveryDate)}</span>
+                    {l.overdue && <span className="text-caption text-danger"> (overdue)</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <span className="text-body-sm text-muted-foreground font-medium">Goods receipts</span>
+        <div className="mt-1 space-y-1">
+          {po.receipts.length ? po.receipts.map((r) => (
+            <div key={r.id} className="text-body-sm px-2 py-1.5 rounded bg-secondary/50">
+              <span className="identifier text-foreground">{r.grnNumber}</span>
+              <span className="text-muted-foreground"> · {fmtDate(r.receiptDate)} · {r.location}</span>
+              {r.lines.map((gl) => (
+                <span key={gl.lineNumber} className="block text-muted-foreground">
+                  Line {gl.lineNumber}: {gl.materialCode} {formatQty(gl.receivedQty)} {gl.uom}
+                  {gl.lotNumber ? <> · lot <span className="identifier">{gl.lotNumber}</span></> : " · no lot recorded"}
+                  {" "}· inspection {gl.inspectionStatus.toLowerCase()}
+                </span>
+              ))}
+            </div>
+          )) : <div className="text-body-sm text-muted-foreground">Nothing received yet</div>}
+        </div>
+      </div>
+
+      {po.notes && <p className="text-body-sm text-muted-foreground">Notes: {po.notes}</p>}
+    </div>
+  );
+}
 
 export default function PurchaseOrders() {
-  const [tab, setTab] = useState("all");
+  const [tab, setTab] = useState<TabKey>("all");
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const q = useQuery({
+    queryKey: ["purchase-orders"],
+    queryFn: ({ signal }) => apiGet<PurchaseOrderList>("/purchase-orders", undefined, { signal }),
+  });
 
   const filteredPOs = useMemo(() => {
-    if (tab === "all") return allPOs;
-    const tabData = tabs.find(t => t.key === tab);
-    if (!tabData) return allPOs;
-    return allPOs.filter(po => po.status === tabData.label);
-  }, [tab]);
+    const all = q.data?.orders ?? [];
+    if (tab === "all") return all;
+    if (tab === "overdue") return all.filter((p) => p.overdue);
+    return all.filter((p) => p.status === tab);
+  }, [q.data, tab]);
 
-  type PO = (typeof allPOs)[number];
-  const columns: Column<PO>[] = [
-    { key: "po", header: "PO number", width: "w-[140px]", value: p => p.po, cell: p => <span className="identifier text-body-sm">{p.po}</span> },
-    { key: "vendor", header: "Vendor", value: p => p.vendor, cell: p => <span className="font-medium">{p.vendor}</span> },
-    { key: "date", header: "Order date", width: "w-[130px]", value: p => p.date, cell: p => p.date },
-    { key: "delivery", header: "Expected delivery", width: "w-[150px]", value: p => p.delivery, cell: p => p.delivery },
-    { key: "value", header: "Value", align: "right", numeric: true, width: "w-[100px]", value: p => p.value, cell: p => p.value },
-    { key: "items", header: "Items", align: "right", numeric: true, width: "w-[70px]", value: p => p.items, cell: p => p.items },
+  const columns: Column<PurchaseOrderRow>[] = [
+    { key: "po", header: "PO number", width: "w-[140px]", value: p => p.orderNumber, cell: p => <span className="identifier text-body-sm">{p.orderNumber}</span> },
+    { key: "vendor", header: "Vendor", value: p => p.vendor.name, cell: p => <span className="font-medium">{p.vendor.name}</span> },
+    { key: "date", header: "Order date", width: "w-[130px]", value: p => p.orderDate, cell: p => fmtDate(p.orderDate) },
+    {
+      key: "delivery", header: "Expected delivery", width: "w-[170px]", value: p => p.expectedDeliveryDate,
+      cell: p => p.overdue
+        ? <span className="text-danger font-medium whitespace-nowrap" title="Open, past its expected date, with quantity outstanding">{fmtDate(p.expectedDeliveryDate)} <span className="text-caption">(overdue)</span></span>
+        : <span className="whitespace-nowrap">{fmtDate(p.expectedDeliveryDate)}</span>,
+    },
+    { key: "value", header: "Value", align: "right", numeric: true, width: "w-[100px]", value: p => p.totalAmount, cell: p => inrCompact(p.totalAmount) },
+    { key: "items", header: "Items", align: "right", numeric: true, width: "w-[70px]", value: p => p.lineCount, cell: p => p.lineCount },
     {
       key: "received", header: "Received", align: "right", numeric: true, width: "w-[100px]",
-      value: p => p.received,
-      // Payment was a second badge on every row. As plain text next to the
-      // receipt figure it carries the same information without the noise.
-      cell: p => (
-        <span className="whitespace-nowrap">
-          {p.received}%
-          <span className="ml-2 text-body-sm text-muted-foreground">{p.payment}</span>
-        </span>
-      ),
+      value: p => p.receivedPct ?? -1,
+      cell: p => p.receivedPct === null ? "—" : <span title="Share of the ordered value received">{p.receivedPct}%</span>,
     },
     {
-      key: "status", header: "Status", width: "w-[150px]",
-      cell: p => <StatusBadge status={statusMap[p.status]} label={p.status} />,
+      key: "status", header: "Status", width: "w-[150px]", value: p => statusMap[p.status].label,
+      cell: p => <StatusBadge {...statusMap[p.status]} />,
     },
   ];
 
+  const count = (key: TabKey) => (q.data ? q.data.counts[key] : "—");
+
   return (
     <div className="px-6 py-5">
-      <PageHeader title="Purchase orders" description={`${filteredPOs.length.toLocaleString()} orders`} />
+      <PageHeader title="Purchase orders"
+        description={q.data ? `${filteredPOs.length.toLocaleString()} order${filteredPOs.length === 1 ? "" : "s"}` : q.isPending ? "Loading…" : undefined} />
 
       <div className="-mx-1 mb-1 flex gap-1 overflow-x-auto border-b border-border px-1">
         {tabs.map(t => (
@@ -144,22 +214,34 @@ export default function PurchaseOrders() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            {t.label} <span className="tabular-nums text-muted-foreground">{t.count}</span>
+            {t.label} <span className="tabular-nums text-muted-foreground">{count(t.key)}</span>
           </button>
         ))}
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={filteredPOs}
-        rowKey={p => p.po}
-        name="Purchase orders"
-        searchable
-        columnToggle
-        exportable
-        pageSize={25}
-        empty={<EmptyState title="No purchase orders" description="Nothing matches this filter yet." />}
-      />
+      {q.error ? (
+        <div className="surface-panel">
+          <EmptyState title="Purchase orders could not be loaded" description={q.error.message}
+            action={<button className={btnSecondary} onClick={() => void q.refetch()}>Try again</button>} />
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={filteredPOs}
+          rowKey={p => p.id}
+          name="Purchase orders"
+          loading={q.isPending}
+          searchable
+          columnToggle
+          exportable
+          pageSize={25}
+          onRowClick={p => setSelected(p.id)}
+          isRowSelected={p => p.id === selected}
+          empty={<EmptyState title="No purchase orders" description={tab === "all" ? "Purchase orders appear here once they are raised." : "Nothing matches this filter yet."} />}
+        />
+      )}
+
+      {selected && <PurchaseOrderPanel key={selected} id={selected} />}
     </div>
   );
 }

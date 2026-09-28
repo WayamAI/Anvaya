@@ -315,6 +315,57 @@ export const WORK_ORDERS: SeedWorkOrder[] = [
   },
 ];
 
+/*
+  Lot traceability.
+
+  Ties existing records together; it adds no new business events. The links
+  are carried by the stock ledger (see src/server/inventory/lots.ts): a
+  PRODUCTION_RECEIPT movement names the work order that made a lot, and an
+  ISSUE movement names the sales order line a lot shipped against.
+*/
+
+export interface SeedProducedLot {
+  lotNumber: string;
+  workOrder: string;
+  material: string;
+  location: string;
+  quantity: number;
+  /** WO-2026-0091 has no actual end date recorded; its planned end is used. */
+  productionDate: string;
+  /** Production date plus the material's shelf life (FG-001: 730 days). */
+  expiryDate: string;
+  /** APPROVED because the lot was shipped to and delivered at a customer. */
+  qcStatus: QcStatus;
+}
+
+/** The output of the one completed work order, WO-2026-0091 (500 x FG-001). */
+export const PRODUCED_LOTS: SeedProducedLot[] = [
+  {
+    lotNumber: "FGB-2026-0091", workOrder: "WO-2026-0091", material: "FG-001", location: "PUNE",
+    quantity: 500, productionDate: "2026-03-14", expiryDate: "2028-03-13", qcStatus: QcStatus.APPROVED,
+  },
+];
+
+/**
+ * Lots consumed by WO-2026-0091, for the two components that have a lot on
+ * record. Both were received before the order started. The other four
+ * components (SA-101, PM-1002, PM-2003, PM-3004) have no lot in the seed and
+ * are deliberately left unlinked rather than given invented ones.
+ */
+export const COMPONENT_LOTS = [
+  { workOrder: "WO-2026-0091", material: "RM-8012", lotNumber: "RMB-2026-0461" },
+  { workOrder: "WO-2026-0091", material: "PM-1001", lotNumber: "RMB-2026-0470" },
+];
+
+/**
+ * SO-4521 is DELIVERED with 240 x FG-001 shipped; the only FG-001 lot on
+ * record is the one WO-2026-0091 produced. The order records no dispatch
+ * date, so its required date is used.
+ */
+export const LOT_DISPATCHES = [
+  { lotNumber: "FGB-2026-0091", salesOrder: "SO-4521", lineNumber: 1, quantity: 240, dispatchDate: "2026-03-24" },
+];
+
 export const CONSTRAINTS = [
   { name: "Blending line BLEND-01", type: ConstraintType.CAPACITY, location: "PUNE", unit: "litres/day", capacity: 4000, utilised: 3100, effectiveFrom: "2026-01-01" },
   { name: "Filling line FILL-02", type: ConstraintType.CAPACITY, location: "PUNE", unit: "units/day", capacity: 2400, utilised: 1850, effectiveFrom: "2026-01-01" },

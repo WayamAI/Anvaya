@@ -1,50 +1,68 @@
+import { useQuery } from "@tanstack/react-query";
 import StatusBadge from "@/components/StatusBadge";
 import { DataTable, type Column } from "@/components/app/data-table";
+import { EmptyState } from "@/components/app/empty-state";
+import { btnSecondary } from "@/components/app/controls";
 import KPICard from "@/components/KPICard";
 import { Shield, AlertTriangle, Info } from "lucide-react";
 import { PageIcon } from "@/components/app/page-icon";
+import { apiGet } from "@/lib/api";
+import { formatQty } from "@/lib/format";
+import type { SafetyStockRow, SafetyStockView, UnavailableReason } from "@/server/inventory/safety-stock";
 
-const data = [
-  { material: "Polypropylene Granules", cat: "Polymer", avgDaily: "280 kg/d", stdDev: "45 kg", lead: 7, variability: "Medium", current: "500 kg", recommended: "680 kg", gap: -180 },
-  { material: "Sodium Lauryl Sulphate", cat: "Chemical", avgDaily: "42 kg/d", stdDev: "12 kg", lead: 14, variability: "High", current: "200 kg", recommended: "380 kg", gap: -180 },
-  { material: "HDPE Resin", cat: "Polymer", avgDaily: "310 kg/d", stdDev: "28 kg", lead: 5, variability: "Low", current: "800 kg", recommended: "620 kg", gap: 180 },
-  { material: "Stearic Acid", cat: "Chemical", avgDaily: "42 kg/d", stdDev: "18 kg", lead: 14, variability: "High", current: "100 kg", recommended: "340 kg", gap: -240 },
-  { material: "EDTA Disodium Salt", cat: "Chemical", avgDaily: "18 kg/d", stdDev: "6 kg", lead: 10, variability: "Medium", current: "50 kg", recommended: "120 kg", gap: -70 },
-  { material: "Titanium Dioxide", cat: "Pigment", avgDaily: "78 kg/d", stdDev: "22 kg", lead: 6, variability: "Medium", current: "150 kg", recommended: "280 kg", gap: -130 },
-  { material: "Fragrance Blend FG-04", cat: "Fragrance", avgDaily: "6 L/d", stdDev: "2 L", lead: 10, variability: "High", current: "10 L", recommended: "45 L", gap: -35 },
-  { material: "Caustic Soda Flakes", cat: "Chemical", avgDaily: "95 kg/d", stdDev: "15 kg", lead: 5, variability: "Low", current: "300 kg", recommended: "260 kg", gap: 40 },
-  { material: "Citric Acid Monohydrate", cat: "Chemical", avgDaily: "22 kg/d", stdDev: "8 kg", lead: 8, variability: "Medium", current: "80 kg", recommended: "110 kg", gap: -30 },
-  { material: "Demineralised Water", cat: "Utility", avgDaily: "620 L/d", stdDev: "80 L", lead: 2, variability: "Low", current: "2,000 L", recommended: "1,400 L", gap: 600 },
-  { material: "HDPE Bottle 5L", cat: "Packaging", avgDaily: "450 pcs/d", stdDev: "60 pcs", lead: 5, variability: "Low", current: "1,000 pcs", recommended: "1,100 pcs", gap: -100 },
-  { material: "Shrink Labels (Type A)", cat: "Packaging", avgDaily: "320 pcs/d", stdDev: "50 pcs", lead: 4, variability: "Medium", current: "500 pcs", recommended: "680 pcs", gap: -180 },
-  { material: "Isopropyl Alcohol", cat: "Solvent", avgDaily: "28 L/d", stdDev: "5 L", lead: 4, variability: "Low", current: "100 L", recommended: "85 L", gap: 15 },
-  { material: "Pine Oil", cat: "Essential Oil", avgDaily: "3.2 L/d", stdDev: "1.1 L", lead: 8, variability: "High", current: "10 L", recommended: "22 L", gap: -12 },
-  { material: "Coconut Diethanolamide", cat: "Chemical", avgDaily: "14 kg/d", stdDev: "4 kg", lead: 6, variability: "Medium", current: "60 kg", recommended: "55 kg", gap: 5 },
-];
+const unavailableText: Record<UnavailableReason, string> = {
+  NO_STD_DEV: "No demand standard deviation on the policy",
+  NO_SERVICE_LEVEL: "No service level on the policy",
+  NO_LEAD_TIME: "No lead time — no single vendor to buy from",
+};
+
+const dash = <span className="text-muted-foreground">—</span>;
 
 export default function SafetyStock() {
-  type SsRow = (typeof data)[number];
-  const columns: Column<SsRow>[] = [
+  const q = useQuery({
+    queryKey: ["inventory", "safety-stock"],
+    queryFn: ({ signal }) => apiGet<SafetyStockView>("/inventory/safety-stock", undefined, { signal }),
+  });
+
+  const rows = q.data?.rows ?? [];
+  const summary = q.data?.summary;
+
+  const columns: Column<SafetyStockRow>[] = [
+    { key: "material", header: "Material", value: d => d.name, cell: d => <span className="font-medium">{d.name}</span> },
+    { key: "cat", header: "Category", width: "w-[110px]", value: d => d.category ?? "", cell: d => <span className="text-muted-foreground">{d.category ?? "—"}</span> },
+    { key: "location", header: "Location", width: "w-[120px]", value: d => d.location.name, cell: d => <span className="text-muted-foreground">{d.location.name}</span> },
     {
-      key: "select", header: "", width: "w-[44px]", sortable: false,
-      cell: () => <input type="checkbox" className="rounded" aria-label="Select row" />,
+      key: "avgDaily", header: "Avg. daily", align: "right", numeric: true, width: "w-[110px]", value: d => d.averageDailyDemand ?? -1,
+      cell: d => (d.averageDailyDemand === null ? dash : `${formatQty(d.averageDailyDemand)} ${d.uom}/d`),
     },
-    { key: "material", header: "Material", value: d => d.material, cell: d => <span className="font-medium">{d.material}</span> },
-    { key: "cat", header: "Category", width: "w-[110px]", value: d => d.cat, cell: d => <span className="text-muted-foreground">{d.cat}</span> },
-    { key: "avgDaily", header: "Avg. daily", align: "right", numeric: true, width: "w-[110px]", value: d => d.avgDaily, cell: d => d.avgDaily },
-    { key: "stdDev", header: "Std dev", align: "right", numeric: true, width: "w-[100px]", value: d => d.stdDev, cell: d => d.stdDev },
-    { key: "lead", header: "Lead (d)", align: "right", numeric: true, width: "w-[95px]", value: d => d.lead, cell: d => d.lead },
     {
-      key: "variability", header: "Variability", width: "w-[120px]", value: d => d.variability,
-      cell: d => <StatusBadge status={d.variability === "High" ? "red" : d.variability === "Medium" ? "amber" : "green"} label={d.variability} />,
+      key: "stdDev", header: "Std dev", align: "right", numeric: true, width: "w-[100px]", value: d => d.demandStdDev ?? -1,
+      cell: d => (d.demandStdDev === null ? dash : `${formatQty(d.demandStdDev)} ${d.uom}`),
     },
-    { key: "current", header: "Current SS", align: "right", numeric: true, width: "w-[115px]", value: d => d.current, cell: d => d.current },
-    { key: "recommended", header: "Recommended", align: "right", numeric: true, width: "w-[135px]", value: d => d.recommended, cell: d => <span className="font-medium">{d.recommended}</span> },
     {
-      key: "gap", header: "Gap", align: "right", numeric: true, width: "w-[90px]", value: d => d.gap,
-      cell: d => (
+      key: "lead", header: "Lead (d)", align: "right", numeric: true, width: "w-[95px]", value: d => d.leadTimeDays ?? -1,
+      cell: d => d.leadTimeDays === null ? dash : (
+        <span title={d.leadTimeSource === "PRODUCTION" ? "Production lead time (made in-house)" : `Vendor lead time${d.vendor ? ` — ${d.vendor.name}` : ""}`}>{d.leadTimeDays}</span>
+      ),
+    },
+    {
+      key: "variability", header: "Variability", width: "w-[120px]", value: d => d.variability ?? "",
+      cell: d => d.variability
+        ? <StatusBadge status={d.variability === "High" ? "red" : d.variability === "Medium" ? "amber" : "green"} label={d.variability} />
+        : dash,
+    },
+    { key: "current", header: "Current SS", align: "right", numeric: true, width: "w-[115px]", value: d => d.current, cell: d => `${formatQty(d.current)} ${d.uom}` },
+    {
+      key: "recommended", header: "Recommended", align: "right", numeric: true, width: "w-[135px]", value: d => d.recommended ?? -1,
+      cell: d => d.recommended === null
+        ? <span className="text-muted-foreground" title={d.unavailableReason ? unavailableText[d.unavailableReason] : undefined}>Not calculated</span>
+        : <span className="font-medium" title={`Z ${d.z} (${Math.round((d.serviceLevel ?? 0) * 1000) / 10}% service) × ${formatQty(d.demandStdDev ?? 0)} × √${d.leadTimeDays}`}>{formatQty(d.recommended)} {d.uom}</span>,
+    },
+    {
+      key: "gap", header: "Gap", align: "right", numeric: true, width: "w-[90px]", value: d => d.gap ?? Number.POSITIVE_INFINITY,
+      cell: d => d.gap === null ? dash : (
         <span className={`font-medium ${d.gap < 0 ? "text-danger" : "text-success"}`}>
-          {d.gap > 0 ? "+" : ""}{d.gap}
+          {d.gap > 0 ? "+" : ""}{formatQty(d.gap)}
         </span>
       ),
     },
@@ -61,22 +79,42 @@ export default function SafetyStock() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <KPICard title="Materials with safety stock" value="847" icon={Shield} />
-        <KPICard title="Below safety stock now" value="34" status="red" icon={AlertTriangle} />
-        <KPICard title="No buffer defined" value="112" status="amber" icon={Info} />
+        <KPICard title="Materials with safety stock" value={summary ? summary.withSafetyStock : "—"}
+          subtitle={summary && summary.underRecommended > 0 ? `${summary.underRecommended} below recommended` : undefined} icon={Shield} />
+        <KPICard title="Below safety stock now" value={summary ? summary.belowSafetyStock : "—"}
+          status={summary?.belowSafetyStock ? "red" : undefined} icon={AlertTriangle} />
+        <KPICard title="No buffer defined" value={summary ? summary.noBuffer : "—"}
+          subtitle={summary ? "Zero safety stock, or stock held with no policy" : undefined}
+          status={summary?.noBuffer ? "amber" : undefined} icon={Info} />
       </div>
 
-      <div className="overflow-x-auto">
-        <DataTable
-          columns={columns}
-          rows={data}
-          rowKey={d => d.material}
-          name="Safety stock"
-          searchable
-          columnToggle
-          exportable
-        />
-      </div>
+      {q.error ? (
+        <div className="surface-panel">
+          <EmptyState title="Safety stock could not be loaded" description={q.error.message}
+            action={<button className={btnSecondary} onClick={() => void q.refetch()}>Try again</button>} />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          {q.data && (
+            <p className="mb-2 text-body-sm text-muted-foreground">
+              Recommended = Z (from the policy's service level) × daily demand std dev × √lead time, rounded up.
+              Lead time is the preferred vendor's for bought materials and the production lead time for made ones, plus any safety lead time.
+              {summary && summary.unavailable > 0 && ` ${summary.unavailable} ${summary.unavailable === 1 ? "policy lacks" : "policies lack"} an input and ${summary.unavailable === 1 ? "isn't" : "aren't"} calculated.`}
+            </p>
+          )}
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={d => `${d.materialId}-${d.location.id}`}
+            name="Safety stock"
+            loading={q.isPending}
+            empty={<EmptyState title="No planning policies yet" description="Safety stock appears here once materials have a planning policy at a location." />}
+            searchable
+            columnToggle
+            exportable
+          />
+        </div>
+      )}
     </div>
   );
 }

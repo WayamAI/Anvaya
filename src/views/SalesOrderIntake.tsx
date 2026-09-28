@@ -1,73 +1,293 @@
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import StatusBadge from "@/components/StatusBadge";
+import { PageHeader } from "@/components/app/page-header";
 import { DataTable, type Column } from "@/components/app/data-table";
-import { PageIcon } from "@/components/app/page-icon";
+import { EmptyState } from "@/components/app/empty-state";
+import { MetricRow, type Metric } from "@/components/app/metric-row";
+import { SkeletonBlock } from "@/components/app/skeleton-block";
+import { btnSecondary } from "@/components/app/controls";
+import { apiGet } from "@/lib/api";
+import { formatQty, inrCompact } from "@/lib/format";
+import type {
+  CustomerType, DeliveryStatus, SalesOrderDetail, SalesOrderList, SalesOrderRow, SoStatus,
+} from "@/server/sales/sales-orders";
 
-const orders = [
-  { so: "SO-4521", customer: "Reliance Retail", date: "22 Mar 2026", items: 4, value: "₹8.4L", delivery: "28 Mar 2026", priority: "High", status: "Confirmed" },
-  { so: "SO-4528", customer: "DMart", date: "21 Mar 2026", items: 6, value: "₹12.6L", delivery: "30 Mar 2026", priority: "High", status: "Confirmed" },
-  { so: "SO-4532", customer: "BigBasket", date: "22 Mar 2026", items: 3, value: "₹5.2L", delivery: "1 Apr 2026", priority: "Medium", status: "Processing" },
-  { so: "SO-4535", customer: "Amazon India", date: "23 Mar 2026", items: 8, value: "₹18.9L", delivery: "2 Apr 2026", priority: "High", status: "New" },
-  { so: "SO-4536", customer: "Flipkart", date: "23 Mar 2026", items: 5, value: "₹14.2L", delivery: "3 Apr 2026", priority: "Medium", status: "New" },
-  { so: "SO-4538", customer: "Metro Cash & Carry", date: "23 Mar 2026", items: 7, value: "₹22.8L", delivery: "5 Apr 2026", priority: "Medium", status: "New" },
-  { so: "SO-4515", customer: "Spencer's Retail", date: "18 Mar 2026", items: 3, value: "₹4.8L", delivery: "25 Mar 2026", priority: "High", status: "Dispatched" },
-  { so: "SO-4510", customer: "More Retail", date: "16 Mar 2026", items: 4, value: "₹6.1L", delivery: "23 Mar 2026", priority: "Medium", status: "Delivered" },
-  { so: "SO-4505", customer: "Star Bazaar", date: "15 Mar 2026", items: 2, value: "₹3.2L", delivery: "22 Mar 2026", priority: "Low", status: "Delivered" },
-  { so: "SO-4540", customer: "Vishal Mega Mart", date: "23 Mar 2026", items: 4, value: "₹7.5L", delivery: "4 Apr 2026", priority: "Medium", status: "New" },
-  { so: "SO-4542", customer: "JioMart", date: "23 Mar 2026", items: 6, value: "₹16.4L", delivery: "6 Apr 2026", priority: "High", status: "New" },
-  { so: "SO-4500", customer: "Nykaa Business", date: "14 Mar 2026", items: 2, value: "₹2.8L", delivery: "21 Mar 2026", priority: "Low", status: "Delivered" },
+type TabKey = "all" | "overdue" | SoStatus;
+type Badge = { status: "green" | "amber" | "red" | "blue" | "gray"; label: string };
+
+const tabs: { key: TabKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "CONFIRMED", label: "Confirmed" },
+  { key: "PROCESSING", label: "Processing" },
+  { key: "DISPATCHED", label: "Dispatched" },
+  { key: "DELIVERED", label: "Delivered" },
+  { key: "CANCELLED", label: "Cancelled" },
+  { key: "overdue", label: "Overdue" },
 ];
 
-const statusMap: Record<string, "green" | "amber" | "red" | "blue" | "gray"> = {
-  New: "blue", Confirmed: "green", Processing: "amber", Dispatched: "blue", Delivered: "green",
+const statusMap: Record<SoStatus, Badge> = {
+  CONFIRMED: { status: "blue", label: "Confirmed" },
+  PROCESSING: { status: "amber", label: "Processing" },
+  DISPATCHED: { status: "blue", label: "Dispatched" },
+  DELIVERED: { status: "green", label: "Delivered" },
+  CANCELLED: { status: "red", label: "Cancelled" },
 };
 
-export default function SalesOrderIntake() {
-  type SoRow = (typeof orders)[number];
-  const columns: Column<SoRow>[] = [
-    { key: "so", header: "SO #", width: "w-[130px]", value: o => o.so, cell: o => <span className="identifier text-body-sm text-foreground">{o.so}</span> },
-    { key: "customer", header: "Customer", value: o => o.customer, cell: o => <span className="font-medium">{o.customer}</span> },
-    { key: "date", header: "Order date", width: "w-[125px]", value: o => o.date, cell: o => o.date },
-    { key: "items", header: "Items", align: "right", numeric: true, width: "w-[85px]", value: o => o.items, cell: o => o.items },
-    { key: "value", header: "Value", align: "right", numeric: true, width: "w-[110px]", value: o => o.value, cell: o => o.value },
-    { key: "delivery", header: "Delivery date", width: "w-[135px]", value: o => o.delivery, cell: o => o.delivery },
-    {
-      key: "priority", header: "Priority", width: "w-[110px]", value: o => o.priority,
-      cell: o => <StatusBadge status={o.priority === "High" ? "red" : o.priority === "Medium" ? "amber" : "green"} label={o.priority} />,
-    },
-    { key: "status", header: "Status", width: "w-[130px]", value: o => o.status, cell: o => <StatusBadge status={statusMap[o.status]} label={o.status} /> },
-  ];
+const deliveryMap: Record<DeliveryStatus, Badge> = {
+  PENDING: { status: "gray", label: "Pending" },
+  IN_TRANSIT: { status: "amber", label: "In transit" },
+  DELIVERED: { status: "green", label: "Delivered" },
+};
 
+const customerType: Record<CustomerType, string> = {
+  DISTRIBUTOR: "Distributor",
+  MODERN_TRADE: "Modern trade",
+  ECOMMERCE: "E-commerce",
+  INSTITUTIONAL: "Institutional",
+};
+
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
+const rupees = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+const orders = (n: number) => `${n} order${n === 1 ? "" : "s"}`;
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="px-6 py-5 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
-          <PageIcon />
-          <span className="min-w-0">Sales order intake</span>
-        </h1>
-        <div className="flex gap-2 text-body-sm">
-          {[{ l: "New", c: 5 }, { l: "Processing", c: 1 }, { l: "Confirmed", c: 2 }, { l: "Dispatched", c: 1 }, { l: "Delivered", c: 3 }].map(s => (
-            <span key={s.l} className="px-2 py-1 bg-secondary rounded-full font-medium">{s.l}: {s.c}</span>
-          ))}
+    <div>
+      <span className="text-muted-foreground block">{label}</span>
+      <span className="font-medium">{children}</span>
+    </div>
+  );
+}
+
+function SalesOrderPanel({ id }: { id: string }) {
+  const q = useQuery({
+    queryKey: ["sales-order", id],
+    queryFn: ({ signal }) => apiGet<SalesOrderDetail>(`/sales-orders/${id}`, undefined, { signal }),
+  });
+
+  if (q.isPending) {
+    return (
+      <div className="surface-panel mt-4 p-4 space-y-2" aria-busy="true">
+        {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-4 w-full" />)}
+      </div>
+    );
+  }
+  if (q.error) {
+    return (
+      <div className="surface-panel mt-4">
+        <EmptyState title="Sales order could not be loaded" description={q.error.message}
+          action={<button className={btnSecondary} onClick={() => void q.refetch()}>Try again</button>} />
+      </div>
+    );
+  }
+
+  const so = q.data;
+  return (
+    <div className="surface-panel mt-4 p-4 space-y-4">
+      <h3 className="text-body-md font-semibold flex items-center gap-2 flex-wrap">
+        Sales order — <span className="identifier">{so.orderNumber}</span>
+        <StatusBadge {...statusMap[so.status]} />
+        {so.overdue && <StatusBadge status="red" label="Overdue" />}
+      </h3>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-body-sm">
+        <Fact label="Customer">
+          {so.customer.name} <span className="identifier text-muted-foreground">{so.customer.code}</span>
+        </Fact>
+        <Fact label="Channel">{customerType[so.customer.type]}</Fact>
+        <Fact label="Ordered">{fmtDate(so.orderDate)}</Fact>
+        <Fact label="Required">
+          <span className={so.overdue ? "text-danger" : ""}>{fmtDate(so.requiredDate)}</span>
+        </Fact>
+        <Fact label="Delivery"><StatusBadge {...deliveryMap[so.deliveryStatus]} /></Fact>
+        <Fact label="Dispatched">
+          {so.dispatchDate ? fmtDate(so.dispatchDate) : <span className="text-muted-foreground font-normal">Not recorded</span>}
+        </Fact>
+        <Fact label="Invoice">
+          {so.invoiceNumber ? <span className="identifier">{so.invoiceNumber}</span> : <span className="text-muted-foreground font-normal">Not invoiced</span>}
+        </Fact>
+        <Fact label="Value">
+          {rupees(so.totalAmount)} {so.currencyCode !== "INR" && so.currencyCode}
+          {so.totalMismatch && <span className="text-danger font-normal"> · differs from its lines</span>}
+        </Fact>
+      </div>
+
+      <div>
+        <span className="text-body-sm text-muted-foreground font-medium">Lines</span>
+        <div className="mt-1 overflow-x-auto">
+          <table className="data-table w-full text-body-sm">
+            <thead><tr className="border-b border-border">
+              {["#", "Material", "Ordered", "Shipped", "Open", "Unit price", "Line total", "Required", "Shipped from"].map((h) =>
+                <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {so.lines.map((l) => (
+                <tr key={l.lineNumber} className="border-b border-border">
+                  <td className="px-2 py-1.5 tabular-nums">{l.lineNumber}</td>
+                  <td className="px-2 py-1.5"><span className="identifier text-muted-foreground">{l.material.code}</span> <span className="font-medium">{l.material.name}</span></td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{formatQty(l.quantity)} {l.uom}</td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{formatQty(l.shippedQty)} {l.uom}</td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{l.openQty > 0 ? `${formatQty(l.openQty)} ${l.uom}` : "—"}</td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{rupees(l.unitPrice)}/{l.uom}</td>
+                  <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{rupees(l.lineTotal)}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    <span className={l.overdue ? "text-danger font-medium" : ""}>{fmtDate(l.requiredDate)}</span>
+                    {l.overdue && <span className="text-caption text-danger"> (overdue)</span>}
+                  </td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    {l.lots.length
+                      ? l.lots.map((lot) => <span key={lot.id} className="identifier block">{lot.lotNumber} <span className="text-muted-foreground">({formatQty(lot.quantity)})</span></span>)
+                      : <span className="text-muted-foreground">{l.shippedQty > 0 ? "No lot recorded" : "—"}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[{ l: "Total Open Orders", v: "8", s: "₹95.6L" }, { l: "Due This Week", v: "3", s: "₹26.2L" }, { l: "Orders Today", v: "5", s: "₹79.8L" }, { l: "MTD Dispatch Value", v: "₹1.42 Cr", s: "vs ₹1.35 Cr target" }].map(k => (
-          <div key={k.l}>
-            <div className="text-body-sm text-muted-foreground">{k.l}</div>
-            <div className="text-display-lg font-semibold mt-1">{k.v}</div>
-            <div className="text-body-sm text-muted-foreground mt-0.5">{k.s}</div>
-          </div>
+
+      <div>
+        <span className="text-body-sm text-muted-foreground font-medium">Supply for open lines</span>
+        <p className="text-caption text-muted-foreground">
+          Stock and open work orders for each material at the line's location. Work orders are not linked to a sales order, so this is supply for the material, not production reserved for this order.
+        </p>
+        <div className="mt-1 space-y-1">
+          {so.lines.filter((l) => l.openQty > 0).length === 0
+            ? <div className="text-body-sm text-muted-foreground">Nothing left to ship</div>
+            : so.lines.filter((l) => l.openQty > 0).map((l) => (
+              <div key={l.lineNumber} className="text-body-sm px-2 py-1.5 rounded bg-secondary/50">
+                <span className="identifier text-foreground">{l.material.code}</span>
+                <span className="text-muted-foreground"> · {l.location.name} · open {formatQty(l.openQty)} {l.uom}</span>
+                <span className="block text-muted-foreground">
+                  {l.stock
+                    ? <>Available <span className={`tabular-nums font-medium ${l.stock.available >= l.openQty ? "text-success" : "text-warning"}`}>{formatQty(l.stock.available)} {l.uom}</span> of {formatQty(l.stock.onHand)} on hand
+                        {l.stock.reserved > 0 && ` · ${formatQty(l.stock.reserved)} reserved`}
+                        {l.stock.quarantine > 0 && ` · ${formatQty(l.stock.quarantine)} in quarantine`}</>
+                    : "No stock balance recorded at this location"}
+                </span>
+                <span className="block text-muted-foreground">
+                  {l.openWorkOrders.length
+                    ? l.openWorkOrders.map((w) => (
+                        <span key={w.id} className="block">
+                          <span className="identifier">{w.orderNumber}</span> · {w.status.replace(/_/g, " ").toLowerCase()} · {formatQty(w.plannedQty - w.producedQty)} {l.uom} to make · due {fmtDate(w.plannedEndDate)}
+                        </span>
+                      ))
+                    : "No open work orders for this material"}
+                </span>
+              </div>
+            ))}
+        </div>
+      </div>
+
+      {so.notes && <p className="text-body-sm text-muted-foreground">Notes: {so.notes}</p>}
+    </div>
+  );
+}
+
+export default function SalesOrderIntake() {
+  const [tab, setTab] = useState<TabKey>("all");
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const q = useQuery({
+    queryKey: ["sales-orders"],
+    queryFn: ({ signal }) => apiGet<SalesOrderList>("/sales-orders", undefined, { signal }),
+  });
+
+  const filtered = useMemo(() => {
+    const all = q.data?.orders ?? [];
+    if (tab === "all") return all;
+    if (tab === "overdue") return all.filter((o) => o.overdue);
+    return all.filter((o) => o.status === tab);
+  }, [q.data, tab]);
+
+  const columns: Column<SalesOrderRow>[] = [
+    { key: "so", header: "SO number", width: "w-[130px]", value: o => o.orderNumber, cell: o => <span className="identifier text-body-sm text-foreground">{o.orderNumber}</span> },
+    {
+      key: "customer", header: "Customer", value: o => o.customer.name,
+      cell: o => <><span className="font-medium">{o.customer.name}</span> <span className="text-caption text-muted-foreground">{customerType[o.customer.type]}</span></>,
+    },
+    { key: "date", header: "Order date", width: "w-[125px]", value: o => o.orderDate, cell: o => fmtDate(o.orderDate) },
+    { key: "items", header: "Items", align: "right", numeric: true, width: "w-[70px]", value: o => o.lineCount, cell: o => o.lineCount },
+    { key: "value", header: "Value", align: "right", numeric: true, width: "w-[100px]", value: o => o.totalAmount, cell: o => inrCompact(o.totalAmount) },
+    {
+      key: "required", header: "Required date", width: "w-[165px]", value: o => o.requiredDate,
+      cell: o => o.overdue
+        ? <span className="text-danger font-medium whitespace-nowrap" title="Awaiting dispatch, past its required date, with quantity still to ship">{fmtDate(o.requiredDate)} <span className="text-caption">(overdue)</span></span>
+        : <span className="whitespace-nowrap">{fmtDate(o.requiredDate)}</span>,
+    },
+    {
+      key: "delivery", header: "Delivery", width: "w-[115px]", value: o => deliveryMap[o.deliveryStatus].label,
+      cell: o => <StatusBadge {...deliveryMap[o.deliveryStatus]} />,
+    },
+    {
+      key: "status", header: "Status", width: "w-[125px]", value: o => statusMap[o.status].label,
+      cell: o => <StatusBadge {...statusMap[o.status]} />,
+    },
+  ];
+
+  const k = q.data?.kpis;
+  const metrics: Metric[] = [
+    { label: "Open orders", value: k ? k.open.count : "—", hint: k ? `${inrCompact(k.open.value)} not yet delivered` : undefined },
+    {
+      label: "Due in next 7 days", value: k ? k.dueNext7Days.count : "—",
+      hint: k ? (q.data!.counts.overdue ? `${inrCompact(k.dueNext7Days.value)} · ${orders(q.data!.counts.overdue)} overdue` : inrCompact(k.dueNext7Days.value)) : undefined,
+      tone: q.data?.counts.overdue ? "danger" : "default",
+    },
+    { label: "Booked today", value: k ? k.bookedToday.count : "—", hint: k ? inrCompact(k.bookedToday.value) : undefined },
+    { label: "Dispatched this month", value: k ? inrCompact(k.dispatchedMtd) : "—", hint: k ? "From the stock ledger" : undefined },
+  ];
+
+  const count = (key: TabKey) => (q.data ? q.data.counts[key] : "—");
+  const asOf = q.data ? fmtDate(q.data.asOf) : null;
+
+  return (
+    <div className="px-6 py-5">
+      <PageHeader title="Sales order intake"
+        description={q.data ? `${orders(filtered.length)} · as of ${asOf}` : q.isPending ? "Loading…" : undefined} />
+
+      {!q.error && <MetricRow metrics={metrics} className="mb-4" />}
+
+      <div className="-mx-1 mb-1 flex gap-1 overflow-x-auto border-b border-border px-1">
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`whitespace-nowrap border-b-2 px-3 py-2 text-body-md font-medium transition-colors ${
+              tab === t.key
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label} <span className="tabular-nums text-muted-foreground">{count(t.key)}</span>
+          </button>
         ))}
       </div>
-      <DataTable
-        columns={columns}
-        rows={orders}
-        rowKey={o => o.so}
-        name="Sales orders"
-        searchable
-        columnToggle
-        exportable
-      />
+
+      {q.error ? (
+        <div className="surface-panel">
+          <EmptyState title="Sales orders could not be loaded" description={q.error.message}
+            action={<button className={btnSecondary} onClick={() => void q.refetch()}>Try again</button>} />
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={filtered}
+          rowKey={o => o.id}
+          name="Sales orders"
+          loading={q.isPending}
+          searchable
+          columnToggle
+          exportable
+          pageSize={25}
+          onRowClick={o => setSelected(o.id)}
+          isRowSelected={o => o.id === selected}
+          empty={<EmptyState title="No sales orders" description={tab === "all" ? "Sales orders appear here once they are booked." : "Nothing matches this filter yet."} />}
+        />
+      )}
+
+      {selected && <SalesOrderPanel key={selected} id={selected} />}
     </div>
   );
 }

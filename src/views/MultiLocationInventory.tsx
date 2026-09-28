@@ -1,23 +1,16 @@
-import StatusBadge from "@/components/StatusBadge";
+import { useQuery } from "@tanstack/react-query";
 import { PageIcon } from "@/components/app/page-icon";
+import { EmptyState } from "@/components/app/empty-state";
+import { SkeletonTable } from "@/components/app/skeleton-block";
+import { btnSecondary } from "@/components/app/controls";
+import { apiGet } from "@/lib/api";
+import type { StockOverview } from "@/server/inventory/stock-overview";
 
-const locations = ["Pune Plant", "Mumbai WH", "Delhi Depot", "Chennai Hub"];
-const materials = [
-  { name: "Polypropylene Granules", pune: { qty: 4200, days: 15 }, mumbai: { qty: 1800, days: 6 }, delhi: { qty: 0, days: 0 }, chennai: { qty: 800, days: 4 } },
-  { name: "Stearic Acid", pune: { qty: 180, days: 4 }, mumbai: { qty: 0, days: 0 }, delhi: { qty: 50, days: 3 }, chennai: { qty: 0, days: 0 } },
-  { name: "HDPE Resin", pune: { qty: 6200, days: 20 }, mumbai: { qty: 3600, days: 18 }, delhi: { qty: 1200, days: 12 }, chennai: { qty: 2400, days: 15 } },
-  { name: "Sodium Lauryl Sulphate", pune: { qty: 1050, days: 12 }, mumbai: { qty: 400, days: 8 }, delhi: { qty: 200, days: 6 }, chennai: { qty: 150, days: 5 } },
-  { name: "Titanium Dioxide", pune: { qty: 440, days: 8 }, mumbai: { qty: 200, days: 6 }, delhi: { qty: 100, days: 4 }, chennai: { qty: 320, days: 10 } },
-  { name: "Caustic Soda Flakes", pune: { qty: 1800, days: 22 }, mumbai: { qty: 1000, days: 18 }, delhi: { qty: 600, days: 14 }, chennai: { qty: 400, days: 10 } },
-  { name: "HDPE Bottle 5L", pune: { qty: 5200, days: 12 }, mumbai: { qty: 3000, days: 9 }, delhi: { qty: 0, days: 0 }, chennai: { qty: 1800, days: 8 } },
-  { name: "Citric Acid Monohydrate", pune: { qty: 280, days: 11 }, mumbai: { qty: 100, days: 7 }, delhi: { qty: 0, days: 0 }, chennai: { qty: 60, days: 5 } },
-];
-
-const transfers = [
-  { source: "Mumbai WH", dest: "Pune Plant", material: "HDPE Resin", qty: "2,000 kg", dispatch: "21 Mar 2026", eta: "23 Mar 2026", status: "In Transit" },
-  { source: "Delhi Depot", dest: "Chennai Hub", material: "Caustic Soda", qty: "500 kg", dispatch: "20 Mar 2026", eta: "25 Mar 2026", status: "In Transit" },
-  { source: "Pune Plant", dest: "Mumbai WH", material: "Shrink Labels", qty: "5,000 pcs", dispatch: "22 Mar 2026", eta: "23 Mar 2026", status: "Delivered" },
-];
+interface Location {
+  id: string;
+  code: string;
+  name: string;
+}
 
 function getCoverageColor(days: number) {
   if (days === 0) return "bg-muted text-muted-foreground";
@@ -26,7 +19,62 @@ function getCoverageColor(days: number) {
   return "bg-success/10 text-success";
 }
 
+/*
+  A cell is coloured only when its cover is known. Stock at a location with no
+  demand figure shows its quantity in a neutral chip — colouring it would
+  claim a coverage judgement the data does not support.
+*/
+function StockCell({ qty, days }: { qty: number; days: number | null }) {
+  if (qty <= 0) {
+    return <span className={`inline-block px-2 py-1 rounded text-body-sm font-medium tabular-nums ${getCoverageColor(0)}`}>—</span>;
+  }
+  if (days === null) {
+    return (
+      <span
+        className="inline-block px-2 py-1 rounded text-body-sm font-medium tabular-nums bg-secondary text-foreground"
+        title="No average daily demand at this location — days of cover not calculated"
+      >
+        {qty.toLocaleString("en-IN")}
+      </span>
+    );
+  }
+  // Floored so the label and the colour agree: 6.9 days reads "6d" and is red.
+  return (
+    <span
+      className={`inline-block px-2 py-1 rounded text-body-sm font-medium tabular-nums ${getCoverageColor(days)}`}
+      title={`${days} days of cover`}
+    >
+      {`${qty.toLocaleString("en-IN")} (${Math.floor(days)}d)`}
+    </span>
+  );
+}
+
 export default function MultiLocationInventory() {
+  const locationsQuery = useQuery({
+    queryKey: ["locations"],
+    queryFn: ({ signal }) => apiGet<Location[]>("/locations", undefined, { signal }),
+    staleTime: 5 * 60_000,
+  });
+
+  // Same query as Stock overview's All Locations view, so the two pages share
+  // one cache entry and always show the same numbers.
+  const overviewQuery = useQuery({
+    queryKey: ["inventory", "stock-overview", null],
+    queryFn: ({ signal }) =>
+      apiGet<StockOverview>("/inventory/stock-overview", undefined, { signal }),
+  });
+
+  const locations = locationsQuery.data ?? [];
+  // Only materials physically held somewhere; the empty ones belong on Stock overview.
+  const materials = (overviewQuery.data?.rows ?? []).filter((m) => m.onHand > 0);
+  const loading = locationsQuery.isPending || overviewQuery.isPending;
+  const error = locationsQuery.error ?? overviewQuery.error;
+
+  const retry = () => {
+    if (locationsQuery.isError) void locationsQuery.refetch();
+    if (overviewQuery.isError) void overviewQuery.refetch();
+  };
+
   return (
     <div className="px-6 py-5 space-y-6">
       <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
@@ -34,30 +82,40 @@ export default function MultiLocationInventory() {
           <span className="min-w-0">Multi-location inventory</span>
         </h1>
       <div className="overflow-x-auto">
-        <div className="overflow-x-auto">
+        {error ? (
+          <div className="surface-panel">
+            <EmptyState
+              title="Stock could not be loaded"
+              description={error.message}
+              action={<button className={btnSecondary} onClick={retry}>Try again</button>}
+            />
+          </div>
+        ) : loading ? (
+          <SkeletonTable rows={8} cols={5} />
+        ) : materials.length === 0 ? (
+          <EmptyState title="No stock on hand" description="Materials appear here once they are held at a location." />
+        ) : (
           <table className="data-table w-full text-body-md">
             <thead>
               <tr className="border-b border-border">
                 <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Material</th>
-                {locations.map(l => <th key={l} className="text-center px-3 py-2.5 font-medium text-muted-foreground">{l}</th>)}
+                {locations.map(l => <th key={l.id} className="text-center px-3 py-2.5 font-medium text-muted-foreground">{l.name}</th>)}
               </tr>
             </thead>
             <tbody>
-              {materials.map((m, i) => (
-                <tr key={i} className="border-b border-border hover:bg-sunken">
+              {materials.map((m) => (
+                <tr key={m.materialId} className="border-b border-border hover:bg-sunken">
                   <td className="px-3 py-2 font-medium">{m.name}</td>
-                  {[m.pune, m.mumbai, m.delhi, m.chennai].map((loc, j) => (
-                    <td key={j} className="px-3 py-2 text-center">
-                      <span className={`inline-block px-2 py-1 rounded text-body-sm font-medium tabular-nums ${getCoverageColor(loc.days)}`}>
-                        {loc.qty > 0 ? `${loc.qty.toLocaleString()} (${loc.days}d)` : "—"}
-                      </span>
+                  {locations.map((l) => (
+                    <td key={l.id} className="px-3 py-2 text-center">
+                      <StockCell qty={m.stockByLocation[l.id] ?? 0} days={m.coverDaysByLocation[l.id] ?? null} />
                     </td>
                   ))}
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        )}
       </div>
       <div>
         <h3 className="text-body-md font-semibold mb-3">Stock in-transit</h3>
@@ -66,14 +124,15 @@ export default function MultiLocationInventory() {
             {["Source", "Destination", "Material", "Qty", "Dispatched", "ETA", "Status"].map(h => <th key={h} className="text-left px-3 py-2 font-medium text-muted-foreground">{h}</th>)}
           </tr></thead>
           <tbody>
-            {transfers.map((t, i) => (
-              <tr key={i} className="border-b border-border last:border-0">
-                <td className="px-3 py-2">{t.source}</td><td className="px-3 py-2">{t.dest}</td>
-                <td className="px-3 py-2 font-medium">{t.material}</td><td className="px-3 py-2 tabular-nums">{t.qty}</td>
-                <td className="px-3 py-2">{t.dispatch}</td><td className="px-3 py-2">{t.eta}</td>
-                <td className="px-3 py-2"><StatusBadge status={t.status === "Delivered" ? "green" : "blue"} label={t.status} /></td>
-              </tr>
-            ))}
+            <tr>
+              <td colSpan={7}>
+                <EmptyState
+                  title="Transfers aren't tracked yet"
+                  description="Stock moving between locations will appear here once inter-location transfers are recorded in Anvaya."
+                  className="py-8"
+                />
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

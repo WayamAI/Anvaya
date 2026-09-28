@@ -1,52 +1,24 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, ChevronDown, Package, Download, Shield, Search } from "lucide-react";
-import { ebomParts } from "@/data/traceability";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { CHART_COLORS, CHART_TOOLTIP_STYLE } from "@/lib/chart-colors";
 import { btnLink, btnSecondary, selectBase } from "@/components/app/controls";
+import { EmptyState } from "@/components/app/empty-state";
+import { SkeletonBlock } from "@/components/app/skeleton-block";
 import { PageIcon } from "@/components/app/page-icon";
+import { apiGet } from "@/lib/api";
+import { formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { flattenTree, type BomNode, type BomProduct, type BomView, type ComponentDetail } from "@/server/production/bom";
 
-interface BOMNode {
-  code: string;
-  name: string;
-  qty: string;
-  uom: string;
-  lead: number;
-  children?: BOMNode[];
-}
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
+const rupees = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+const pct = (f: number) => `${Math.round(f * 1000) / 10}%`;
+/** Recipe quantities are small by nature (0.048 kg per L); two decimals would misstate them. */
+const recipeQty = (n: number) => n.toLocaleString("en-IN", { maximumFractionDigits: 4 });
 
-const bomTree: BOMNode = {
-  code: "FG-001", name: "Industrial Cleaning Compound 5L", qty: "1", uom: "unit", lead: 0,
-  children: [
-    {
-      code: "SA-101", name: "Concentrate Base", qty: "2.5", uom: "L", lead: 1,
-      children: [
-        { code: "RM-4023", name: "Sodium Lauryl Sulphate", qty: "0.8", uom: "kg", lead: 7 },
-        { code: "RM-5018", name: "EDTA Disodium Salt", qty: "0.12", uom: "kg", lead: 10 },
-        { code: "RM-7044", name: "Demineralised Water", qty: "1.8", uom: "L", lead: 2 },
-        { code: "RM-2087", name: "Stearic Acid", qty: "0.15", uom: "kg", lead: 14 },
-      ],
-    },
-    { code: "RM-8012", name: "Fragrance Blend FG-04", qty: "0.05", uom: "L", lead: 10 },
-    { code: "PM-1001", name: "HDPE Bottle 5L", qty: "1", uom: "pc", lead: 5 },
-    { code: "PM-2003", name: "Foil Seal", qty: "1", uom: "pc", lead: 5 },
-    { code: "PM-1002", name: "Shrink Label", qty: "1", uom: "pc", lead: 4 },
-  ],
-};
-
-const products = [
-  "Industrial Cleaning Compound 5L", "Floor Polish 1L", "Dish Wash Liquid 500ml",
-  "Hand Wash 250ml", "Glass Cleaner 1L", "Toilet Cleaner 500ml",
-  "Surface Disinfectant 5L", "Anti-Bacterial Compound V2",
-];
-
-/** Flattened once so the detail panel can name the part the tree has selected. */
-const nodeIndex: Record<string, BOMNode> = {};
-(function index(node: BOMNode) {
-  nodeIndex[node.code] = node;
-  node.children?.forEach(index);
-})(bomTree);
+/** A node's path through the tree — unique even when a material appears twice. */
+const nodeKey = (path: number[]) => path.join(".");
 
 /*
   One row of the tree.
@@ -62,16 +34,25 @@ const nodeIndex: Record<string, BOMNode> = {};
 */
 function TreeNode({
   node,
+  path,
   selected,
   onSelect,
 }: {
-  node: BOMNode;
+  node: BomNode;
+  path: number[];
   selected: string | null;
-  onSelect: (code: string) => void;
+  onSelect: (key: string) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const hasChildren = node.children && node.children.length > 0;
-  const isSelected = node.code === selected;
+  const hasChildren = node.children.length > 0;
+  const key = nodeKey(path);
+  const isSelected = key === selected;
+
+  const qtyTitle = node.level === 0
+    ? "One unit of the product"
+    : `${recipeQty(node.qtyPerParent)} ${node.uom} per unit of parent` +
+      (node.scrapFactor > 0 ? ` · ${recipeQty(node.grossPerParent)} with ${pct(node.scrapFactor)} scrap` : " · no scrap") +
+      ` · ${recipeQty(node.qtyPerTop)} per unit of the product`;
 
   return (
     <div>
@@ -88,7 +69,7 @@ function TreeNode({
         onClick={() => {
           // Unchanged behaviour: a parent folds, a leaf selects.
           if (hasChildren) setOpen(!open);
-          else onSelect(node.code);
+          else onSelect(key);
         }}
       >
         {isSelected && (
@@ -105,17 +86,21 @@ function TreeNode({
         <Package className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" />
         <span className="identifier text-body-sm text-muted-foreground w-[74px] flex-shrink-0">{node.code}</span>
         <span className="truncate">{node.name}</span>
-        <span className="ml-auto w-[88px] flex-shrink-0 text-right text-body-sm tabular-nums text-muted-foreground">
-          {node.qty} {node.uom}
+        {node.cycle && <span className="text-caption text-danger">cycle</span>}
+        <span className="ml-auto w-[88px] flex-shrink-0 text-right text-body-sm tabular-nums text-muted-foreground" title={qtyTitle}>
+          {recipeQty(node.qtyPerParent)} {node.uom}
         </span>
-        <span className="w-[52px] flex-shrink-0 text-right text-body-sm tabular-nums text-muted-foreground">
-          {node.lead > 0 ? `${node.lead}d` : "—"}
+        <span
+          className="w-[52px] flex-shrink-0 text-right text-body-sm tabular-nums text-muted-foreground"
+          title={node.leadTimeDays === null ? "No lead time on record" : node.leadTimeSource === "PRODUCTION" ? "Production lead time" : "Vendor lead time"}
+        >
+          {node.leadTimeDays === null ? "—" : `${node.leadTimeDays}d`}
         </span>
       </div>
       {hasChildren && open && (
         <div className="mt-0.5 ml-[15px] space-y-0.5 border-l border-border pl-2.5">
-          {node.children!.map((child, i) => (
-            <TreeNode key={i} node={child} selected={selected} onSelect={onSelect} />
+          {node.children.map((child, i) => (
+            <TreeNode key={i} node={child} path={[...path, i]} selected={selected} onSelect={onSelect} />
           ))}
         </div>
       )}
@@ -123,35 +108,12 @@ function TreeNode({
   );
 }
 
-const itemDetails: Record<string, { stock: string; openPO: string; vendor: string; altVendor: string; cost: string; lastPrice: string }> = {
-  "RM-4023": { stock: "1,450 kg", openPO: "800 kg (ETA 2 Apr)", vendor: "Galaxy Surfactants", altVendor: "BASF India", cost: "₹185/kg", lastPrice: "₹182/kg" },
-  "RM-5018": { stock: "95 kg", openPO: "None", vendor: "Aarti Industries", altVendor: "Loba Chemie", cost: "₹420/kg", lastPrice: "₹410/kg" },
-  "RM-2087": { stock: "180 kg", openPO: "500 kg (ETA 10 Apr)", vendor: "Rashtriya Chemicals", altVendor: "Godrej Industries", cost: "₹145/kg", lastPrice: "₹138/kg" },
-  "PM-1001": { stock: "8,200 pcs", openPO: "10,000 pcs (ETA 4 Apr)", vendor: "Mold-Tek Containers", altVendor: "Time Technoplast", cost: "₹42/pc", lastPrice: "₹40/pc" },
-};
-
-const traceabilityLevelColors: Record<string, { bg: string; text: string }> = {
-  serial: { bg: "bg-ebom/10", text: "text-ebom" },
-  lot: { bg: "bg-mbom/10", text: "text-mbom" },
-  batch: { bg: "bg-sbom/10", text: "text-sbom" },
-  none: { bg: "bg-muted", text: "text-muted-foreground" },
-};
-
-// Where-used mock
-const whereUsed: Record<string, string[]> = {
-  "RM-4023": ["Industrial Cleaning Compound 5L", "Surface Disinfectant 5L", "Floor Polish 1L", "Anti-Bacterial Compound V2"],
-  "RM-2087": ["Industrial Cleaning Compound 5L", "Hand Wash 250ml", "Dish Wash Liquid 500ml"],
-  "PM-1001": ["Industrial Cleaning Compound 5L", "Surface Disinfectant 5L"],
-  "RM-5018": ["Industrial Cleaning Compound 5L", "Glass Cleaner 1L"],
-  "RM-8012": ["Industrial Cleaning Compound 5L", "Toilet Cleaner 500ml", "Bathroom Cleaner"],
-};
-
-/** Label / value pair. One shape for all eighteen of them. */
-function Field({ label, value }: { label: string; value: string }) {
+/** Label / value pair. One shape for all of them. */
+function Field({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-1">
       <span className="text-body-sm text-muted-foreground shrink-0">{label}</span>
-      <span className="text-body-sm font-medium text-foreground text-right">{value}</span>
+      <span className={cn("text-body-sm font-medium text-right", muted ? "text-muted-foreground" : "text-foreground")}>{value}</span>
     </div>
   );
 }
@@ -166,19 +128,93 @@ function FieldGroup({ title, children }: { title: string; children: React.ReactN
   );
 }
 
+function PanelLoading() {
+  return (
+    <div className="space-y-2 p-4" aria-busy="true">
+      {Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-4 w-full" />)}
+    </div>
+  );
+}
+
+/** Walk a path of child indexes back to its node. */
+function nodeAt(root: BomNode, key: string): BomNode | null {
+  let node: BomNode | undefined = root;
+  for (const i of key.split(".").slice(1)) node = node?.children[Number(i)];
+  return node ?? null;
+}
+
+function firstLeaf(node: BomNode, path: number[] = [0]): string {
+  return node.children.length ? firstLeaf(node.children[0], [...path, 0]) : nodeKey(path);
+}
+
+function exportCsv(view: BomView) {
+  const esc = (v: string | number | null) => {
+    const s = v === null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = [
+    "Level", "Code", "Material", "Kind", "Qty per parent", "UOM", "Scrap %", "Gross per parent",
+    "Qty per product unit", "Lead time (d)", "Lead time source", "Standard cost", "Materials cost per unit", "Extended cost per parent",
+  ];
+  const rows = flattenTree(view.tree).map((n) => [
+    n.level, n.code, n.name, n.kind, n.qtyPerParent, n.uom, Math.round(n.scrapFactor * 10000) / 100, n.grossPerParent,
+    n.qtyPerTop, n.leadTimeDays, n.leadTimeSource, n.standardCost, n.materialCost, n.level === 0 ? null : n.extendedCost,
+  ]);
+  const csv = [header, ...rows].map((r) => r.map(esc).join(",")).join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${view.bom.code}-rev-${view.version.version}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function BOMManagement() {
-  const [selected, setSelected] = useState("Industrial Cleaning Compound 5L");
-  const [selectedItem, setSelectedItem] = useState<string | null>("RM-4023");
+  const [productId, setProductId] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [showWhereUsed, setShowWhereUsed] = useState(false);
 
-  const ebomPart = ebomParts.find(p => p.partNumber === selectedItem);
-  const failureData = ebomPart?.fieldFailureRate.map((v, i) => ({
-    month: ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"][i],
-    rate: v,
-  }));
-  const latestFailure = ebomPart?.fieldFailureRate[ebomPart.fieldFailureRate.length - 1];
-  const details = selectedItem ? itemDetails[selectedItem] : undefined;
-  const selectedNode = selectedItem ? nodeIndex[selectedItem] : undefined;
+  const productsQuery = useQuery({
+    queryKey: ["boms"],
+    queryFn: ({ signal }) => apiGet<BomProduct[]>("/boms", undefined, { signal }),
+  });
+  const products = useMemo(() => productsQuery.data ?? [], [productsQuery.data]);
+
+  // Open on the first product that has a BOM.
+  useEffect(() => {
+    if (!productId && products.length) setProductId((products.find((p) => p.bom) ?? products[0]).materialId);
+  }, [products, productId]);
+
+  const product = products.find((p) => p.materialId === productId) ?? null;
+  const bomId = product?.bom?.id ?? null;
+
+  const bomQuery = useQuery({
+    queryKey: ["bom", bomId],
+    queryFn: ({ signal }) => apiGet<BomView>(`/boms/${bomId}`, undefined, { signal }),
+    enabled: !!bomId,
+  });
+  const view = bomQuery.data;
+
+  // Keep a component selected: the first leaf whenever the tree changes.
+  useEffect(() => {
+    setSelectedKey(view ? firstLeaf(view.tree) : null);
+    setShowWhereUsed(false);
+  }, [view]);
+
+  const selectedNode = view && selectedKey ? nodeAt(view.tree, selectedKey) : null;
+
+  const detailQuery = useQuery({
+    queryKey: ["bom-component", selectedNode?.materialId],
+    queryFn: ({ signal }) => apiGet<ComponentDetail>(`/boms/components/${selectedNode!.materialId}`, undefined, { signal }),
+    enabled: !!selectedNode,
+  });
+  const detail = detailQuery.data;
+
+  const openPos = detail?.purchasing?.openLines ?? [];
+  const openPoText = !detail ? "—"
+    : detail.purchasing === null ? "Not permitted"
+      : openPos.length === 0 ? "None"
+        : `${formatQty(openPos.reduce((s, l) => s + l.outstandingQty, 0))} ${detail.material.uom} · ${openPos.map((l) => `${l.purchaseOrderNumber} (due ${fmtDate(l.expectedDate)})`).join(", ")}`;
 
   return (
     <div className="px-6 py-5">
@@ -194,32 +230,43 @@ export default function BOMManagement() {
         </h1>
         <div className="flex flex-wrap items-center gap-2">
           <select
-            value={selected}
-            onChange={(e) => setSelected(e.target.value)}
+            value={productId ?? ""}
+            onChange={(e) => setProductId(e.target.value)}
             aria-label="Product"
+            disabled={!products.length}
             className={cn(selectBase, "w-auto min-w-[260px]")}
           >
-            {products.map((p) => <option key={p}>{p}</option>)}
+            {!products.length && <option value="">{productsQuery.isPending ? "Loading products…" : "No products"}</option>}
+            {products.map((p) => (
+              <option key={p.materialId} value={p.materialId}>{p.name}{p.bom ? "" : " (no BOM)"}</option>
+            ))}
           </select>
-          <button className={btnSecondary}>
+          <button className={btnSecondary} disabled={!view} onClick={() => view && exportCsv(view)}
+            title={view ? `Download ${view.bom.code} rev ${view.version.version} as CSV` : "No BOM to export"}>
             <Download /> Export
           </button>
         </div>
       </header>
 
-      {/*
+      {productsQuery.error ? (
+        <div className="surface-panel">
+          <EmptyState title="Products could not be loaded" description={productsQuery.error.message}
+            action={<button className={btnSecondary} onClick={() => void productsQuery.refetch()}>Try again</button>} />
+        </div>
+      ) : (
+      /*
         Seven/five rather than an even split: the tree is the thing being read
         and needs the room for deep rows, while the detail panel is a fixed
         set of short fields. Stacks below xl, where two columns of this density
         stop being readable side by side.
-      */}
+      */
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-12">
         {/* ---- BOM hierarchy ------------------------------------------- */}
         <section className="surface-panel min-w-0 xl:col-span-7">
           <div className="panel-head flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <div className="min-w-0">
-              <p className="label-caps">Bill of materials</p>
-              <h2 className="mt-1 truncate text-body-lg font-medium text-foreground">{selected}</h2>
+              <p className="label-caps">Bill of materials{view ? ` · ${view.bom.code} rev ${view.version.version}` : ""}</p>
+              <h2 className="mt-1 truncate text-body-lg font-medium text-foreground">{product?.name ?? "—"}</h2>
             </div>
             <p className="text-body-sm text-muted-foreground">Select a component to inspect it</p>
           </div>
@@ -232,14 +279,35 @@ export default function BOMManagement() {
             <span className="label-caps w-[52px] shrink-0 text-right">Lead</span>
           </div>
 
-          <div className="overflow-x-auto p-2">
-            <div className="min-w-[520px]">
-              <TreeNode node={bomTree} selected={selectedItem} onSelect={setSelectedItem} />
-            </div>
-          </div>
+          {productsQuery.isPending || (bomId && bomQuery.isPending) ? (
+            <PanelLoading />
+          ) : product && !product.bom ? (
+            <EmptyState title={`No BOM recorded for ${product.name}`}
+              description="This product is made in-house but has no bill of materials, so it can't be broken down into components." />
+          ) : bomQuery.error ? (
+            <EmptyState title="BOM could not be loaded" description={bomQuery.error.message}
+              action={<button className={btnSecondary} onClick={() => void bomQuery.refetch()}>Try again</button>} />
+          ) : view ? (
+            <>
+              <div className="overflow-x-auto p-2">
+                <div className="min-w-[520px]">
+                  <TreeNode node={view.tree} path={[0]} selected={selectedKey} onSelect={setSelectedKey} />
+                </div>
+              </div>
+              <p className="border-t border-border px-4 py-2.5 text-body-sm text-muted-foreground">
+                Materials cost roll-up{" "}
+                <span className="font-medium text-foreground">
+                  {view.cost.rolledMaterialCost === null ? "not calculable — a component has no standard cost" : `${rupees(view.cost.rolledMaterialCost)} per ${view.tree.uom}`}
+                </span>
+                {" "}incl. scrap · standard cost {view.cost.standardCost === null ? "—" : rupees(view.cost.standardCost)}. Labour and overhead aren't modelled.
+              </p>
+            </>
+          ) : (
+            <EmptyState title="No products to show" description="Finished and semi-finished goods appear here once they are recorded." />
+          )}
         </section>
 
-        {/* ---- Component details, traceability, chart ------------------- */}
+        {/* ---- Component details, revision & usage, failures ------------ */}
         <div className="min-w-0 space-y-4 xl:col-span-5">
           {/* Component details */}
           <section className="surface-panel">
@@ -255,55 +323,64 @@ export default function BOMManagement() {
               )}
             </div>
 
-            {details ? (
-              <div className="space-y-4 p-4">
-                <FieldGroup title="Inventory">
-                  <Field label="Current stock" value={details.stock} />
-                  <Field label="Open POs" value={details.openPO} />
-                </FieldGroup>
-                <FieldGroup title="Suppliers">
-                  <Field label="Primary vendor" value={details.vendor} />
-                  <Field label="Alternate vendor" value={details.altVendor} />
-                </FieldGroup>
-                <FieldGroup title="Cost">
-                  <Field label="Standard cost" value={details.cost} />
-                  <Field label="Last purchase price" value={details.lastPrice} />
-                </FieldGroup>
-              </div>
-            ) : (
+            {!selectedNode ? (
               <p className="p-4 text-body-sm text-muted-foreground">
                 Click a component in the BOM tree to view details.
               </p>
-            )}
+            ) : detailQuery.isPending ? (
+              <PanelLoading />
+            ) : detailQuery.error ? (
+              <EmptyState title="Component could not be loaded" description={detailQuery.error.message}
+                action={<button className={btnSecondary} onClick={() => void detailQuery.refetch()}>Try again</button>} />
+            ) : detail ? (
+              <div className="space-y-4 p-4">
+                <FieldGroup title="Inventory">
+                  <Field label="Current stock" value={`${formatQty(detail.stock.total)} ${detail.material.uom}${detail.stock.byLocation.length ? ` (${detail.stock.byLocation.map((l) => `${l.name} ${formatQty(l.onHand)}`).join(" · ")})` : ""}`} />
+                  <Field label="Open POs" value={openPoText} muted={detail.purchasing === null || openPos.length === 0} />
+                </FieldGroup>
+                <FieldGroup title="Suppliers">
+                  <Field label="Primary vendor"
+                    value={detail.procurementType === "MAKE" ? "Made in-house" : detail.vendors.primary ? `${detail.vendors.primary.name} (${detail.vendors.primary.leadTimeDays}d)` : "—"}
+                    muted={!detail.vendors.primary} />
+                  <Field label="Alternate vendor"
+                    value={detail.vendors.alternates.length ? detail.vendors.alternates.map((v) => v.name).join(", ") : "None on record"}
+                    muted={!detail.vendors.alternates.length} />
+                </FieldGroup>
+                <FieldGroup title="Cost">
+                  <Field label="Standard cost" value={detail.material.standardCost === null ? "—" : `${rupees(detail.material.standardCost)}/${detail.material.uom}`} />
+                  <Field label="Last purchase price"
+                    value={detail.purchasing === null ? "Not permitted"
+                      : detail.purchasing.lastPurchase ? `${rupees(detail.purchasing.lastPurchase.unitPrice)}/${detail.material.uom} (${detail.purchasing.lastPurchase.purchaseOrderNumber})`
+                        : "No purchase recorded"}
+                    muted={!detail.purchasing?.lastPurchase} />
+                </FieldGroup>
+              </div>
+            ) : null}
           </section>
 
-          {/* EBOM traceability */}
-          {ebomPart && (
+          {/* Revision & usage */}
+          {view && (
             <section className="surface-panel">
               <div className="panel-head flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <p className="label-caps flex items-center gap-1.5">
-                  <Shield className="h-3.5 w-3.5 text-ebom" /> EBOM traceability
+                  <Shield className="h-3.5 w-3.5 text-ebom" /> Revision &amp; usage
                 </p>
-                <div className="flex items-center gap-1.5">
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-caption font-medium ${traceabilityLevelColors[ebomPart.traceabilityLevel].bg} ${traceabilityLevelColors[ebomPart.traceabilityLevel].text}`}>
-                    {ebomPart.traceabilityLevel.toUpperCase()}
+                {detail && (
+                  <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-caption font-medium",
+                    detail.material.isBatchTracked ? "bg-mbom/10 text-mbom" : "bg-muted text-muted-foreground")}>
+                    {detail.material.isBatchTracked ? "LOT" : "NOT LOT-TRACKED"}
                   </span>
-                  {ebomPart.ctq && (
-                    <span className="inline-flex items-center rounded-full bg-danger/10 px-2.5 py-0.5 text-caption font-medium text-danger">
-                      CTQ
-                    </span>
-                  )}
-                </div>
+                )}
               </div>
 
               <div className="space-y-4 p-4">
                 {/* Current state, read before the history that produced it. */}
                 <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
                   <div className="sm:pr-4">
-                    <Field label="Current rev" value={ebomPart.currentRevision} />
+                    <Field label="Current rev" value={`${view.bom.code} · ${view.version.version}`} />
                   </div>
                   <div className="sm:pl-4">
-                    <Field label="ECO" value={ebomPart.ecoNumber} />
+                    <Field label="ECO" value="Not tracked" muted />
                   </div>
                 </div>
 
@@ -316,30 +393,26 @@ export default function BOMManagement() {
                       <thead>
                         <tr className="border-b border-border">
                           <th className="label-caps whitespace-nowrap py-1.5 pr-3">Rev</th>
-                          <th className="label-caps whitespace-nowrap py-1.5 pr-3">Date</th>
+                          <th className="label-caps whitespace-nowrap py-1.5 pr-3">Effective</th>
                           <th className="label-caps whitespace-nowrap py-1.5 pr-3">ECO</th>
                           <th className="label-caps py-1.5">Change</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {ebomPart.revisionHistory.map((r, i) => {
-                          const isCurrent = r.rev === ebomPart.currentRevision;
+                        {view.versions.map((v) => {
+                          const isCurrent = v.id === view.version.id;
                           return (
-                            <tr
-                              key={i}
-                              className={cn(
-                                "border-b border-border last:border-b-0",
-                                isCurrent && "bg-sunken",
-                              )}
-                            >
+                            <tr key={v.id} className={cn("border-b border-border last:border-b-0", isCurrent && "bg-sunken")}>
                               <td className="whitespace-nowrap py-1.5 pr-3 text-body-sm">
-                                <span className={cn("font-medium", isCurrent ? "text-ebom" : "text-muted-foreground")}>
-                                  {r.rev}
-                                </span>
+                                <span className={cn("font-medium", isCurrent ? "text-ebom" : "text-muted-foreground")}>{v.version}</span>
                               </td>
-                              <td className="whitespace-nowrap py-1.5 pr-3 text-body-sm tabular-nums text-muted-foreground">{r.date}</td>
-                              <td className="identifier whitespace-nowrap py-1.5 pr-3 text-body-sm text-muted-foreground">{r.eco}</td>
-                              <td className="py-1.5 text-body-sm text-ink-secondary">{r.summary}</td>
+                              <td className="whitespace-nowrap py-1.5 pr-3 text-body-sm tabular-nums text-muted-foreground">
+                                {fmtDate(v.effectiveFrom)}{v.effectiveTo ? ` – ${fmtDate(v.effectiveTo)}` : " onwards"}
+                              </td>
+                              <td className="identifier whitespace-nowrap py-1.5 pr-3 text-body-sm text-muted-foreground">—</td>
+                              <td className="py-1.5 text-body-sm text-ink-secondary">
+                                {v.isActive ? "Active" : "Inactive"} · {v.components} components per {formatQty(v.baseQuantity)} {view.tree.uom}
+                              </td>
                             </tr>
                           );
                         })}
@@ -352,56 +425,49 @@ export default function BOMManagement() {
                 <div>
                   <p className="label-caps mb-1.5">Effectivity range</p>
                   <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
-                    <div className="h-full rounded-full bg-ebom/40" style={{ width: "70%" }} />
+                    <div className="h-full rounded-full bg-ebom/40" style={{ width: `${view.version.effectivityProgress ?? 100}%` }} />
                   </div>
                   <div className="mt-1 flex justify-between text-body-sm tabular-nums text-muted-foreground">
-                    <span>{ebomPart.effectivityStart}</span>
-                    <span>{ebomPart.effectivityEnd}</span>
+                    <span>{fmtDate(view.version.effectiveFrom)}</span>
+                    <span>{view.version.effectiveTo ? fmtDate(view.version.effectiveTo) : "No end date"}</span>
                   </div>
                 </div>
 
                 {/* Where-used */}
-                <div className="border-t border-border pt-3">
-                  <button onClick={() => setShowWhereUsed(!showWhereUsed)} className={`${btnLink} flex items-center gap-1`}>
-                    <Search className="h-3 w-3" /> Where-used analysis →
-                  </button>
-                  {showWhereUsed && selectedItem && whereUsed[selectedItem] && (
-                    <ul className="mt-2 space-y-1 rounded-lg bg-sunken p-3">
-                      {whereUsed[selectedItem].map((a, i) => (
-                        <li key={i} className="text-body-sm text-ink-secondary">• {a}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                {selectedNode && (
+                  <div className="border-t border-border pt-3">
+                    <button onClick={() => setShowWhereUsed(!showWhereUsed)} className={`${btnLink} flex items-center gap-1`}>
+                      <Search className="h-3 w-3" /> Where-used analysis — {selectedNode.code} →
+                    </button>
+                    {showWhereUsed && detail && (
+                      <ul className="mt-2 space-y-1 rounded-lg bg-sunken p-3">
+                        {detail.whereUsed.length ? detail.whereUsed.map((w, i) => (
+                          <li key={i} className="text-body-sm text-ink-secondary">
+                            • {w.product.name} <span className="identifier text-muted-foreground">({w.bomCode})</span>
+                            {w.direct ? " — direct" : ` — via ${w.via.map((v) => v.name).join(" → ")}`}
+                          </li>
+                        )) : <li className="text-body-sm text-muted-foreground">Not used in any active BOM</li>}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
             </section>
           )}
 
-          {/* Field failure rate — its own card, with the figure stated rather
-              than left to be read off an unlabelled sparkline. */}
-          {ebomPart && failureData && (
+          {/* Field failure rate — no source data exists for it. */}
+          {view && (
             <section className="surface-panel">
               <div className="panel-head flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <p className="label-caps">Field failure rate</p>
                 <span className="text-body-sm text-muted-foreground">Last 12 months</span>
               </div>
-              <div className="p-4">
-                <p className="font-display text-display-lg tabular-nums text-foreground">{latestFailure}%</p>
-                <p className="mt-0.5 text-body-sm text-muted-foreground">Current month</p>
-                <ResponsiveContainer width="100%" height={96} className="mt-3">
-                  <LineChart data={failureData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                    <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: CHART_COLORS.axis }} tickLine={false} axisLine={false} interval={1} />
-                    <YAxis tick={{ fontSize: 11, fill: CHART_COLORS.axis }} tickLine={false} axisLine={false} domain={[0, "auto"]} width={34} tickFormatter={(v: number) => `${v}%`} />
-                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(v: number) => `${v}%`} />
-                    <Line type="monotone" dataKey="rate" stroke={CHART_COLORS.primary} strokeWidth={1.5} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <EmptyState title="Field failure data isn't recorded" description="Anvaya has no field returns or failure records to chart yet." className="py-8" />
             </section>
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
