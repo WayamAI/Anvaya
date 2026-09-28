@@ -1,7 +1,9 @@
-import { withApi, parseQuery } from "@/server/api/with-api";
-import { ok } from "@/server/api/respond";
+import { withApi, parseBody, parseQuery } from "@/server/api/with-api";
+import { created, ok } from "@/server/api/respond";
 import { listMaterials } from "@/server/services/material.service";
 import { listMaterialsQuery } from "@/server/validation/material";
+import * as md from "@/server/services/master-data.service";
+import * as v from "@/server/validation/masterdata";
 
 /**
  * GET /api/v1/materials — the item master, ordered by code, cursor-paged.
@@ -18,4 +20,13 @@ export const GET = withApi(
     return ok(items, { meta: { nextCursor, limit: query.limit, total } });
   },
   { permission: "material:read" },
+);
+
+/** Create. The code is a permanent business key. */
+export const POST = withApi(
+  async ({ req, actor, requestId, clientInfo }) => {
+    const row = await md.createMaterial(await parseBody(req, v.createMaterialBody), { actor: actor!, requestId, clientInfo });
+    return created(row, `/api/v1/materials/${row.id}`);
+  },
+  { permission: "material:create" },
 );

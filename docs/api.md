@@ -137,6 +137,20 @@ generated when absent. It is always echoed in the response header.
 | `POST` | `/api/v1/roles` | `role:create` | Custom role from permissions the caller holds |
 | `PATCH` `DELETE` | `/api/v1/roles/:id` | `role:update` / `role:delete` | Custom roles only; a role in use cannot be deleted |
 | `GET` | `/api/v1/permissions` | `role:read` | The permission catalogue |
+| `GET` `POST` | `/api/v1/inventory/adjustments` | `inventory:read` / `inventory:adjust` | List, or post a count (counted − book; per lot when batch tracked). Honours `Idempotency-Key` |
+| `POST` | `/api/v1/materials` | `material:create` | Create a material; the code is permanent |
+| `PATCH` | `/api/v1/materials/:id` | `material:update` | Edit; unit, batch tracking and standard cost lock once there is stock |
+| `PUT` | `/api/v1/materials/:id/policies/:locationId` | `material:update` | Planning policy at a location, whole |
+| `POST` | `/api/v1/material-categories`, `/api/v1/units` | `material:create` | Categories (two levels) and units of measure |
+| `POST` / `PATCH` | `/api/v1/vendors`, `/api/v1/vendors/:id` | `vendor:create` / `vendor:update` | Vendors; ASL changes are audited as approvals |
+| `PUT` | `/api/v1/vendors/:id/materials/:materialId` | `vendor:update` | What a vendor supplies at what price and lead time; one preferred vendor per material |
+| `POST` / `PATCH` | `/api/v1/customers`, `/api/v1/customers/:id` | `customer:create` / `customer:update` | Customers |
+| `POST` / `PATCH` | `/api/v1/locations`, `/api/v1/locations/:id` | `location:create` / `location:update` | Plants, warehouses, depots, hubs |
+| `POST` | `/api/v1/boms` | `bom:create` | One BOM per made product |
+| `POST` | `/api/v1/boms/:id/versions` | `bom:update` | A new, inactive, immutable version |
+| `POST` | `/api/v1/boms/:id/versions/:versionId/activate` | `bom:update` | Make it the active version; refused if it creates a cycle |
+| `DELETE` | `/api/v1/boms/:id/versions/:versionId` | `bom:delete` | An inactive version no work order used |
+| `GET` / `PATCH` | `/api/v1/settings` | `setting:read` / `setting:update` | Company record and operational tolerances |
 
 All master-data and inventory reads are scoped to the caller's company. A
 record in another company reads as 404, the same as a missing one.
@@ -436,6 +450,27 @@ A session ends after `SESSION_MAX_AGE_SECONDS` (default 8 h) without
 activity; each request (at most once a minute) pushes expiry out again, up
 to `SESSION_ABSOLUTE_MAX_SECONDS` (default 24 h) after sign-in, when it ends
 regardless.
+
+### Master data and adjustments
+
+- **Codes are permanent.** Material, vendor, customer, location, category and
+  unit codes are business keys referenced outside the system; they are
+  upper-cased on input and cannot be changed.
+- **History-bearing fields lock.** A material's unit and batch tracking are
+  fixed once it has any stock movement; its standard cost can be set by hand
+  only while nothing is on hand (after that it is the ledger's moving average).
+- **Nothing in use is deactivated.** A material with stock, open order lines,
+  open work orders or an active BOM use; a vendor or customer with open
+  orders; a location with stock or open orders — all refused with 409 naming
+  what still uses them.
+- **BOM versions are immutable.** Changes are a new version, activated when
+  ready; activation retires the previous one (dated today) and is refused if
+  the product would become its own component, with the loop named. A BOM
+  line's unit must share the component's stocking dimension.
+- **Counts re-state, not re-apply.** An adjustment posts counted − book, so
+  repeating a count changes nothing. Found stock is valued at the balance's
+  average (or standard) cost unless one is given. Each adjustment is an
+  ADJUSTMENT movement, an `InventoryAdjustment` record and an audit entry.
 
 ## Authentication
 

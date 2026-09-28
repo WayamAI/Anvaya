@@ -10,6 +10,7 @@ import { btnSecondary } from "@/components/app/controls";
 import { apiGet } from "@/lib/api";
 import { inrCompact } from "@/lib/format";
 import type { StockOverview as StockOverviewData, StockOverviewRow, StockStatus } from "@/server/inventory/stock-overview";
+import { CountButton } from "@/components/inventory/adjust-stock";
 
 interface Location {
   id: string;
@@ -101,6 +102,7 @@ export default function StockOverview() {
     { key: "avgCost", header: "Avg cost", align: "right", numeric: true, width: "w-[100px]", value: s => s.avgCost ?? -1, cell: s => (s.avgCost === null ? "—" : `₹${s.avgCost.toLocaleString("en-IN")}`) },
     { key: "value", header: "Value (₹L)", align: "right", numeric: true, width: "w-[110px]", value: s => s.value, cell: s => `₹${(s.value / 1e5).toFixed(2)}L` },
     { key: "status", header: "Status", width: "w-[110px]", value: s => statusBadge[s.status].label, cell: s => <StatusBadge {...statusBadge[s.status]} /> },
+    { key: "count", header: "", width: "w-[70px]", value: () => "", cell: s => <CountButton materialId={s.materialId} label={s.code} /> },
   ];
 
   const tabs = [{ id: null as string | null, name: "All Locations" }, ...locations];
