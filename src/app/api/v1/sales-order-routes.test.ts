@@ -149,7 +149,7 @@ describe("GET /api/v1/sales-orders/:id", () => {
   const detailLine = (over: Record<string, unknown> = {}) => ({
     id: "sol-1", lineNumber: 1, materialId: "m-fg1", locationId: "l-pune",
     quantity: D(240), shippedQty: D(240), unitPrice: D(890), lineTotal: D(213600), requiredDate: day("2026-03-24"),
-    material: { id: "m-fg1", code: "FG-001", name: "Industrial Cleaning Compound 5L", unitOfMeasure: { code: "UNIT" } },
+    material: { id: "m-fg1", code: "FG-001", name: "Industrial Cleaning Compound 5L", isBatchTracked: true, unitOfMeasure: { code: "UNIT" } },
     location: { id: "l-pune", name: "Pune Plant" },
     ...over,
   });
@@ -175,8 +175,9 @@ describe("GET /api/v1/sales-orders/:id", () => {
       overdue: false, lineCount: 1,
     });
     expect(body.data.lines[0]).toEqual({
+      id: "sol-1",
       lineNumber: 1,
-      material: { id: "m-fg1", code: "FG-001", name: "Industrial Cleaning Compound 5L" },
+      material: { id: "m-fg1", code: "FG-001", name: "Industrial Cleaning Compound 5L", isBatchTracked: true },
       uom: "UNIT",
       location: { id: "l-pune", name: "Pune Plant" },
       quantity: 240, shippedQty: 240, openQty: 0, unitPrice: 890, lineTotal: 213600, requiredDate: "2026-03-24", overdue: false,

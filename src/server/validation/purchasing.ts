@@ -1,25 +1,11 @@
 import { z } from "zod";
+import { id, isoDate, nonNegativeQty, optionalText, price, qty, reason, text } from "./common";
 
 /**
  * Request bodies for purchase orders, goods receipts and lot quality
  * decisions. Shape and range only — whether a vendor exists, a line is
  * receivable or a quantity fits is the service's call, against the database.
  */
-
-const id = z.string().trim().min(1).max(64);
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be a date as YYYY-MM-DD")
-  // Round-trip, because Date.parse happily rolls 2026-02-30 over to 2 March.
-  .refine((v) => {
-    const d = new Date(`${v}T00:00:00Z`);
-    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
-  }, "is not a real date");
-/** Positive, at most 6 decimal places and inside the column's range. */
-const qty = z.number().finite().positive("must be greater than 0").max(1e12)
-  .refine((v) => Number(v.toFixed(6)) === v, "has more than 6 decimal places");
-const nonNegativeQty = z.number().finite().min(0).max(1e12);
-const price = z.number().finite().min(0, "cannot be negative").max(1e12);
-const text = (max: number) => z.string().trim().max(max);
-const optionalText = (max: number) => text(max).optional().transform((v) => (v ? v : undefined));
 
 const poLine = z.object({
   materialId: id,
@@ -68,7 +54,7 @@ export type UpdatePurchaseOrderInput = z.infer<typeof updatePurchaseOrderBody>;
 
 /** POST /api/v1/purchase-orders/:id/cancel */
 export const cancelPurchaseOrderBody = z.object({
-  reason: text(500).min(3, "give a reason of at least 3 characters"),
+  reason,
 }).strict();
 
 export type CancelPurchaseOrderInput = z.infer<typeof cancelPurchaseOrderBody>;

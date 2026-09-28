@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { btnDestructive, btnPrimary, btnSecondary, inputSm } from "@/components/app/controls";
 import { useSession } from "@/components/auth/session-context";
-import { ErrorNote } from "@/components/purchasing/po-actions";
+import { ErrorNote } from "@/components/app/api-error-note";
 import { apiSend } from "@/lib/api";
 
 /**

@@ -142,8 +142,10 @@ export interface SalesOrderDetail extends SalesOrderRow {
   asOf: string;
   notes: string | null;
   lines: {
+    /** Needed to dispatch against the line. */
+    id: string;
     lineNumber: number;
-    material: { id: string; code: string; name: string };
+    material: { id: string; code: string; name: string; isBatchTracked: boolean };
     uom: string;
     location: { id: string; name: string };
     quantity: number;

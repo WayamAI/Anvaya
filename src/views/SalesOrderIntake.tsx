@@ -9,6 +9,7 @@ import { SkeletonBlock } from "@/components/app/skeleton-block";
 import { btnSecondary } from "@/components/app/controls";
 import { apiGet } from "@/lib/api";
 import { formatQty, inrCompact } from "@/lib/format";
+import { NewSalesOrderButton, SalesOrderActions } from "@/components/sales/so-actions";
 import type {
   CustomerType, DeliveryStatus, SalesOrderDetail, SalesOrderList, SalesOrderRow, SoStatus,
 } from "@/server/sales/sales-orders";
@@ -91,6 +92,8 @@ function SalesOrderPanel({ id }: { id: string }) {
         <StatusBadge {...statusMap[so.status]} />
         {so.overdue && <StatusBadge status="red" label="Overdue" />}
       </h3>
+
+      <SalesOrderActions so={so} />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-body-sm">
         <Fact label="Customer">
@@ -181,7 +184,7 @@ function SalesOrderPanel({ id }: { id: string }) {
         </div>
       </div>
 
-      {so.notes && <p className="text-body-sm text-muted-foreground">Notes: {so.notes}</p>}
+      {so.notes && <p className="text-body-sm text-muted-foreground whitespace-pre-line">Notes: {so.notes}</p>}
     </div>
   );
 }
@@ -245,7 +248,8 @@ export default function SalesOrderIntake() {
   return (
     <div className="px-6 py-5">
       <PageHeader title="Sales order intake"
-        description={q.data ? `${orders(filtered.length)} · as of ${asOf}` : q.isPending ? "Loading…" : undefined} />
+        description={q.data ? `${orders(filtered.length)} · as of ${asOf}` : q.isPending ? "Loading…" : undefined}
+        actions={<NewSalesOrderButton onCreated={setSelected} />} />
 
       {!q.error && <MetricRow metrics={metrics} className="mb-4" />}
 

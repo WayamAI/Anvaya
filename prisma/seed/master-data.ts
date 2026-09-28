@@ -351,6 +351,7 @@ export const PERMISSIONS: { code: string; description: string }[] = [
   { code: "purchase-order:approve", description: "approve a purchase order" },
   { code: "inventory:adjust", description: "adjust stock levels" },
   { code: "goods-receipt:create", description: "receive goods against a purchase order" },
+  { code: "sales-order:dispatch", description: "dispatch stock against a sales order" },
   { code: "audit:read", description: "read the audit trail" },
 ];
 
@@ -409,6 +410,7 @@ export const ROLES = [
       "material:read", "location:read",
       "inventory:read", "inventory:update", "inventory:adjust",
       "goods-receipt:create", "purchase-order:read", "work-order:read",
+      "sales-order:read", "sales-order:dispatch", "customer:read",
       "mrp:read", "setting:read",
     ],
   },

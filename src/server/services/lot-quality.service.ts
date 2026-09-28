@@ -8,7 +8,7 @@ import { bucketForQc } from "@/server/inventory/ledger";
 import { MOVEMENT_REF } from "@/server/inventory/lots";
 import { assertQcTransition } from "@/server/purchasing/po-rules";
 import type { LotQcInput } from "@/server/validation/purchasing";
-import { postMovement, shiftStock } from "./stock-ledger.service";
+import { lockBalances, postMovement, shiftStock } from "./stock-ledger.service";
 import { auditMeta, type WriteContext } from "./write-context";
 
 /**
@@ -39,6 +39,15 @@ export async function decideLotQuality(lotId: string, input: LotQcInput, ctx: Wr
   const companyId = ctx.actor.companyId;
 
   return runInTransaction(async (tx) => {
+    // Lock order everywhere is balance before lot (dispatch and issue lock the
+    // balance, then draw lots down). A lot's material and location never
+    // change, so they can be read unlocked to find which balance to take.
+    const where = await tx.inventoryLot.findFirst({
+      where: { id: lotId, material: { companyId } },
+      select: { materialId: true, locationId: true },
+    });
+    if (!where) throw AppError.notFound("Lot", lotId);
+    await lockBalances(tx, [where]);
     if (!(await lockRow(tx, "inventory_lots", lotId, companyId))) throw AppError.notFound("Lot", lotId);
     const lot = await tx.inventoryLot.findUniqueOrThrow({
       where: { id: lotId },

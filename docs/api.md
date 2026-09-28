@@ -113,6 +113,12 @@ generated when absent. It is always echoed in the response header.
 | `POST` | `/api/v1/purchase-orders/:id/cancel` | `purchase-order:update` | `{ reason }`. Cancels the order, or the remainder of a partly received one |
 | `POST` | `/api/v1/goods-receipts` | `goods-receipt:create` | Receive against a PO: GRN, lots, RECEIPT movements, PO progress. Honours `Idempotency-Key` |
 | `POST` | `/api/v1/inventory/lots/:id/qc` | `inventory:update` | `{ status: APPROVED\|QUARANTINE\|REJECTED, coaReference?, reason? }` — release, hold or reject a lot |
+| `GET` | `/api/v1/customers` | `customer:read` | Customers by code. `?q=` `?active=` |
+| `POST` | `/api/v1/sales-orders` | `sales-order:create` | Book a CONFIRMED order; number assigned by the server |
+| `PATCH` | `/api/v1/sales-orders/:id` | `sales-order:update` | Edit a CONFIRMED order that has shipped nothing |
+| `POST` | `/api/v1/sales-orders/:id/cancel` | `sales-order:update` | `{ reason }`. Cancels the order, or the remainder after a partial dispatch |
+| `POST` | `/api/v1/sales-orders/:id/dispatches` | `sales-order:dispatch` | Ship stock; batch-tracked lines from named lots or first-expiry-first-out. Honours `Idempotency-Key` |
+| `POST` | `/api/v1/sales-orders/:id/deliver` | `sales-order:dispatch` | DISPATCHED → DELIVERED |
 
 All master-data and inventory reads are scoped to the caller's company. A
 record in another company reads as 404, the same as a missing one.
@@ -341,6 +347,28 @@ A wrong transition is a 409 naming the current status.
 | REJECTED | What remains leaves stock: RETURN (purchased) or SCRAP (produced). Final. `reason` required |
 
 The lot's receipt lines take the same inspection status.
+
+### Sales order lifecycle and dispatch
+
+```
+CONFIRMED ─dispatch (part)─▶ PROCESSING ─dispatch (rest)─▶ DISPATCHED ─deliver─▶ DELIVERED
+    └──────────── cancel ────────┴──▶ CANCELLED
+```
+
+- An order is booked CONFIRMED and can be edited only while nothing has
+  shipped. Every line ships from one location (the line's, else the order's).
+- Dispatch needs `sales-order:dispatch` — a warehouse permission, separate
+  from `sales-order:update`, held by ADMIN and INVENTORY.
+- A line may ship up to its open quantity plus `sales.overDispatchTolerancePct`
+  (default 0), and never more than unrestricted stock: held (quarantined) stock
+  and other orders' shipments are respected under concurrency.
+- Batch-tracked lines ship from lots. Named lots must be APPROVED, at the
+  line's location, unexpired on the dispatch date and hold enough; with no
+  lots named the server allocates first-expiry-first-out (then oldest
+  receipt, then lot number). Each lot draw is an ISSUE movement referencing
+  the order line, which is what forward traceability reads.
+- Shipping every line in full makes the order DISPATCHED and the delivery
+  IN_TRANSIT; `dispatchDate` records the latest dispatch.
 
 ## Authentication
 

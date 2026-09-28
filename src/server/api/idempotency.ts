@@ -16,9 +16,10 @@ import { AppError } from "@/server/errors/app-error";
  * without running again.
  *
  * Concurrent duplicates: both requests may pass the initial lookup and run.
- * The key row is inserted inside each transaction, so the second insert
- * hits the unique index, its whole transaction rolls back — nothing it did
- * is kept — and it replays the first request's stored result instead.
+ * The key row is inserted inside each transaction, so the loser either hits
+ * the unique index or a business rule the winner's commit now trips; its
+ * whole transaction rolls back — nothing it did is kept — and it replays the
+ * winner's stored result instead.
  *
  * A key reused with a different body is refused with 422 rather than
  * replayed: returning an old receipt for a new request would be a silent lie.
@@ -73,11 +74,6 @@ async function findStored<T>(ctx: IdempotencyContext): Promise<StoredResponse<T>
   return { status: row.responseStatus, body: row.responseBody as T, replayed: true };
 }
 
-const isKeyConflict = (error: unknown) =>
-  error instanceof Prisma.PrismaClientKnownRequestError &&
-  error.code === "P2002" &&
-  String((error.meta as { modelName?: string; target?: unknown })?.modelName ?? error.meta?.target ?? "").includes("dempotency");
-
 /**
  * Run `fn` in a transaction, once per key. Without a key it simply runs in a
  * transaction — idempotency is opt-in by the client.
@@ -110,10 +106,13 @@ export async function runIdempotent<T>(
     });
     return { status, body, replayed: false };
   } catch (error) {
-    if (isKeyConflict(error)) {
-      const winner = await findStored<T>(ctx);
-      if (winner) return winner;
-    }
+    // A duplicate that ran alongside the original fails one of two ways: on
+    // the key's unique index, or — when it waited on the original's row locks
+    // — on a business rule the original's commit now trips ("nothing left to
+    // receive"). Either way, if the key has since been committed this request
+    // was the duplicate, and the right answer is the original's response.
+    const winner = await findStored<T>(ctx).catch(() => null);
+    if (winner) return winner;
     throw error;
   }
 }

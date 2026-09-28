@@ -15,9 +15,14 @@ import {
  * running balance on every movement is exact, never a stale read plus a
  * delta.
  *
- * Lock order is (materialId, locationId) ascending. Callers posting several
- * lines call `lockBalances` with all their keys first, so two multi-line
- * transactions can never hold each other's rows in opposite orders.
+ * Lock order, for every write in the system:
+ *
+ *   document row (PO, SO, WO) → balances, by (materialId, locationId)
+ *   → lots → document-number sequences
+ *
+ * Callers posting several lines call `lockBalances` with all their keys
+ * first, so two multi-line transactions can never hold each other's rows in
+ * opposite orders.
  */
 
 export interface BalanceKey {

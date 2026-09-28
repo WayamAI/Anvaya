@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { btnDestructive, btnPrimary, btnSecondary, btnGhostSm, inputSm, selectSm } from "@/components/app/controls";
 import { useSession } from "@/components/auth/session-context";
-import { ApiError, apiGet, apiGetWithMeta, apiSend } from "@/lib/api";
+import { apiGet, apiGetWithMeta, apiSend } from "@/lib/api";
+import { ErrorNote, newIdempotencyKey } from "@/components/app/api-error-note";
 import { formatQty } from "@/lib/format";
 import type { PurchaseOrderDetail } from "@/server/purchasing/purchase-orders";
 
@@ -17,31 +18,6 @@ import type { PurchaseOrderDetail } from "@/server/purchasing/purchase-orders";
  * allows the step; the server enforces both again on every request, so this
  * decides what is offered, not what is allowed.
  */
-
-/* ---- Shared bits --------------------------------------------------------- */
-
-function newKey() {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-/** Server message, plus each field-level problem the server named. */
-export function ErrorNote({ error }: { error: unknown }) {
-  if (!error) return null;
-  const e = error as ApiError;
-  return (
-    <div role="alert" className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-body-sm text-danger">
-      <p className="font-medium">{e.message}</p>
-      {e.details?.length ? (
-        <ul className="mt-1 list-disc pl-4">
-          {e.details.map((d, i) => <li key={i}><span className="identifier">{d.path}</span>: {d.message}</li>)}
-        </ul>
-      ) : null}
-      {e.requestId && <p className="mt-1 text-caption opacity-70">Reference {e.requestId}</p>}
-    </div>
-  );
-}
 
 function useRefreshPurchasing() {
   const qc = useQueryClient();
@@ -289,7 +265,7 @@ function ReceiveGoodsDialog({ po, onClose }: { po: PurchaseOrderDetail; onClose:
   const refresh = useRefreshPurchasing();
   // One key per opening of the form: a double click, or a retry after a
   // network failure, posts the receipt once.
-  const idempotencyKey = useMemo(newKey, []);
+  const idempotencyKey = useMemo(newIdempotencyKey, []);
   const open = po.lines.filter((l) => l.outstandingQty > 0);
   const [draft, setDraft] = useState<Record<string, ReceiptDraft>>(() =>
     Object.fromEntries(open.map((l) => [l.id, {

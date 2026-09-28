@@ -1,7 +1,7 @@
 import { Prisma, StockMovementType } from "@prisma/client";
 import { prisma } from "@/server/db/client";
 import { AppError } from "@/server/errors/app-error";
-import { toNumber } from "@/server/api/decimal";
+import { sumDecimals, toNumber } from "@/server/api/decimal";
 import { planningAsOf } from "@/server/config/as-of";
 import { MOVEMENT_REF } from "@/server/inventory/lots";
 import { totalMatchesLines } from "@/server/purchasing/purchase-orders";
@@ -104,7 +104,7 @@ export async function getSalesOrder(companyId: string, id: string, asOf = planni
       customer: orderInclude.customer,
       lines: {
         include: {
-          material: { select: { id: true, code: true, name: true, unitOfMeasure: { select: { code: true } } } },
+          material: { select: { id: true, code: true, name: true, isBatchTracked: true, unitOfMeasure: { select: { code: true } } } },
           location: { select: { id: true, name: true } },
         },
         orderBy: { lineNumber: "asc" },
@@ -138,8 +138,9 @@ export async function getSalesOrder(companyId: string, id: string, asOf = planni
       const reserved = bal ? toNumber(bal.reservedQty) : 0;
       const quarantine = bal ? toNumber(bal.quarantineQty) : 0;
       return {
+        id: l.id,
         lineNumber: l.lineNumber,
-        material: { id: l.material.id, code: l.material.code, name: l.material.name },
+        material: { id: l.material.id, code: l.material.code, name: l.material.name, isBatchTracked: l.material.isBatchTracked },
         uom: l.material.unitOfMeasure.code,
         location: l.location,
         ...facts,
@@ -148,9 +149,15 @@ export async function getSalesOrder(companyId: string, id: string, asOf = planni
         lineTotal: toNumber(l.lineTotal),
         // Same rule as the order: a shipped order's lines are not overdue.
         overdue: (o.status === "CONFIRMED" || o.status === "PROCESSING") && isSoLineOverdue(facts, asOf),
-        lots: dispatches
+        // One entry per lot: a lot shipped across several dispatches is summed.
+        lots: [...dispatches
           .filter((d) => d.referenceId === l.id && d.lot)
-          .map((d) => ({ id: d.lot!.id, lotNumber: d.lot!.lotNumber, quantity: Math.abs(toNumber(d.quantity)) })),
+          .reduce((byLot, d) => {
+            const prev = byLot.get(d.lot!.id);
+            const qty = sumDecimals([prev?.quantity, d.quantity.abs()]);
+            return byLot.set(d.lot!.id, { id: d.lot!.id, lotNumber: d.lot!.lotNumber, quantity: qty });
+          }, new Map<string, { id: string; lotNumber: string; quantity: Prisma.Decimal }>())
+          .values()].map((x) => ({ ...x, quantity: x.quantity.toNumber() })),
         stock: bal ? { onHand, reserved, quarantine, available: availableQty(onHand, reserved, quarantine) } : null,
         openWorkOrders: workOrders
           .filter((w) => w.materialId === l.materialId && w.locationId === l.locationId)
