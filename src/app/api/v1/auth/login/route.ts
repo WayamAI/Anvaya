@@ -1,6 +1,7 @@
 import { withApi, parseBody } from "@/server/api/with-api";
 import { ok } from "@/server/api/respond";
 import { loginSchema } from "@/server/validation/auth";
+import { consume, LIMITS } from "@/server/api/rate-limit";
 import { login } from "@/server/services/auth.service";
 import { toPublicActor } from "@/server/auth/rbac";
 import { setSessionCookie } from "@/server/auth/cookie";
@@ -11,6 +12,9 @@ export const dynamic = "force-dynamic";
 export const POST = withApi(
   async ({ req, clientInfo }) => {
     const input = await parseBody(req, loginSchema);
+    // Checked before the password is: a throttled attempt costs no argon2 work.
+    await consume(`login:ip:${clientInfo.ipAddress ?? "unknown"}`, LIMITS.loginPerIp);
+    await consume(`login:email:${input.email}`, LIMITS.loginPerEmail);
     const { token, expiresAt, actor } = await login(input, clientInfo);
 
     // The token goes in an httpOnly cookie and is never part of the body, so

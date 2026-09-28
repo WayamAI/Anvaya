@@ -10,6 +10,8 @@ import { Prisma } from "@prisma/client";
 
 vi.hoisted(() => {
   process.env.DATABASE_URL ??= "postgresql://u:p@localhost:55432/anvaya?schema=public";
+  // These cases are written against the seeded demo's planning date.
+  process.env.PLANNING_AS_OF_DATE = "2026-03-25";
 });
 
 const db = vi.hoisted(() => ({

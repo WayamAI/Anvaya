@@ -1869,3 +1869,15 @@ model IdempotencyKey {
   @@index([createdAt])
   @@map("idempotency_keys")
 }
+
+/// Fixed-window request counters for rate limiting, keyed by what is being
+/// limited ("login:ip:203.0.113.9"). Kept in Postgres rather than process
+/// memory so every server instance shares the same count.
+model RateLimitBucket {
+  key         String   @id
+  windowStart DateTime
+  count       Int
+
+  @@index([windowStart])
+  @@map("rate_limit_buckets")
+}

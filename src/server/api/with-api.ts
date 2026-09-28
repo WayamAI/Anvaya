@@ -149,7 +149,11 @@ function handleError(
       { code: error.code, status: error.status, durationMs, context: error.context },
       error.message,
     );
-    return fail(error.status, error.code, error.message, requestId, error.details);
+    const res = fail(error.status, error.code, error.message, requestId, error.details);
+    const retryAfter = error.context?.retryAfterSeconds;
+    if (typeof retryAfter === "number") res.headers.set("Retry-After", String(retryAfter));
+    res.headers.set("x-request-id", requestId);
+    return res;
   }
 
   // Validation that escaped a handler without being converted.

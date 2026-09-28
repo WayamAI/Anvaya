@@ -97,8 +97,9 @@ export class AppError extends Error {
     return new AppError(ErrorCode.UNPROCESSABLE, message, { details });
   }
 
-  static rateLimited(message = "Too many requests — please slow down") {
-    return new AppError(ErrorCode.RATE_LIMITED, message);
+  /** `retryAfterSeconds` is sent to the client as a Retry-After header. */
+  static rateLimited(message = "Too many requests — please slow down", retryAfterSeconds?: number) {
+    return new AppError(ErrorCode.RATE_LIMITED, message, { context: { retryAfterSeconds } });
   }
 
   static internal(message = "An unexpected error occurred", cause?: unknown) {

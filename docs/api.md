@@ -492,6 +492,13 @@ verification against a placeholder hash so it costs the same time as a real one.
 Five consecutive failures lock an account for 15 minutes. While locked, even
 the correct password is rejected — with the same generic message.
 
+Sign-in is also rate limited — 30 attempts per client address and 10 per
+account in any 5 minutes — answering **429 `RATE_LIMITED`** with a
+`Retry-After` header. The limit is checked before the password, so throttled
+attempts cost no hashing. Counters live in Postgres, so every server
+instance shares them. Password changes are limited to 10 per user per 15
+minutes.
+
 ## Authorization
 
 Permissions are `resource:action` strings held by roles, which are rows in the
@@ -526,9 +533,8 @@ buttons that return 403.
 Returns 500 with `code: "INTERNAL"` when the database is unreachable, so a
 deploy check fails when the app cannot actually serve requests.
 
-### Planned
+### Not yet built
 
-Added in later phases: auth and session (Phase 3); materials, categories, units,
-locations, vendors, customers (Phase 4); BOMs and inventory (Phase 5); sales
-orders, forecasts, purchase orders, work orders (Phase 6); MRP runs,
-requirements, planned orders, pegging and exceptions (Phase 7).
+MRP runs, net requirements, planned orders, pegging and exceptions; demand
+forecast entry; stock transfers between locations; stock reservation against
+sales orders. The schema already holds the tables for MRP and forecasts.

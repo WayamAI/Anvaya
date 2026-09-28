@@ -1,0 +1,73 @@
+# Continuous integration: every push and pull request must typecheck, lint,
+# pass the unit and route tests, pass the integration tests against a real
+# Postgres with every migration applied from scratch, and build.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, lint, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Validated at import time; nothing connects to it in this job.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          NODE_ENV: production
+
+  integration:
+    name: Integration tests (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: anvaya
+          POSTGRES_PASSWORD: anvaya_ci_password
+          POSTGRES_DB: anvaya
+          POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U anvaya -d anvaya"
+          --health-interval 3s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://anvaya:anvaya_ci_password@localhost:5432/anvaya?schema=public
+      NODE_ENV: test
+      LOG_LEVEL: warn
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Applies every migration to an empty database, exactly as a new
+      # production database would receive them.
+      - run: npx prisma migrate deploy
+      # The seed loads the permission catalogue the admin tests rely on.
+      - run: npm run db:seed
+        env:
+          SEED_USER_PASSWORD: ci-only-Passw0rd
+      - run: npm run test:integration

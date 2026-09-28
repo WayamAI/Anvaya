@@ -20,6 +20,12 @@ const schema = z.object({
     ),
 
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  /**
+   * Connections per server instance. On serverless hosts every instance has
+   * its own pool, so keep this small (2–5) and point DATABASE_URL at a pooled
+   * endpoint (PgBouncer / Neon / Supabase pooler).
+   */
+  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
   APP_URL: z.string().url().default("http://localhost:8080"),
 
   // Optional until Phase 3 wires authentication, but validated when present so
@@ -38,6 +44,14 @@ const schema = z.object({
     .transform((v) => v === "true"),
 
   SEED_USER_PASSWORD: z.string().min(8).optional(),
+
+  /**
+   * Pin the date read screens treat as "today" (YYYY-MM-DD). For the seeded
+   * demo only; leave unset in production so the real clock is used.
+   */
+  PLANNING_AS_OF_DATE: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "PLANNING_AS_OF_DATE must be YYYY-MM-DD")])
+    .optional()
+    .transform((v) => (v ? v : undefined)),
 });
 
 function load() {

@@ -8,7 +8,7 @@
     "dev:bare": "next dev -p 8080",
     "build": "next build",
     "start": "next start -p 8080",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
@@ -21,6 +21,7 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "company:create": "tsx scripts/create-company.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

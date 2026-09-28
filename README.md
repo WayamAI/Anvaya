@@ -1,78 +1,114 @@
 # Anvaya — Production Planning
 
-A material planning & production ERP dashboard: MRP runs, BOM management, inventory, purchasing, demand forecasting, and analytics, all in one app.
-
-**Live:** https://production-planning-six.vercel.app
+A material planning and production ERP for process manufacturers: purchasing
+and goods receipt into lots, quality release, sales order dispatch, work
+orders with component issue and output, stock counts, BOMs, master data, and
+lot traceability both ways — on a Postgres stock ledger with an audit trail.
 
 ## Tech stack
 
-- [Vite](https://vitejs.dev/) + [React 18](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
-- [React Router](https://reactrouter.com/) for routing
-- [Tailwind CSS](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/) (Radix primitives) for UI
-- [TanStack Query](https://tanstack.com/query) for data/state
-- [Recharts](https://recharts.org/) for charts
-- [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/) for unit tests, [Playwright](https://playwright.dev/) for e2e
+- [Next.js 14](https://nextjs.org/) (App Router) + React 18 + TypeScript
+- PostgreSQL 16 via [Prisma 7](https://www.prisma.io/) (driver adapter `@prisma/adapter-pg`)
+- Tailwind CSS + shadcn/ui, TanStack Query, Recharts
+- Zod validation, argon2 password hashing, pino logging
+- Vitest (unit, route and integration tests), Playwright configured for e2e
 
 ## Getting started
 
-Requires Node.js 18+ and npm (or bun, since the repo also ships a `bun.lock`).
+Requires Node.js 20+ and Docker (for the local database).
 
 ```bash
 npm install
-npm run dev       # start the dev server at http://localhost:8080
+cp .env.example .env          # then set AUTH_SECRET and SEED_USER_PASSWORD
+npm run db:up                 # Postgres 16 on localhost:55432
+npm run db:deploy             # apply migrations
+npm run db:seed               # demo company, users, master data, open orders
+npm run dev                   # http://localhost:8080
 ```
 
-Other scripts:
+Sign in as any seeded user — `admin@`, `planner@`, `procurement@`,
+`production@`, `inventory@` or `viewer@anvaya.in` — with the
+`SEED_USER_PASSWORD` you set. Each has the permissions of its role.
 
-```bash
-npm run build      # production build -> dist/
-npm run build:dev   # development-mode build
-npm run preview     # preview the production build locally
-npm run lint         # eslint
-npm run test          # run unit tests once
-npm run test:watch    # run unit tests in watch mode
-```
+The demo data is arranged around 2026-03-25; `.env.example` pins
+`PLANNING_AS_OF_DATE` to it so the read screens look as intended. Leave it
+unset in production. Writes (receipts, dispatches, output) always use the
+real date in the company's time zone.
 
-## Project structure
+## Scripts
+
+| Script | What it does |
+| --- | --- |
+| `npm run dev` | Dev server, pre-compiling routes in the background |
+| `npm run build` / `start` | Production build and server |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm test` | Unit and route tests (no database needed) |
+| `npm run test:integration` | Write-side tests against the Postgres in `DATABASE_URL` |
+| `npm run db:migrate` | Create a migration from schema changes (development) |
+| `npm run db:deploy` | Apply pending migrations (production and CI) |
+| `npm run db:seed` / `db:reset` | Seed demo data / drop, migrate and seed |
+
+## Architecture
 
 ```
 src/
-  assets/         Anvaya logos and other static assets
-  components/
-    auth/          Route guard (RequireAuth)
-    layout/        AppLayout, AppHeader, AppSidebar
-    ui/             shadcn/ui components
-  pages/           One file per route/screen (Dashboard, MRPRun, BOMManagement, ...)
-  App.tsx          Route table
-public/            Static files served as-is (favicon, robots.txt, docs)
+  app/api/v1/        Route handlers: validate, authorise, call a service
+  server/
+    api/             withApi wrapper, idempotency, rate limiting, responses
+    auth/            Sessions, passwords, RBAC
+    services/        Database access and transactions, one file per area
+    purchasing/ sales/ production/ inventory/
+                     Business rules as pure functions, unit-tested
+    validation/      Zod request schemas
+    db/              Prisma client, transactions and row locks, numbering
+  views/             Screens; components/ shared UI and action dialogs
+prisma/              Schema, migrations, seed
+docs/api.md          API reference and the business rules behind it
 ```
+
+Every stock change is a signed movement in one ledger service, inside a
+transaction that locks the rows it touches; balances, lots and valuation
+follow from it. See **Writes** in `docs/api.md` for the guarantees (no
+negative stock, idempotent retries, gap-free numbering, audit in the same
+commit).
 
 ## Authentication
 
-This is a demo environment: the `/login` screen accepts **any email and any password** — there is no backend credential check. Signing in sets a `matrixops_auth` flag in `localStorage`; every other route is guarded by `RequireAuth` (`src/components/auth/RequireAuth.tsx`) and redirects back to `/login` if that flag isn't set. Use the sign-out icon in the header to clear it.
+Real accounts with argon2-hashed passwords and server-side sessions in an
+httpOnly cookie. Permissions come from roles held in the database and are
+checked on every request. Accounts lock after 5 failed sign-ins; sign-in is
+also rate limited per address and per account. Administrator-issued
+passwords must be changed at first sign-in.
 
-## Deploying on Vercel
+## Deploying
 
-The repo includes a `vercel.json` that pins the framework and build settings explicitly, so a fresh Vercel project (or one previously configured for a different framework) will build correctly without manual dashboard changes:
+The app is a standard Next.js server and needs a PostgreSQL 16 database.
 
-```json
-{
-  "framework": "vite",
-  "buildCommand": "vite build",
-  "outputDirectory": "dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-}
-```
+**Vercel** (`vercel.json` is set up for Next.js):
 
-- `buildCommand` / `outputDirectory` match Vite's defaults.
-- The catch-all rewrite to `/index.html` is required because this is a client-side-routed SPA (React Router) — without it, refreshing or deep-linking to any route other than `/` returns a 404.
-- No environment variables are required to build or run the app.
+1. Create a managed Postgres (Neon, Supabase, RDS…). Use its **pooled**
+   connection string for `DATABASE_URL`, and set `DATABASE_POOL_MAX` to 2–5 —
+   every serverless instance opens its own pool.
+2. Set the environment: `DATABASE_URL`, `DATABASE_POOL_MAX`, `AUTH_SECRET`
+   (32+ random bytes), `APP_URL`, `NODE_ENV=production`, `LOG_LEVEL=info`,
+   `LOG_PRETTY=false`. Do **not** set `PLANNING_AS_OF_DATE`.
+3. Apply migrations as a release step, before or alongside each deploy:
+   `DATABASE_URL=… npx prisma migrate deploy`. The build does not migrate, so
+   a preview deployment can never alter the production schema.
+4. Create the first company and administrator (the demo seed is for local
+   and staging use only):
+   ```bash
+   DATABASE_URL=… npm run company:create -- --code ACME --name "Acme Chemicals"      --admin-email ops@acme.in --admin-name "Asha Rao"
+   ```
+   It prints a one-time temporary password; the administrator sets their own
+   at first sign-in and creates everything else in the app.
 
-To deploy:
+`GET /api/v1/health` checks the database round-trip and answers 500 when it
+cannot, for uptime monitoring and deploy checks.
 
-```bash
-vercel link      # first time only, link to a Vercel project
-vercel deploy --prod
-```
+## CI
 
-Or connect the GitHub repo directly in the Vercel dashboard — the `vercel.json` settings are picked up automatically, no manual framework/build configuration needed.
+`.github/workflows/ci.yml` runs on every push and pull request: typecheck,
+lint, unit and route tests, a production build, and the integration suite
+against a fresh Postgres with every migration applied from scratch.
