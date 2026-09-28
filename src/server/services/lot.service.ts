@@ -190,7 +190,7 @@ export async function getLotDetail(companyId: string, id: string, asOf = new Dat
 
   const producerId = lot.movements[0]?.referenceId ?? null;
 
-  const [workOrder, dispatchMovements, usage] = await Promise.all([
+  const [workOrder, dispatchMovements, usage, issuedFromLot, issuedIntoProducer] = await Promise.all([
     producerId
       ? prisma.workOrder.findFirst({
           where: { id: producerId, companyId },
@@ -228,7 +228,45 @@ export async function getLotDetail(companyId: string, id: string, asOf = new Dat
       },
       orderBy: { workOrder: { orderNumber: "asc" } },
     }),
+    // Issues are also recorded per lot in the ledger; a component drawn from
+    // several lots has one PRODUCTION_ISSUE per lot, but only the first on
+    // the component row.
+    prisma.stockMovement.findMany({
+      where: { lotId: lot.id, type: StockMovementType.PRODUCTION_ISSUE, referenceType: MOVEMENT_REF.WORK_ORDER },
+      select: { referenceId: true, quantity: true },
+    }),
+    producerId
+      ? prisma.stockMovement.findMany({
+          where: { referenceId: producerId, type: StockMovementType.PRODUCTION_ISSUE, referenceType: MOVEMENT_REF.WORK_ORDER, lotId: { not: null } },
+          select: { materialId: true, lotId: true, quantity: true },
+        })
+      : Promise.resolve([]),
   ]);
+
+  // Work orders that consumed this lot: component links plus ledger issues,
+  // one entry per order, with the quantity drawn from this lot.
+  const ledgerIssued = new Map<string, number>();
+  for (const m of issuedFromLot) {
+    if (m.referenceId) ledgerIssued.set(m.referenceId, (ledgerIssued.get(m.referenceId) ?? 0) + Math.abs(toNumber(m.quantity)));
+  }
+  const linkedIds = new Set(usage.map((c) => c.workOrder.id));
+  const ledgerOnlyIds = [...ledgerIssued.keys()].filter((woId) => !linkedIds.has(woId));
+  const ledgerOnly = ledgerOnlyIds.length
+    ? await prisma.workOrderComponent.findMany({
+        where: { workOrderId: { in: ledgerOnlyIds }, materialId: lot.materialId, workOrder: { companyId } },
+        include: { workOrder: { select: { id: true, orderNumber: true, status: true, material: { select: { code: true, name: true } } } } },
+      })
+    : [];
+
+  // Lots issued into the producing order, per component material.
+  const producerLotIds = [...new Set(issuedIntoProducer.map((m) => m.lotId!))];
+  const producerLots = producerLotIds.length
+    ? await prisma.inventoryLot.findMany({
+        where: { id: { in: producerLotIds }, material: { companyId } },
+        include: { vendor: { select: vendorSelect }, grnLines: { select: receiptSelect, orderBy: { createdAt: "asc" }, take: 1 } },
+      })
+    : [];
+  const producerLotById = new Map(producerLots.map((l) => [l.id, l]));
 
   const lineIds = dispatchMovements.map((m) => m.referenceId).filter((v): v is string => !!v);
   const soLines = lineIds.length
@@ -253,23 +291,39 @@ export async function getLotDetail(companyId: string, id: string, asOf = new Dat
     }];
   });
 
-  const usedIn: LotUsage[] = usage.map((c) => ({
-    workOrderId: c.workOrder.id,
-    orderNumber: c.workOrder.orderNumber,
-    status: c.workOrder.status,
-    product: c.workOrder.material,
-    requiredQty: toNumber(c.requiredQty),
-    issuedQty: toNumber(c.issuedQty),
-  }));
+  const usedIn: LotUsage[] = [...usage, ...ledgerOnly]
+    .map((c) => ({
+      workOrderId: c.workOrder.id,
+      orderNumber: c.workOrder.orderNumber,
+      status: c.workOrder.status,
+      product: c.workOrder.material,
+      requiredQty: toNumber(c.requiredQty),
+      // From this lot specifically, where the ledger records it.
+      issuedQty: ledgerIssued.get(c.workOrder.id) ?? toNumber(c.issuedQty),
+    }))
+    .sort((a, b) => a.orderNumber.localeCompare(b.orderNumber));
 
-  const inputs: TraceInput[] = (workOrder?.components ?? []).map((c) => {
-    const cl = c.lot;
+  type ComponentLot = NonNullable<NonNullable<typeof workOrder>["components"][number]["lot"]>;
+  const inputs: TraceInput[] = (workOrder?.components ?? []).flatMap((c) => {
+    // One input per lot the component was drawn from; the component row's
+    // single lot when the ledger has nothing more specific.
+    const drawn = new Map<string, number>();
+    for (const m of issuedIntoProducer.filter((x) => x.materialId === c.materialId)) {
+      drawn.set(m.lotId!, (drawn.get(m.lotId!) ?? 0) + Math.abs(toNumber(m.quantity)));
+    }
+    const perLot: { lot: ComponentLot | null; issuedQty: number }[] = drawn.size
+      ? [...drawn].map(([lotId, qty]) => ({ lot: (producerLotById.get(lotId) ?? null) as ComponentLot | null, issuedQty: qty }))
+      : [{ lot: c.lot, issuedQty: toNumber(c.issuedQty) }];
+    return perLot.map(({ lot: cl, issuedQty }) => toInput(c, cl, issuedQty));
+  });
+
+  function toInput(c: NonNullable<typeof workOrder>["components"][number], cl: ComponentLot | null, issuedQty: number): TraceInput {
     const vendor = cl ? toVendor(cl.vendor) : null;
     return {
       material: { id: c.material.id, code: c.material.code, name: c.material.name, kind: c.material.kind },
       uom: c.material.unitOfMeasure.code,
       requiredQty: toNumber(c.requiredQty),
-      issuedQty: toNumber(c.issuedQty),
+      issuedQty,
       lot: cl
         ? {
             id: cl.id,
@@ -286,7 +340,7 @@ export async function getLotDetail(companyId: string, id: string, asOf = new Dat
       suspect: cl ? needsContainment(cl.qcStatus) : false,
       nonApprovedVendor: vendor ? !vendor.isApproved : false,
     };
-  });
+  }
 
   const producer: ProducingOrder | null = workOrder
     ? {
@@ -337,10 +391,11 @@ export async function getLotIndicators(companyId: string, asOf = new Date()): Pr
       // Outflows a record explains: any negative ledger entry on the lot…
       movements: {
         where: { OR: [{ quantity: { lt: 0 } }, { type: StockMovementType.PRODUCTION_RECEIPT, referenceType: MOVEMENT_REF.WORK_ORDER }] },
-        select: { quantity: true, type: true, referenceId: true },
+        select: { quantity: true, type: true, referenceType: true, referenceId: true },
       },
-      // …and quantities issued to work orders against it.
-      consumedBy: { select: { issuedQty: true } },
+      // …and quantities issued to work orders against it, where the ledger
+      // does not already record the issue.
+      consumedBy: { select: { issuedQty: true, workOrderId: true } },
     },
     orderBy: { expiryDate: "asc" },
   });
@@ -349,19 +404,38 @@ export async function getLotIndicators(companyId: string, asOf = new Date()): Pr
     lots.flatMap((l) => l.movements.filter((m) => m.type === StockMovementType.PRODUCTION_RECEIPT).map((m) => m.referenceId))
       .filter((v): v is string => !!v),
   )];
-  const orders = producerIds.length
-    ? await prisma.workOrder.findMany({
-        where: { id: { in: producerIds }, companyId },
-        select: { id: true, components: { select: { lot: { select: { grnLines: { select: { coaReference: true }, take: 1 } } } } } },
-      })
-    : [];
-  const orderById = new Map(orders.map((o) => [o.id, o]));
+  const lotReceipt = { select: { grnLines: { select: { coaReference: true }, take: 1 } } } as const;
+  const [orders, producerIssues] = producerIds.length
+    ? await Promise.all([
+        prisma.workOrder.findMany({
+          where: { id: { in: producerIds }, companyId },
+          select: { id: true, components: { select: { materialId: true, lot: lotReceipt } } },
+        }),
+        prisma.stockMovement.findMany({
+          where: { referenceId: { in: producerIds }, type: StockMovementType.PRODUCTION_ISSUE, referenceType: MOVEMENT_REF.WORK_ORDER, lotId: { not: null } },
+          select: { referenceId: true, materialId: true, lotId: true, lot: lotReceipt },
+        }),
+      ])
+    : [[], []];
+  // Backward completeness needs a certificate behind every lot a component
+  // was drawn from, not only the first one on the component row.
+  const orderById = new Map(orders.map((o) => [o.id, {
+    components: o.components.flatMap((c) => {
+      const drawn = [...new Map(producerIssues
+        .filter((m) => m.referenceId === o.id && m.materialId === c.materialId)
+        .map((m) => [m.lotId, m.lot])).values()];
+      return drawn.length ? drawn.map((lot) => ({ lot })) : [{ lot: c.lot }];
+    }),
+  }]));
 
   const facts: TraceFacts[] = lots.map((l) => {
     const producerRef = l.movements.find((m) => m.type === StockMovementType.PRODUCTION_RECEIPT)?.referenceId;
     const order = producerRef ? orderById.get(producerRef) : undefined;
     const out = l.movements.filter((m) => toNumber(m.quantity) < 0).reduce((s, m) => s + Math.abs(toNumber(m.quantity)), 0);
-    const issued = l.consumedBy.reduce((s, c) => s + toNumber(c.issuedQty), 0);
+    const inLedger = new Set(l.movements
+      .filter((m) => m.type === StockMovementType.PRODUCTION_ISSUE && m.referenceType === MOVEMENT_REF.WORK_ORDER)
+      .map((m) => m.referenceId));
+    const issued = l.consumedBy.filter((c) => !inLedger.has(c.workOrderId)).reduce((s, c) => s + toNumber(c.issuedQty), 0);
     return {
       receipt: l.grnLines[0] ? { coaReference: l.grnLines[0].coaReference } : null,
       production: order

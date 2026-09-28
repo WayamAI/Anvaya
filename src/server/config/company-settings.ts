@@ -19,6 +19,8 @@ const DEFAULTS = {
   "sales.overDispatchTolerancePct": 0,
   /** Percentage a work order may be over-produced by. */
   "production.overProductionTolerancePct": 10,
+  /** Percentage a component may be issued beyond its requirement (extra scrap). */
+  "production.overIssueTolerancePct": 10,
 } as const;
 
 export type SettingKey = keyof typeof DEFAULTS;

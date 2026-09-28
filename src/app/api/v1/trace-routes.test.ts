@@ -221,7 +221,9 @@ describe("GET /api/v1/inventory/lots/:id", () => {
         },
       ],
     });
-    db.stockMovement.findMany.mockResolvedValue([{ referenceId: "sol-1", quantity: D("-240"), occurredAt: day("2026-03-24") }]);
+    // Dispatches only; this seeded order has no ledger-recorded component issues.
+    db.stockMovement.findMany.mockImplementation(async ({ where }: { where: { type?: string } }) =>
+      where.type === "ISSUE" ? [{ referenceId: "sol-1", quantity: D("-240"), occurredAt: day("2026-03-24") }] : []);
     db.workOrderComponent.findMany.mockResolvedValue([]);
     db.salesOrderLine.findMany.mockResolvedValue([{
       id: "sol-1",

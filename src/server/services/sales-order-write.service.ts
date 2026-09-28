@@ -8,13 +8,11 @@ import { lockRow, runInTransaction, type Tx } from "@/server/db/transaction";
 import { AppError, type ErrorDetail } from "@/server/errors/app-error";
 import { MOVEMENT_REF } from "@/server/inventory/lots";
 import { lineTotal, orderTotal } from "@/server/purchasing/po-rules";
-import {
-  allocateFefo, assertSoTransition, lotShippable, planDispatch, statusAfterDispatch,
-  type CandidateLot, type DispatchLineInput,
-} from "@/server/sales/so-rules";
+import { assertSoTransition, planDispatch, statusAfterDispatch, type DispatchLineInput } from "@/server/sales/so-rules";
 import type {
   CancelSalesOrderInput, CreateSalesOrderInput, DeliverInput, DispatchInput, UpdateSalesOrderInput,
 } from "@/server/validation/sales";
+import { resolveLotDraws } from "./lot-allocation.service";
 import { lockBalances, postMovement } from "./stock-ledger.service";
 import { auditMeta, type WriteContext } from "./write-context";
 
@@ -306,45 +304,13 @@ export async function dispatchSalesOrder(tx: Tx, id: string, input: DispatchInpu
 
   for (const [i, p] of planned.entries()) {
     const line = lineById.get(p.line.id)!;
-    let draws: { lotId: string | null; lotNumber: string | null; quantity: Prisma.Decimal }[];
-
-    if (line.material.isBatchTracked) {
-      const candidates: CandidateLot[] = (await tx.inventoryLot.findMany({
-        where: {
-          materialId: line.materialId, locationId: line.locationId,
-          ...(p.input.lots?.length ? { id: { in: p.input.lots.map((x) => x.lotId) } } : { remainingQty: { gt: 0 }, qcStatus: "APPROVED" }),
-        },
-        select: { id: true, lotNumber: true, remainingQty: true, qcStatus: true, expiryDate: true, receiptDate: true },
-      })).map((l) => ({ ...l, expiryDate: l.expiryDate ? isoDate(l.expiryDate) : null, receiptDate: isoDate(l.receiptDate) }));
-
-      if (p.input.lots?.length) {
-        const byId = new Map(candidates.map((c) => [c.id, c]));
-        draws = [];
-        for (const [j, x] of p.input.lots.entries()) {
-          const lot = byId.get(x.lotId);
-          const path = `lines.${i}.lots.${j}`;
-          if (!lot) { problems.push({ path: `${path}.lotId`, message: `is not a ${line.material.code} lot at ${line.location.code}` }); continue; }
-          const why = lotShippable(lot, dispatchDate);
-          if (why) { problems.push({ path: `${path}.lotId`, message: why }); continue; }
-          if (new Prisma.Decimal(x.quantity).gt(lot.remainingQty)) {
-            problems.push({ path: `${path}.quantity`, message: `lot ${lot.lotNumber} has ${lot.remainingQty} remaining` });
-            continue;
-          }
-          draws.push({ lotId: lot.id, lotNumber: lot.lotNumber, quantity: new Prisma.Decimal(x.quantity) });
-        }
-        if (problems.length) continue;
-      } else {
-        try {
-          draws = allocateFefo(candidates, p.quantity, dispatchDate, line.material.code);
-        } catch (e) {
-          if (AppError.is(e)) { problems.push({ path: `lines.${i}.quantity`, message: e.message }); continue; }
-          throw e;
-        }
-      }
-    } else {
-      if (p.input.lots?.length) { problems.push({ path: `lines.${i}.lots`, message: `${line.material.code} is not batch tracked` }); continue; }
-      draws = [{ lotId: null, lotNumber: null, quantity: p.quantity }];
-    }
+    const draws = await resolveLotDraws(tx, {
+      materialId: line.materialId, locationId: line.locationId,
+      materialCode: line.material.code, locationCode: line.location.code,
+      isBatchTracked: line.material.isBatchTracked, quantity: p.quantity, onDate: dispatchDate,
+      lots: p.input.lots, path: `lines.${i}`,
+    }, problems);
+    if (!draws) continue;
 
     for (const d of draws) {
       await postMovement(tx, {

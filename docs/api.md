@@ -119,6 +119,15 @@ generated when absent. It is always echoed in the response header.
 | `POST` | `/api/v1/sales-orders/:id/cancel` | `sales-order:update` | `{ reason }`. Cancels the order, or the remainder after a partial dispatch |
 | `POST` | `/api/v1/sales-orders/:id/dispatches` | `sales-order:dispatch` | Ship stock; batch-tracked lines from named lots or first-expiry-first-out. Honours `Idempotency-Key` |
 | `POST` | `/api/v1/sales-orders/:id/deliver` | `sales-order:dispatch` | DISPATCHED → DELIVERED |
+| `POST` | `/api/v1/work-orders` | `work-order:create` | Plan an order at a manufacturing location; components snapshotted from the active (or named) BOM version |
+| `PATCH` | `/api/v1/work-orders/:id` | `work-order:update` | Re-plan a PLANNED/FIRMED order; new quantity or start re-takes the snapshot |
+| `POST` | `/api/v1/work-orders/:id/firm` | `work-order:update` | PLANNED → FIRMED |
+| `POST` | `/api/v1/work-orders/:id/release` | `work-order:update` | PLANNED/FIRMED → RELEASED |
+| `POST` | `/api/v1/work-orders/:id/issues` | `work-order:update` | Issue components (named lots or first-expiry-first-out). Honours `Idempotency-Key` |
+| `POST` | `/api/v1/work-orders/:id/output` | `work-order:update` | Report good output (new lot, at actual cost) and scrap; `complete: true` finishes. Honours `Idempotency-Key` |
+| `POST` | `/api/v1/work-orders/:id/complete` | `work-order:update` | IN_PROGRESS → COMPLETED without more output |
+| `POST` | `/api/v1/work-orders/:id/close` | `work-order:update` | COMPLETED → CLOSED |
+| `POST` | `/api/v1/work-orders/:id/cancel` | `work-order:update` | `{ reason }`; only while nothing is issued or produced |
 
 All master-data and inventory reads are scoped to the caller's company. A
 record in another company reads as 404, the same as a missing one.
@@ -369,6 +378,33 @@ CONFIRMED ─dispatch (part)─▶ PROCESSING ─dispatch (rest)─▶ DISPATCHE
   the order line, which is what forward traceability reads.
 - Shipping every line in full makes the order DISPATCHED and the delivery
   IN_TRANSIT; `dispatchDate` records the latest dispatch.
+
+### Work order lifecycle, issue and output
+
+```
+PLANNED ─firm─▶ FIRMED ─release─▶ RELEASED ─issue/output─▶ IN_PROGRESS ─complete─▶ COMPLETED ─close─▶ CLOSED
+   └──────────── cancel (nothing issued or produced) ──────────▶ CANCELLED
+```
+
+- Components are snapshotted from the BOM version the order pins:
+  qty ÷ base × order qty × (1 + scrap), rounded up at 6 places; optional
+  lines are left out; a material on several lines is summed. A BOM line
+  quoted in a unit other than the material's stocking unit is refused (422) —
+  the schema holds no unit conversions to apply.
+- Issues draw components through the stock ledger as PRODUCTION_ISSUE
+  movements referencing the work order, from named lots or first-expiry-
+  first-out. A component may be issued up to its requirement plus
+  `production.overIssueTolerancePct` (default 10).
+- Output is a PRODUCTION_RECEIPT into a new lot (FGB-…), held PENDING until
+  quality releases it, capped at plan plus
+  `production.overProductionTolerancePct` (default 10). It is valued at the
+  actual cost of what was issued: partial output takes its share of the
+  not-yet-capitalised value, the completing output takes the remainder. With
+  nothing issued, the product's standard cost is used.
+- Traceability reads the ledger: a component drawn from several lots lists
+  each lot on the finished lot's backward trace, and each of those lots lists
+  the order on its forward trace. Backward completeness requires a CoA
+  behind every lot drawn.
 
 ## Authentication
 

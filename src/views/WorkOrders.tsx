@@ -8,6 +8,7 @@ import { btnSecondary } from "@/components/app/controls";
 import { PageIcon } from "@/components/app/page-icon";
 import { apiGet } from "@/lib/api";
 import { formatQty } from "@/lib/format";
+import { NewWorkOrderButton, WorkOrderActions } from "@/components/production/wo-actions";
 import type { WorkOrderDetail, WorkOrderList, WorkOrderRow, WorkOrderStatus } from "@/server/production/work-orders";
 
 type TabKey = "all" | "overdue" | WorkOrderStatus;
@@ -85,6 +86,7 @@ function WorkOrderPanel({ id }: { id: string }) {
       <h3 className="text-body-md font-semibold flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-mbom" /> Work order detail — {wo.orderNumber}
       </h3>
+      <WorkOrderActions wo={wo} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-body-sm">
         <div><span className="text-muted-foreground block">Product</span><span className="font-medium">{wo.product.name}</span> <span className="identifier text-muted-foreground">{wo.product.code}</span></div>
         <div><span className="text-muted-foreground block">Location</span><span className="font-medium">{wo.location.name}</span></div>
@@ -207,10 +209,13 @@ export default function WorkOrders() {
 
   return (
     <div className="px-6 py-5 space-y-6">
-      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
           <PageIcon />
           <span className="min-w-0">Work orders</span>
         </h1>
+        <NewWorkOrderButton onCreated={setDetailWO} />
+      </div>
 
       <div className="flex gap-1 border-b border-border overflow-x-auto">
         {tabsConfig.map((t) => (
