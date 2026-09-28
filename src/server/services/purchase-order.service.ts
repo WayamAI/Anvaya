@@ -73,7 +73,7 @@ export async function getPurchaseOrder(companyId: string, id: string, asOf = new
       createdBy: { select: { name: true, email: true } },
       approvedBy: { select: { name: true, email: true } },
       lines: {
-        include: { material: { select: { id: true, code: true, name: true, unitOfMeasure: { select: { code: true } } } } },
+        include: { material: { select: { id: true, code: true, name: true, isBatchTracked: true, unitOfMeasure: { select: { code: true } } } } },
         orderBy: { lineNumber: "asc" },
       },
       goodsReceipts: {
@@ -108,8 +108,9 @@ export async function getPurchaseOrder(companyId: string, id: string, asOf = new
         expectedDeliveryDate: isoDate(l.expectedDeliveryDate)!,
       };
       return {
+        id: l.id,
         lineNumber: l.lineNumber,
-        material: { id: l.material.id, code: l.material.code, name: l.material.name },
+        material: { id: l.material.id, code: l.material.code, name: l.material.name, isBatchTracked: l.material.isBatchTracked },
         uom: l.material.unitOfMeasure.code,
         ...facts,
         outstandingQty: outstandingQty(facts.orderedQty, facts.receivedQty),

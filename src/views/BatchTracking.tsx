@@ -12,6 +12,7 @@ import type {
 } from "@/server/inventory/lots";
 import type { GoodsReceiptDetail, VendorDetail } from "@/server/services/trace-lookup.service";
 import type { SalesOrderDetail } from "@/server/sales/sales-orders";
+import { LotQcActions } from "@/components/inventory/lot-qc-actions";
 
 // ─── Helpers ───
 const fmtDate = (d: string | null) =>
@@ -340,6 +341,7 @@ function QCDrawerContent({ lotId }: { lotId: string }) {
         <div><span className="text-muted-foreground block">Overall</span><StatusBadge {...qcBadge(lot.qcStatus)} /></div>
         <div><span className="text-muted-foreground block">Released</span><span>{lot.releaseDate ? `${fmtDate(lot.releaseDate)}${lot.releasedBy ? ` by ${lot.releasedBy}` : ""}` : "—"}</span></div>
       </div>
+      <LotQcActions lot={{ id: lot.id, lotNumber: lot.lotNumber, qcStatus: lot.qcStatus, coaReference: lot.receipt?.coaReference ?? null }} />
       <h4 className="text-body-sm font-semibold mt-4 mb-2">Test parameters</h4>
       <div className="rounded-lg border border-border">
         <EmptyState title="No test results recorded" description="QC test parameters aren't stored in Anvaya yet. The overall status above is the lot's recorded QC status." className="py-8" />

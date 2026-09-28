@@ -104,6 +104,15 @@ generated when absent. It is always echoed in the response header.
 | `GET` | `/api/v1/vendors/:id` | `vendor:read` | Approved-supplier status, supplied materials, latest scorecard |
 | `GET` | `/api/v1/sales-orders` | `sales-order:read` | All sales orders, newest first, with counts per status, a derived overdue count and headline figures, as of the planning date. Read-only |
 | `GET` | `/api/v1/sales-orders/:id` | `sales-order:read` | Header, customer, lines (ordered, shipped, open), the lots each line shipped from, stock and open work orders for each line's material |
+| `GET` | `/api/v1/vendors` | `vendor:read` | Vendors by code. `?q=` `?active=` `?materialId=` (suppliers of that material with price and lead time, preferred first) |
+| `POST` | `/api/v1/purchase-orders` | `purchase-order:create` | Raise a DRAFT PO; number assigned by the server; line price defaults to the vendor's price on file |
+| `PATCH` | `/api/v1/purchase-orders/:id` | `purchase-order:update` | Edit a DRAFT; `lines`, when sent, replaces every line |
+| `DELETE` | `/api/v1/purchase-orders/:id` | `purchase-order:delete` | Delete a DRAFT (204) |
+| `POST` | `/api/v1/purchase-orders/:id/approve` | `purchase-order:approve` | DRAFT → APPROVED; vendor must be active and on the ASL |
+| `POST` | `/api/v1/purchase-orders/:id/send` | `purchase-order:update` | APPROVED → ORDERED |
+| `POST` | `/api/v1/purchase-orders/:id/cancel` | `purchase-order:update` | `{ reason }`. Cancels the order, or the remainder of a partly received one |
+| `POST` | `/api/v1/goods-receipts` | `goods-receipt:create` | Receive against a PO: GRN, lots, RECEIPT movements, PO progress. Honours `Idempotency-Key` |
+| `POST` | `/api/v1/inventory/lots/:id/qc` | `inventory:update` | `{ status: APPROVED\|QUARANTINE\|REJECTED, coaReference?, reason? }` — release, hold or reject a lot |
 
 All master-data and inventory reads are scoped to the caller's company. A
 record in another company reads as 404, the same as a missing one.
@@ -251,6 +260,87 @@ has a lot recorded for every component, each with a receipt and CoA.
 **Forward complete:** everything consumed from the lot is explained by ledger
 outflows or quantities issued to work orders. Lots with nothing consumed are
 left out, and both figures are `null` when there is nothing to measure.
+
+## Writes
+
+Every write is one database transaction: it commits whole or not at all,
+and its audit entries commit with it. Rows that concurrent requests could
+both change (the PO being received, the stock balance being posted to) are
+locked `FOR UPDATE` first, so concurrent requests serialise instead of
+reading stale values. A deadlock is retried up to three times.
+
+State-changing requests whose `Origin` header names another site are refused
+with 403, in addition to the session cookie being `SameSite=Lax`.
+
+### Idempotency
+
+Send `Idempotency-Key: <uuid>` on POSTs that move stock (goods receipts
+today). The first request runs; its response is stored in the same
+transaction, and every later request with the key gets that response back
+with `Idempotent-Replayed: true` — including a duplicate that arrives while
+the first is still running. The same key with a different body is refused
+with 422. Generate one key per user intent (when the form opens), not per
+click.
+
+### Document numbers
+
+`PO-2026-0258`, `GRN-2026-0389`, `RMB-2026-0483`: assigned by the server
+from a per-company counter advanced inside the transaction, so numbers are
+unique under concurrency and a rolled-back request does not leave a gap. A
+series continues from the highest number already in the table.
+
+### Stock ledger
+
+Every stock change is a signed `StockMovement`; `InventoryBalance` is its
+running total per material and location, updated in the same transaction
+(`src/server/services/stock-ledger.service.ts`).
+
+| Rule | |
+| --- | --- |
+| No negative stock | An outflow larger than the bucket it draws from is refused (422) |
+| Held stock | `quarantineQty` is the part of on-hand held by quality (lots PENDING or QUARANTINE); issues cannot use it |
+| Valuation | Moving average per balance: receipts add at their cost, issues remove at the current average; an emptied balance is valued at exactly 0 |
+| Standard cost | `Material.standardCost` follows the company-wide moving average after every priced receipt |
+| Who | Each movement records `postedById` |
+
+### Purchase order lifecycle
+
+```
+DRAFT ─approve─▶ APPROVED ─send─▶ ORDERED
+  │                 └──── receive ───┴─▶ PARTIALLY_RECEIVED ─▶ FULLY_RECEIVED
+  └──────────── cancel (any open state) ──────────▶ CANCELLED
+```
+
+Only a DRAFT can be edited or deleted. Approval requires the vendor to be
+active and on the Approved Supplier List; company setting
+`purchasing.allowSelfApproval = false` stops the PO's creator approving it.
+A wrong transition is a 409 naming the current status.
+
+### Goods receipt
+
+- `receivedQty` is accepted into stock; `rejectedQty` is recorded on the
+  receipt, never stocked, and not counted against the PO.
+- Accepted quantity may exceed the outstanding quantity only by
+  `purchasing.overReceiptTolerancePct` (default 0). Concurrent receipts
+  against one PO serialise, so together they cannot over-receive either.
+- A batch-tracked line creates a lot. Its expiry is the one given, else the
+  receipt date plus the material's shelf life. Inspection defaults to
+  PENDING, so the stock is held until released. A material without lots can
+  only be received APPROVED — there would be nothing to release later.
+- Receipts cannot be future-dated or dated before the order. Today is the
+  company's own date in its time zone.
+- The PO becomes FULLY_RECEIVED (with `actualDeliveryDate`) when every line
+  is received in full, else PARTIALLY_RECEIVED.
+
+### Lot quality decisions
+
+| To | Effect |
+| --- | --- |
+| APPROVED | Held stock becomes unrestricted. A purchased lot needs a CoA reference on record or in the request |
+| QUARANTINE | Unrestricted stock becomes held. `reason` required |
+| REJECTED | What remains leaves stock: RETURN (purchased) or SCRAP (produced). Final. `reason` required |
+
+The lot's receipt lines take the same inspection status.
 
 ## Authentication
 

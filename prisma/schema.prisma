@@ -207,6 +207,11 @@ enum AuditAction {
   RECEIVE
   ADJUST
   MRP_RUN
+  CANCEL
+  RELEASE
+  DISPATCH
+  ISSUE
+  COMPLETE
 }
 
 enum IntegrationStatus {
@@ -263,6 +268,8 @@ model Company {
   mrpRuns            MrpRun[]
   auditLogs          AuditLog[]
   integrations       Integration[]
+  documentSequences  DocumentSequence[]
+  idempotencyKeys    IdempotencyKey[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -315,20 +322,20 @@ model Location {
   isManufacturing Boolean @default(false)
   isActive        Boolean @default(true)
 
-  policies          MaterialLocationPolicy[]
-  balances          InventoryBalance[]
-  lots              InventoryLot[]
-  movements         StockMovement[]
-  adjustments       InventoryAdjustment[]
-  salesOrderLines   SalesOrderLine[]
-  purchaseOrders    PurchaseOrder[]
-  goodsReceipts     GoodsReceipt[]
-  workOrders        WorkOrder[]
-  constraints       ProductionConstraint[]
-  forecasts         DemandForecast[]
-  mrpRequirements   MrpRequirement[]
-  plannedOrders     PlannedOrder[]
-  mrpExceptions     MrpException[]
+  policies        MaterialLocationPolicy[]
+  balances        InventoryBalance[]
+  lots            InventoryLot[]
+  movements       StockMovement[]
+  adjustments     InventoryAdjustment[]
+  salesOrderLines SalesOrderLine[]
+  purchaseOrders  PurchaseOrder[]
+  goodsReceipts   GoodsReceipt[]
+  workOrders      WorkOrder[]
+  constraints     ProductionConstraint[]
+  forecasts       DemandForecast[]
+  mrpRequirements MrpRequirement[]
+  plannedOrders   PlannedOrder[]
+  mrpExceptions   MrpException[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -348,8 +355,8 @@ model User {
   companyId String
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  email String
-  name  String
+  email        String
+  name         String
   /// argon2id hash. Never a plaintext or reversible value.
   passwordHash String
 
@@ -364,10 +371,12 @@ model User {
   sessions  Session[]
   auditLogs AuditLog[]
 
-  mrpRunsTriggered    MrpRun[]              @relation("MrpRunTriggeredBy")
-  adjustmentsMade     InventoryAdjustment[] @relation("AdjustmentCreatedBy")
-  purchaseOrdersMade  PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
-  purchaseOrdersOkd   PurchaseOrder[]       @relation("PurchaseOrderApprovedBy")
+  mrpRunsTriggered   MrpRun[]              @relation("MrpRunTriggeredBy")
+  adjustmentsMade    InventoryAdjustment[] @relation("AdjustmentCreatedBy")
+  purchaseOrdersMade PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
+  purchaseOrdersOkd  PurchaseOrder[]       @relation("PurchaseOrderApprovedBy")
+  movementsPosted    StockMovement[]       @relation("StockMovementPostedBy")
+  receiptsMade       GoodsReceipt[]        @relation("GoodsReceiptReceivedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -514,8 +523,8 @@ model UnitOfMeasure {
   /// MASS, VOLUME, COUNT — conversions are only legal within a dimension.
   dimension String
 
-  materials       Material[]
-  bomComponents   BomComponent[]
+  materials     Material[]
+  bomComponents BomComponent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -605,13 +614,13 @@ model MaterialLocationPolicy {
   /// Stock level at which replenishment should already be under way.
   reorderPoint Decimal @default(0) @db.Decimal(18, 6)
 
-  lotSizingRule  LotSizingRule @default(LOT_FOR_LOT)
-  minOrderQty    Decimal       @default(0) @db.Decimal(18, 6)
-  maxOrderQty    Decimal?      @db.Decimal(18, 6)
+  lotSizingRule LotSizingRule @default(LOT_FOR_LOT)
+  minOrderQty   Decimal       @default(0) @db.Decimal(18, 6)
+  maxOrderQty   Decimal?      @db.Decimal(18, 6)
   /// Orders are rounded up to a whole multiple of this, when non-zero.
-  orderMultiple  Decimal       @default(0) @db.Decimal(18, 6)
+  orderMultiple Decimal       @default(0) @db.Decimal(18, 6)
   /// Days combined into a single order under PERIOD_ORDER_QTY.
-  periodDays     Int?
+  periodDays    Int?
 
   /// Used when procurementType is MAKE. Purchase lead time comes from the
   /// vendor record instead, so the two can never be confused.
@@ -650,7 +659,7 @@ model Vendor {
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   /// Business key: "SUP-001".
-  code String
+  code       String
   /// Secondary code carried from the vendor master: "VEN-GS-001".
   vendorCode String?
   name       String
@@ -726,10 +735,10 @@ model VendorScorecard {
   periodStart DateTime @db.Date
   periodEnd   DateTime @db.Date
 
-  defectRatePercent      Decimal? @db.Decimal(9, 4)
-  onTimeDeliveryPercent  Decimal? @db.Decimal(9, 4)
+  defectRatePercent     Decimal? @db.Decimal(9, 4)
+  onTimeDeliveryPercent Decimal? @db.Decimal(9, 4)
   /// Cost of poor quality, in company currency.
-  copqAmount             Decimal? @db.Decimal(18, 4)
+  copqAmount            Decimal? @db.Decimal(18, 4)
 
   lastAuditDate DateTime? @db.Date
   /// PASS / CONDITIONAL / FAIL.
@@ -825,8 +834,8 @@ model BomVersion {
   effectiveFrom DateTime  @db.Date
   effectiveTo   DateTime? @db.Date
 
-  components     BomComponent[]
-  workOrders     WorkOrder[]
+  components BomComponent[]
+  workOrders WorkOrder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -888,9 +897,9 @@ model InventoryBalance {
   location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   /// Physically present, whatever its commitment.
-  onHandQty    Decimal @default(0) @db.Decimal(18, 6)
+  onHandQty     Decimal @default(0) @db.Decimal(18, 6)
   /// Committed to sales orders or work orders but not yet issued.
-  reservedQty  Decimal @default(0) @db.Decimal(18, 6)
+  reservedQty   Decimal @default(0) @db.Decimal(18, 6)
   /// Held by quality and not usable for planning.
   quarantineQty Decimal @default(0) @db.Decimal(18, 6)
 
@@ -941,9 +950,9 @@ model InventoryLot {
   storageLocation String?
   bin             String?
 
-  movements      StockMovement[]
-  grnLines       GoodsReceiptLine[]
-  consumedBy     WorkOrderComponent[]
+  movements  StockMovement[]
+  grnLines   GoodsReceiptLine[]
+  consumedBy WorkOrderComponent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -973,8 +982,8 @@ model StockMovement {
 
   /// Signed: positive increases stock, negative decreases it. Storing the
   /// sign rather than inferring it from `type` means the ledger sums directly.
-  quantity  Decimal @db.Decimal(18, 6)
-  unitCost  Decimal? @db.Decimal(18, 4)
+  quantity Decimal  @db.Decimal(18, 6)
+  unitCost Decimal? @db.Decimal(18, 4)
 
   /// Running balance immediately after this movement, for audit and for
   /// reconstructing history without replaying the whole ledger.
@@ -986,6 +995,10 @@ model StockMovement {
 
   occurredAt DateTime @default(now())
   notes      String?
+
+  /// Who posted it. Null only for seeded opening balances.
+  postedById String?
+  postedBy   User?   @relation("StockMovementPostedBy", fields: [postedById], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
 
@@ -1082,12 +1095,12 @@ model SalesOrderLine {
   locationId String
   location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
-  quantity  Decimal @db.Decimal(18, 6)
+  quantity   Decimal @db.Decimal(18, 6)
   /// Already dispatched. Open demand is quantity - shippedQty.
   shippedQty Decimal @default(0) @db.Decimal(18, 6)
 
-  unitPrice  Decimal @default(0) @db.Decimal(18, 4)
-  lineTotal  Decimal @default(0) @db.Decimal(18, 4)
+  unitPrice Decimal @default(0) @db.Decimal(18, 4)
+  lineTotal Decimal @default(0) @db.Decimal(18, 4)
 
   requiredDate DateTime @db.Date
 
@@ -1142,7 +1155,7 @@ model ForecastPeriod {
   periodStart DateTime @db.Date
   periodEnd   DateTime @db.Date
 
-  forecastQty Decimal @db.Decimal(18, 6)
+  forecastQty Decimal  @db.Decimal(18, 6)
   /// Filled in as the period closes, for the Forecast vs Actuals screen.
   actualQty   Decimal? @db.Decimal(18, 6)
 
@@ -1265,6 +1278,10 @@ model GoodsReceipt {
   receiptDate DateTime @db.Date
   notes       String?
 
+  /// Null only for seeded history.
+  receivedById String?
+  receivedBy   User?   @relation("GoodsReceiptReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict)
+
   lines GoodsReceiptLine[]
 
   createdAt DateTime @default(now())
@@ -1342,9 +1359,9 @@ model WorkOrder {
   locationId String
   location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
-  plannedQty   Decimal @db.Decimal(18, 6)
-  producedQty  Decimal @default(0) @db.Decimal(18, 6)
-  scrappedQty  Decimal @default(0) @db.Decimal(18, 6)
+  plannedQty  Decimal @db.Decimal(18, 6)
+  producedQty Decimal @default(0) @db.Decimal(18, 6)
+  scrappedQty Decimal @default(0) @db.Decimal(18, 6)
 
   plannedStartDate DateTime  @db.Date
   plannedEndDate   DateTime  @db.Date
@@ -1377,9 +1394,9 @@ model WorkOrderOperation {
   workOrderId String
   workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
 
-  sequence    Int
-  name        String
-  workCentre  String?
+  sequence   Int
+  name       String
+  workCentre String?
 
   setupMinutes Decimal @default(0) @db.Decimal(12, 2)
   runMinutes   Decimal @default(0) @db.Decimal(12, 2)
@@ -1501,16 +1518,16 @@ model MrpRun {
   errorMessage String?
 
   /// Headline counts, denormalised so list screens need no aggregation.
-  materialsPlanned Int @default(0)
+  materialsPlanned  Int @default(0)
   plannedOrderCount Int @default(0)
   exceptionCount    Int @default(0)
 
-  parameters   MrpRunParameter[]
-  requirements MrpRequirement[]
+  parameters    MrpRunParameter[]
+  requirements  MrpRequirement[]
   plannedOrders PlannedOrder[]
-  exceptions   MrpException[]
-  peggings     MrpPegging[]
-  explanations MrpExplanation[]
+  exceptions    MrpException[]
+  peggings      MrpPegging[]
+  explanations  MrpExplanation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1596,7 +1613,7 @@ model PlannedOrder {
   /// When the quantity is needed.
   requiredDate DateTime @db.Date
 
-  leadTimeDays Int
+  leadTimeDays   Int
   /// "VENDOR:SUP-001" or "PRODUCTION" — names where the lead time came from.
   leadTimeSource String?
 
@@ -1610,8 +1627,8 @@ model PlannedOrder {
   convertedToWorkOrderId     String?
   convertedAt                DateTime?
 
-  peggings     MrpPegging[]
-  explanation  MrpExplanation?
+  peggings    MrpPegging[]
+  explanation MrpExplanation?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1697,7 +1714,7 @@ model MrpException {
   type     MrpExceptionType
   severity ExceptionSeverity @default(MEDIUM)
 
-  message String
+  message         String
   /// Suggested resolution, e.g. "Place emergency PO".
   suggestedAction String?
 
@@ -1743,8 +1760,8 @@ model AuditLog {
   action AuditAction
 
   /// Table the change concerns, e.g. "purchase_orders".
-  entityType String
-  entityId   String
+  entityType  String
+  entityId    String
   /// Business key, kept so the log stays readable after the row is deleted.
   entityLabel String?
 
@@ -1798,4 +1815,52 @@ model Integration {
   @@unique([companyId, code])
   @@index([companyId])
   @@map("integrations")
+}
+
+/// Next number for a business document series, per company: "PO-2026",
+/// "GRN-2026", "RMB-2026". Incremented with a single UPDATE ... RETURNING, so
+/// two concurrent requests can never be handed the same number, and a rolled
+/// back transaction gives its number back.
+model DocumentSequence {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// Series prefix including the year, e.g. "PO-2026".
+  series    String
+  /// The last number issued in the series.
+  lastValue Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, series])
+  @@map("document_sequences")
+}
+
+/// A client-supplied Idempotency-Key and the response it produced, so a
+/// retried or double-submitted POST (a goods receipt, a dispatch) is applied
+/// once and answered the same way every time.
+model IdempotencyKey {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  key    String
+  /// The operation the key was used for, e.g. "goods-receipt:create". The
+  /// same key sent to a different operation is rejected, not replayed.
+  scope  String
+  userId String
+
+  /// SHA-256 of the request body, so a reused key with a different payload
+  /// is refused instead of silently returning the first result.
+  requestHash    String
+  responseStatus Int
+  responseBody   Json
+
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, key])
+  @@index([createdAt])
+  @@map("idempotency_keys")
 }

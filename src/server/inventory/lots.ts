@@ -12,6 +12,10 @@
 export const MOVEMENT_REF = {
   WORK_ORDER: "WORK_ORDER",
   SALES_ORDER_LINE: "SALES_ORDER_LINE",
+  GOODS_RECEIPT_LINE: "GOODS_RECEIPT_LINE",
+  /** A lot's stock leaving on a quality rejection (RETURN or SCRAP). */
+  LOT_QC: "LOT_QC",
+  INVENTORY_ADJUSTMENT: "INVENTORY_ADJUSTMENT",
 } as const;
 
 /** Lots expiring within this many days are flagged. */

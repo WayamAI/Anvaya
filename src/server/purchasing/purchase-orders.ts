@@ -116,8 +116,10 @@ export interface PurchaseOrderDetail extends PurchaseOrderRow {
   approvedAt: string | null;
   notes: string | null;
   lines: {
+    /** Needed to receive against the line. */
+    id: string;
     lineNumber: number;
-    material: { id: string; code: string; name: string };
+    material: { id: string; code: string; name: string; isBatchTracked: boolean };
     uom: string;
     orderedQty: number;
     receivedQty: number;

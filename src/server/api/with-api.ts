@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { AppError, ErrorCode, type ErrorDetail } from "@/server/errors/app-error";
 import { logger } from "@/server/logger";
 import { fail } from "./respond";
-import { isProduction } from "@/server/config/env";
+import { env, isProduction } from "@/server/config/env";
 import { resolveSession, touchSession, SESSION_COOKIE, type Actor } from "@/server/auth/session";
 import { requireAuthenticated, requirePermission } from "@/server/auth/rbac";
 
@@ -70,6 +70,8 @@ export function withApi<P = Record<string, string>>(
         userAgent: req.headers.get("user-agent"),
       };
 
+      assertSameOrigin(req);
+
       const actor = await resolveSession(req.cookies.get(SESSION_COOKIE)?.value);
 
       if (auth || permission) requireAuthenticated(actor);
@@ -94,6 +96,35 @@ export function withApi<P = Record<string, string>>(
       return handleError(error, requestId, log, started);
     }
   };
+}
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Cross-site request forgery guard for state-changing requests.
+ *
+ * The session cookie is SameSite=Lax, which already keeps it off cross-site
+ * POSTs in current browsers. This is the second layer: a browser always sends
+ * `Origin` on a cross-origin POST/PATCH/DELETE, and one naming another site is
+ * refused before the session is even looked at. Requests without `Origin`
+ * (curl, server-to-server) carry no ambient browser cookie to abuse and pass.
+ */
+export function assertSameOrigin(req: NextRequest): void {
+  if (SAFE_METHODS.has(req.method)) return;
+  const origin = req.headers.get("origin");
+  if (!origin) return;
+
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    throw AppError.forbidden("Cross-site request refused");
+  }
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? new URL(req.url).host;
+  const appHost = new URL(env.APP_URL).host;
+  if (originHost !== host && originHost !== appHost) {
+    throw AppError.forbidden("Cross-site request refused");
+  }
 }
 
 function handleError(

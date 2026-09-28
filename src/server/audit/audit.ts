@@ -9,10 +9,12 @@ import { logger } from "@/server/logger";
  * are never updated or deleted, because a trail that can be edited is not a
  * trail.
  *
- * Writing an audit entry must never break the operation it describes. If the
- * insert fails the error is logged and swallowed — losing a log line is bad,
- * but failing a completed stock movement because its audit row would not
- * write is worse, and would leave the ledger and the trail disagreeing anyway.
+ * Outside a transaction (sign-in events, say) an audit entry must never break
+ * the operation it describes: if the insert fails the error is logged and
+ * swallowed. Inside a business transaction (`tx` passed) the entry is part of
+ * the change and a failure propagates: Postgres aborts the transaction on any
+ * failed statement anyway, and a stock movement that commits without its
+ * trail entry is exactly what an audit trail exists to prevent.
  */
 
 export interface AuditInput {
@@ -69,6 +71,7 @@ export async function recordAudit(input: AuditInput): Promise<void> {
       },
     });
   } catch (error) {
+    if (input.tx) throw error;
     logger.error(
       { err: error, entityType: input.entityType, entityId: input.entityId, action: input.action },
       "failed to write audit entry",

@@ -9,6 +9,7 @@ import { btnSecondary } from "@/components/app/controls";
 import { apiGet } from "@/lib/api";
 import { formatQty, inrCompact } from "@/lib/format";
 import type { PoStatus, PurchaseOrderDetail, PurchaseOrderList, PurchaseOrderRow } from "@/server/purchasing/purchase-orders";
+import { NewPurchaseOrderButton, PurchaseOrderActions } from "@/components/purchasing/po-actions";
 
 type TabKey = "all" | "overdue" | PoStatus;
 
@@ -45,7 +46,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function PurchaseOrderPanel({ id }: { id: string }) {
+function PurchaseOrderPanel({ id, onDeleted }: { id: string; onDeleted: () => void }) {
   const q = useQuery({
     queryKey: ["purchase-order", id],
     queryFn: ({ signal }) => apiGet<PurchaseOrderDetail>(`/purchase-orders/${id}`, undefined, { signal }),
@@ -80,6 +81,8 @@ function PurchaseOrderPanel({ id }: { id: string }) {
         <StatusBadge {...statusMap[po.status]} />
         {po.overdue && <StatusBadge status="red" label="Overdue" />}
       </h3>
+
+      <PurchaseOrderActions po={po} onDeleted={onDeleted} />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-body-sm">
         <Fact label="Vendor">
@@ -152,7 +155,7 @@ function PurchaseOrderPanel({ id }: { id: string }) {
         </div>
       </div>
 
-      {po.notes && <p className="text-body-sm text-muted-foreground">Notes: {po.notes}</p>}
+      {po.notes && <p className="text-body-sm text-muted-foreground whitespace-pre-line">Notes: {po.notes}</p>}
     </div>
   );
 }
@@ -201,7 +204,8 @@ export default function PurchaseOrders() {
   return (
     <div className="px-6 py-5">
       <PageHeader title="Purchase orders"
-        description={q.data ? `${filteredPOs.length.toLocaleString()} order${filteredPOs.length === 1 ? "" : "s"}` : q.isPending ? "Loading…" : undefined} />
+        description={q.data ? `${filteredPOs.length.toLocaleString()} order${filteredPOs.length === 1 ? "" : "s"}` : q.isPending ? "Loading…" : undefined}
+        actions={<NewPurchaseOrderButton onCreated={setSelected} />} />
 
       <div className="-mx-1 mb-1 flex gap-1 overflow-x-auto border-b border-border px-1">
         {tabs.map(t => (
@@ -241,7 +245,7 @@ export default function PurchaseOrders() {
         />
       )}
 
-      {selected && <PurchaseOrderPanel key={selected} id={selected} />}
+      {selected && <PurchaseOrderPanel key={selected} id={selected} onDeleted={() => setSelected(null)} />}
     </div>
   );
 }

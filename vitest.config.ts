@@ -12,6 +12,8 @@ export default defineConfig({
     // the normal suite — a dangling material code in a BOM should fail here,
     // not halfway through a database seed.
     include: ["src/**/*.{test,spec}.{ts,tsx}", "prisma/**/*.{test,spec}.{ts,tsx}"],
+    // Need a live database; run with `npm run test:integration`.
+    exclude: ["**/node_modules/**", "**/*.integration.test.ts"],
 
     /*
       The default 5s is too tight once the password tests are in the suite.
