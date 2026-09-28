@@ -17,7 +17,7 @@ import type { Tx } from "./transaction";
  * colliding with it.
  */
 
-export type DocumentKind = "PURCHASE_ORDER" | "GOODS_RECEIPT" | "PURCHASED_LOT" | "SALES_ORDER" | "WORK_ORDER" | "PRODUCED_LOT";
+export type DocumentKind = "PURCHASE_ORDER" | "GOODS_RECEIPT" | "PURCHASED_LOT" | "SALES_ORDER" | "WORK_ORDER" | "PRODUCED_LOT" | "MRP_RUN";
 
 /** Prefix and whether the series restarts each year. */
 const SERIES: Record<DocumentKind, { prefix: string; yearly: boolean; pad: number }> = {
@@ -27,6 +27,7 @@ const SERIES: Record<DocumentKind, { prefix: string; yearly: boolean; pad: numbe
   SALES_ORDER: { prefix: "SO", yearly: false, pad: 4 },
   WORK_ORDER: { prefix: "WO", yearly: true, pad: 4 },
   PRODUCED_LOT: { prefix: "FGB", yearly: true, pad: 4 },
+  MRP_RUN: { prefix: "MRP", yearly: true, pad: 4 },
 };
 
 export function seriesFor(kind: DocumentKind, year: number): string {
@@ -58,6 +59,9 @@ async function existingMax(tx: Tx, kind: DocumentKind, companyId: string, series
       break;
     case "WORK_ORDER":
       rows = await tx.$queryRaw`SELECT "orderNumber" AS n FROM "work_orders" WHERE "companyId" = ${companyId} AND "orderNumber" LIKE ${like}`;
+      break;
+    case "MRP_RUN":
+      rows = await tx.$queryRaw`SELECT "runNumber" AS n FROM "mrp_runs" WHERE "companyId" = ${companyId} AND "runNumber" LIKE ${like}`;
       break;
     case "GOODS_RECEIPT":
       rows = await tx.$queryRaw`SELECT "grnNumber" AS n FROM "goods_receipts" WHERE "companyId" = ${companyId} AND "grnNumber" LIKE ${like}`;

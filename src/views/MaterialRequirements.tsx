@@ -1,91 +1,179 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import StatusBadge from "@/components/StatusBadge";
 import { DataTable, type Column } from "@/components/app/data-table";
-
-import { selectSm } from "@/components/app/controls";
+import { EmptyState } from "@/components/app/empty-state";
+import { SkeletonBlock } from "@/components/app/skeleton-block";
+import { btnSecondary, selectSm } from "@/components/app/controls";
 import { PageIcon } from "@/components/app/page-icon";
-const materials = [
-  { code: "RM-1042", name: "Polypropylene Granules", category: "Polymer", opening: "4,200 kg", gross: "8,400 kg", scheduled: "3,000 kg", net: "1,200 kg", safety: "500 kg", reorder: "5,000 kg", coverage: 15, status: "amber" as const },
-  { code: "RM-2087", name: "Stearic Acid", category: "Chemical", opening: "180 kg", gross: "620 kg", scheduled: "0 kg", net: "440 kg", safety: "100 kg", reorder: "500 kg", coverage: 4, status: "red" as const },
-  { code: "RM-3011", name: "HDPE Resin", category: "Polymer", opening: "9,800 kg", gross: "7,200 kg", scheduled: "9,000 kg", net: "0 kg", safety: "800 kg", reorder: "0 kg", coverage: 38, status: "green" as const },
-  { code: "RM-4023", name: "Sodium Lauryl Sulphate", category: "Chemical", opening: "1,450 kg", gross: "2,100 kg", scheduled: "800 kg", net: "850 kg", safety: "200 kg", reorder: "1,000 kg", coverage: 12, status: "amber" as const },
-  { code: "RM-5018", name: "EDTA Disodium Salt", category: "Chemical", opening: "95 kg", gross: "420 kg", scheduled: "0 kg", net: "325 kg", safety: "50 kg", reorder: "400 kg", coverage: 5, status: "red" as const },
-  { code: "RM-6031", name: "Titanium Dioxide", category: "Pigment", opening: "640 kg", gross: "1,200 kg", scheduled: "500 kg", net: "60 kg", safety: "150 kg", reorder: "800 kg", coverage: 8, status: "amber" as const },
-  { code: "RM-7044", name: "Demineralised Water", category: "Utility", opening: "12,000 L", gross: "18,000 L", scheduled: "15,000 L", net: "0 L", safety: "2,000 L", reorder: "0 L", coverage: 45, status: "green" as const },
-  { code: "RM-8012", name: "Fragrance Blend FG-04", category: "Fragrance", opening: "22 L", gross: "85 L", scheduled: "0 L", net: "63 L", safety: "10 L", reorder: "100 L", coverage: 3, status: "red" as const },
-  { code: "RM-9055", name: "Caustic Soda Flakes", category: "Chemical", opening: "2,800 kg", gross: "3,200 kg", scheduled: "1,500 kg", net: "0 kg", safety: "300 kg", reorder: "0 kg", coverage: 22, status: "green" as const },
-  { code: "RM-1066", name: "Citric Acid Monohydrate", category: "Chemical", opening: "380 kg", gross: "600 kg", scheduled: "200 kg", net: "20 kg", safety: "80 kg", reorder: "400 kg", coverage: 11, status: "amber" as const },
-  { code: "RM-1177", name: "Isopropyl Alcohol", category: "Solvent", opening: "450 L", gross: "800 L", scheduled: "400 L", net: "0 L", safety: "100 L", reorder: "0 L", coverage: 16, status: "green" as const },
-  { code: "PM-1001", name: "HDPE Bottle 5L", category: "Packaging", opening: "8,200 pcs", gross: "12,000 pcs", scheduled: "10,000 pcs", net: "0 pcs", safety: "1,000 pcs", reorder: "0 pcs", coverage: 28, status: "green" as const },
-  { code: "PM-1002", name: "Shrink Labels (Type A)", category: "Packaging", opening: "4,500 pcs", gross: "8,000 pcs", scheduled: "0 pcs", net: "3,500 pcs", safety: "500 pcs", reorder: "10,000 pcs", coverage: 9, status: "amber" as const },
-  { code: "PM-2003", name: "Foil Seals 5L", category: "Packaging", opening: "3,400 pcs", gross: "6,000 pcs", scheduled: "5,000 pcs", net: "0 pcs", safety: "500 pcs", reorder: "0 pcs", coverage: 18, status: "green" as const },
-  { code: "PM-2008", name: "Shrink Labels (Type B)", category: "Packaging", opening: "1,200 pcs", gross: "3,500 pcs", scheduled: "0 pcs", net: "2,300 pcs", safety: "300 pcs", reorder: "5,000 pcs", coverage: 6, status: "red" as const },
-  { code: "RM-2101", name: "Coconut Diethanolamide", category: "Chemical", opening: "310 kg", gross: "450 kg", scheduled: "200 kg", net: "0 kg", safety: "60 kg", reorder: "0 kg", coverage: 19, status: "green" as const },
-  { code: "RM-2205", name: "Glycerine IP", category: "Chemical", opening: "520 L", gross: "680 L", scheduled: "300 L", net: "0 L", safety: "80 L", reorder: "0 L", coverage: 24, status: "green" as const },
-  { code: "PM-3004", name: "Corrugated Cartons (5L x6)", category: "Packaging", opening: "1,800 pcs", gross: "4,000 pcs", scheduled: "5,000 pcs", net: "0 pcs", safety: "200 pcs", reorder: "0 pcs", coverage: 32, status: "green" as const },
-  { code: "RM-3310", name: "Sodium Hypochlorite", category: "Chemical", opening: "680 L", gross: "1,100 L", scheduled: "0 L", net: "420 L", safety: "100 L", reorder: "1,000 L", coverage: 10, status: "amber" as const },
-  { code: "RM-4401", name: "Pine Oil", category: "Essential Oil", opening: "45 L", gross: "120 L", scheduled: "80 L", net: "0 L", safety: "10 L", reorder: "0 L", coverage: 14, status: "amber" as const },
-];
+import { ApiError, apiGet } from "@/lib/api";
+import { formatQty } from "@/lib/format";
 
-type MrRow = (typeof materials)[number];
+/**
+ * Material requirements from the latest MRP run: one row per material and
+ * location, and the time-phased record (gross, receipts, projected on hand,
+ * net, planned receipts and releases) for the one selected.
+ */
 
-const mrStatusLabel = (s: MrRow["status"]) =>
-  s === "green" ? "Adequate" : s === "amber" ? "Low" : "Critical";
+interface Row {
+  material: { id: string; code: string; name: string; kind: string };
+  category: string | null; uom: string; location: { id: string; code: string; name: string };
+  lowLevelCode: number; procurementType: "BUY" | "MAKE" | null;
+  openingStock: number; grossRequirement: number; scheduledReceipts: number; safetyStock: number;
+  netRequirement: number; plannedReceipts: number; coverDays: number | null; horizonDays: number;
+  status: "critical" | "short" | "covered" | "adequate";
+}
+interface Bucket {
+  bucketStart: string; bucketEnd: string; grossRequirement: number; scheduledReceipts: number; projectedOnHand: number;
+  safetyStock: number; netRequirement: number; plannedReceipt: number; plannedRelease: number;
+}
+
+const STATUS = {
+  critical: { status: "red", label: "Critical" },
+  short: { status: "amber", label: "Needs orders" },
+  covered: { status: "green", label: "Covered" },
+  adequate: { status: "green", label: "No demand" },
+} as const;
+
+const fmtDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+
+function TimePhased({ runId, row }: { runId: string; row: Row }) {
+  const q = useQuery({
+    queryKey: ["mrp", "time-phased", runId, row.material.id, row.location.id],
+    queryFn: () => apiGet<Bucket[]>(`/mrp/runs/${runId}/requirements`, { materialId: row.material.id, locationId: row.location.id }),
+  });
+  if (q.isPending) return <SkeletonBlock className="h-24 w-full" />;
+  if (q.error) return <EmptyState title="Could not load the time-phased record" description={q.error.message} />;
+  const lines: [string, keyof Bucket][] = [
+    ["Gross requirement", "grossRequirement"], ["Scheduled receipts", "scheduledReceipts"], ["Planned receipts", "plannedReceipt"],
+    ["Projected on hand", "projectedOnHand"], ["Net requirement", "netRequirement"], ["Planned releases", "plannedRelease"],
+  ];
+  return (
+    <div className="surface-panel p-4">
+      <h3 className="text-body-md font-semibold mb-2">
+        <span className="identifier">{row.material.code}</span> {row.material.name} — {row.location.name}
+        <span className="font-normal text-muted-foreground"> · safety stock {formatQty(row.safetyStock)} {row.uom}</span>
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="data-table text-body-sm">
+          <thead><tr className="border-b border-border">
+            <th className="sticky left-0 bg-background px-2 py-1.5 text-left font-medium text-muted-foreground">{row.uom}</th>
+            {q.data.map((b) => <th key={b.bucketStart} className="px-2 py-1.5 text-right font-medium text-muted-foreground whitespace-nowrap">{fmtDate(b.bucketStart)}</th>)}
+          </tr></thead>
+          <tbody>
+            {lines.map(([label, k]) => (
+              <tr key={k} className="border-b border-border">
+                <td className="sticky left-0 bg-background px-2 py-1.5 whitespace-nowrap text-muted-foreground">{label}</td>
+                {q.data.map((b) => {
+                  const v = b[k] as number;
+                  const danger = k === "projectedOnHand" && v < b.safetyStock;
+                  return <td key={b.bucketStart} className={`px-2 py-1.5 text-right tabular-nums ${danger ? "text-danger font-medium" : ""} ${v === 0 && k !== "projectedOnHand" ? "text-muted-foreground/50" : ""}`}>{formatQty(v)}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 export default function MaterialRequirements() {
-  const [showShortages, setShowShortages] = useState(false);
-  const filtered = showShortages ? materials.filter((m) => m.status === "red" || m.status === "amber") : materials;
+  const [category, setCategory] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [shortagesOnly, setShortagesOnly] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
 
-  const columns: Column<MrRow>[] = [
-    { key: "code", header: "Code", width: "w-[96px]", value: m => m.code, cell: m => <span className="identifier text-body-sm">{m.code}</span> },
-    { key: "name", header: "Material", value: m => m.name, cell: m => <span className="font-medium">{m.name}</span> },
-    { key: "category", header: "Category", width: "w-[110px]", value: m => m.category, cell: m => <span className="text-muted-foreground">{m.category}</span> },
-    { key: "opening", header: "Opening stock", align: "right", numeric: true, width: "w-[130px]", value: m => m.opening, cell: m => m.opening },
-    { key: "gross", header: "Gross req.", align: "right", numeric: true, width: "w-[115px]", value: m => m.gross, cell: m => m.gross },
-    { key: "scheduled", header: "Scheduled receipts", align: "right", numeric: true, width: "w-[160px]", value: m => m.scheduled, cell: m => m.scheduled },
-    { key: "net", header: "Net req.", align: "right", numeric: true, width: "w-[110px]", value: m => m.net, cell: m => <span className="font-medium">{m.net}</span> },
-    { key: "safety", header: "Safety stock", align: "right", numeric: true, width: "w-[120px]", value: m => m.safety, cell: m => m.safety },
-    { key: "reorder", header: "Reorder qty", align: "right", numeric: true, width: "w-[120px]", value: m => m.reorder, cell: m => m.reorder },
-    { key: "coverage", header: "Coverage", align: "right", numeric: true, width: "w-[100px]", value: m => m.coverage, cell: m => `${m.coverage}d` },
-    { key: "status", header: "Status", width: "w-[110px]", value: m => mrStatusLabel(m.status), cell: m => <StatusBadge status={m.status} label={mrStatusLabel(m.status)} /> },
+  const runQ = useQuery({
+    queryKey: ["mrp", "run", "latest"],
+    queryFn: async () => {
+      try {
+        return await apiGet<{ id: string; runNumber: string; asOfDate: string; completedAt: string | null }>("/mrp/runs/latest");
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    },
+  });
+  const run = runQ.data ?? null;
+  const rowsQ = useQuery({ queryKey: ["mrp", "materials", run?.id], queryFn: () => apiGet<Row[]>(`/mrp/runs/${run!.id}/materials`), enabled: !!run });
+  const rows = useMemo(() => rowsQ.data ?? [], [rowsQ.data]);
+
+  const categories = useMemo(() => [...new Set(rows.map((r) => r.category).filter((c): c is string => !!c))].sort(), [rows]);
+  const locations = useMemo(() => [...new Map(rows.map((r) => [r.location.id, r.location])).values()], [rows]);
+  const filtered = rows.filter((r) =>
+    (!category || r.category === category) && (!locationId || r.location.id === locationId) &&
+    (!shortagesOnly || r.status === "critical" || r.status === "short"));
+  const key = (r: Row) => `${r.material.id}|${r.location.id}`;
+  const selectedRow = rows.find((r) => key(r) === selected) ?? null;
+
+  const columns: Column<Row>[] = [
+    { key: "code", header: "Code", width: "w-[96px]", value: (m) => m.material.code, cell: (m) => <span className="identifier text-body-sm">{m.material.code}</span> },
+    { key: "name", header: "Material", value: (m) => m.material.name, cell: (m) => <span className="font-medium">{m.material.name}</span> },
+    { key: "level", header: "Level", align: "right", numeric: true, width: "w-[70px]", value: (m) => m.lowLevelCode, cell: (m) => m.lowLevelCode },
+    { key: "location", header: "Location", width: "w-[120px]", value: (m) => m.location.name, cell: (m) => <span className="text-muted-foreground">{m.location.name}</span> },
+    { key: "opening", header: "Opening stock", align: "right", numeric: true, width: "w-[130px]", value: (m) => m.openingStock, cell: (m) => `${formatQty(m.openingStock)} ${m.uom}` },
+    { key: "gross", header: "Gross req.", align: "right", numeric: true, width: "w-[120px]", value: (m) => m.grossRequirement, cell: (m) => formatQty(m.grossRequirement) },
+    { key: "scheduled", header: "Scheduled receipts", align: "right", numeric: true, width: "w-[150px]", value: (m) => m.scheduledReceipts, cell: (m) => formatQty(m.scheduledReceipts) },
+    { key: "safety", header: "Safety stock", align: "right", numeric: true, width: "w-[115px]", value: (m) => m.safetyStock, cell: (m) => formatQty(m.safetyStock) },
+    { key: "net", header: "Net req.", align: "right", numeric: true, width: "w-[110px]", value: (m) => m.netRequirement, cell: (m) => <span className="font-medium">{formatQty(m.netRequirement)}</span> },
+    { key: "planned", header: "Planned receipts", align: "right", numeric: true, width: "w-[140px]", value: (m) => m.plannedReceipts, cell: (m) => formatQty(m.plannedReceipts) },
+    {
+      key: "cover", header: "Cover", align: "right", numeric: true, width: "w-[90px]", value: (m) => m.coverDays ?? m.horizonDays + 1,
+      cell: (m) => (m.coverDays === null ? <span className="text-muted-foreground">{m.horizonDays}d+</span> : `${m.coverDays}d`),
+    },
+    { key: "status", header: "Status", width: "w-[130px]", value: (m) => STATUS[m.status].label, cell: (m) => <StatusBadge {...STATUS[m.status]} /> },
   ];
 
   return (
     <div className="px-6 py-5 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
           <PageIcon />
           <span className="min-w-0">Material requirements</span>
         </h1>
-        <div className="flex items-center gap-3">
-          <select className={selectSm}>
-            <option>All categories</option><option>Polymer</option><option>Chemical</option><option>Packaging</option><option>Fragrance</option>
+        <div className="flex flex-wrap items-center gap-3">
+          <select className={selectSm} value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">
+            <option value="">All categories</option>{categories.map((c) => <option key={c}>{c}</option>)}
           </select>
-          <select className={selectSm}>
-            <option>All warehouses</option><option>Pune Plant</option><option>Mumbai WH</option><option>Delhi Depot</option>
+          <select className={selectSm} value={locationId} onChange={(e) => setLocationId(e.target.value)} aria-label="Location">
+            <option value="">All locations</option>{locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
-          <label className="flex items-center gap-1.5 text-body-sm">
-            <input type="checkbox" checked={showShortages} onChange={() => setShowShortages(!showShortages)} className="rounded" />
-            Show only shortages
+          <label className="flex items-center gap-1.5 text-body-sm whitespace-nowrap">
+            <input type="checkbox" checked={shortagesOnly} onChange={() => setShortagesOnly(!shortagesOnly)} className="rounded" /> Needs action only
           </label>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <DataTable
-          columns={columns}
-          rows={filtered}
-          rowKey={m => m.code}
-          name="Material requirements"
-          searchable
-          columnToggle
-          exportable
-          pageSize={25}
-        />
-        <div className="px-4 py-3 border-t border-border text-body-sm text-muted-foreground">
-          Showing {filtered.length} of {materials.length} materials
-        </div>
-      </div>
+      {runQ.error || rowsQ.error ? (
+        <EmptyState title="Requirements could not be loaded" description={(runQ.error ?? rowsQ.error)!.message}
+          action={<button className={btnSecondary} onClick={() => { void runQ.refetch(); void rowsQ.refetch(); }}>Try again</button>} />
+      ) : !runQ.isPending && !run ? (
+        <EmptyState title="No MRP run yet" description="Requirements appear here after MRP has been run." />
+      ) : (
+        <>
+          {run && (
+            <p className="text-body-sm text-muted-foreground">
+              From <span className="identifier">{run.runNumber}</span>, planned as of {fmtDate(run.asOfDate)}. Net requirement is what must be newly supplied over the horizon; cover is days until stock without new orders falls below safety stock. Click a row for its time-phased record.
+            </p>
+          )}
+          <DataTable
+            columns={columns}
+            rows={filtered}
+            rowKey={key}
+            name="Material requirements"
+            loading={runQ.isPending || rowsQ.isPending}
+            searchable
+            columnToggle
+            exportable
+            pageSize={25}
+            onRowClick={(r) => setSelected(key(r))}
+            isRowSelected={(r) => key(r) === selected}
+            empty={<EmptyState title="Nothing matches" description="No material fits these filters." />}
+          />
+          {run && selectedRow && <TimePhased runId={run.id} row={selectedRow} />}
+        </>
+      )}
     </div>
   );
 }

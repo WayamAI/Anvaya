@@ -137,9 +137,14 @@ async function lockPo(tx: Tx, companyId: string, id: string) {
 
 export async function createPurchaseOrder(input: CreatePurchaseOrderInput, ctx: WriteContext): Promise<{ id: string; orderNumber: string }> {
   requirePermission(ctx.actor, "purchase-order:create");
-  const companyId = ctx.actor.companyId;
+  return runInTransaction((tx) => createPurchaseOrderTx(tx, input, ctx));
+}
 
-  return runInTransaction(async (tx) => {
+/** The same, inside the caller's transaction (MRP converts several at once). */
+export async function createPurchaseOrderTx(tx: Tx, input: CreatePurchaseOrderInput, ctx: WriteContext): Promise<{ id: string; orderNumber: string }> {
+  requirePermission(ctx.actor, "purchase-order:create");
+  const companyId = ctx.actor.companyId;
+  {
     const company = await companyContext(companyId, tx);
     const orderDate = input.orderDate ?? company.today;
     assertDates(orderDate, input.expectedDeliveryDate, input.lines);
@@ -178,7 +183,7 @@ export async function createPurchaseOrder(input: CreatePurchaseOrderInput, ctx: 
     });
 
     return { id: po.id, orderNumber };
-  });
+  }
 }
 
 /* ---- Edit (DRAFT only) --------------------------------------------------- */

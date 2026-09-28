@@ -90,6 +90,9 @@ export async function createFixture() {
   async function destroy() {
     const materialIds = [raw.id, pack.id, finished.id];
     const materialScope = { materialId: { in: materialIds } };
+    // MRP results restrict material deletes; they go first (children cascade).
+    await prisma.mrpRun.deleteMany({ where: { companyId } });
+    await prisma.demandForecast.deleteMany({ where: { companyId } });
     await prisma.auditLog.deleteMany({ where: { companyId } });
     await prisma.idempotencyKey.deleteMany({ where: { companyId } });
     await prisma.documentSequence.deleteMany({ where: { companyId } });

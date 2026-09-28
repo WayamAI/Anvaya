@@ -92,9 +92,14 @@ async function lockWo(tx: Tx, companyId: string, id: string) {
 
 export async function createWorkOrder(input: CreateWorkOrderInput, ctx: WriteContext): Promise<{ id: string; orderNumber: string }> {
   requirePermission(ctx.actor, "work-order:create");
-  const companyId = ctx.actor.companyId;
+  return runInTransaction((tx) => createWorkOrderTx(tx, input, ctx));
+}
 
-  return runInTransaction(async (tx) => {
+/** The same, inside the caller's transaction (MRP converts several at once). */
+export async function createWorkOrderTx(tx: Tx, input: CreateWorkOrderInput, ctx: WriteContext): Promise<{ id: string; orderNumber: string }> {
+  requirePermission(ctx.actor, "work-order:create");
+  const companyId = ctx.actor.companyId;
+  {
     assertDates(input.plannedStartDate, input.plannedEndDate);
     const [material, location] = await Promise.all([
       tx.material.findFirst({ where: { id: input.materialId, companyId }, select: { id: true, code: true, isActive: true } }),
@@ -140,7 +145,7 @@ export async function createWorkOrder(input: CreateWorkOrderInput, ctx: WriteCon
       },
     });
     return { id: wo.id, orderNumber };
-  });
+  }
 }
 
 export async function updateWorkOrder(id: string, input: UpdateWorkOrderInput, ctx: WriteContext): Promise<void> {
