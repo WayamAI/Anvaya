@@ -35,7 +35,9 @@ export interface LotQcResult {
 }
 
 export async function decideLotQuality(lotId: string, input: LotQcInput, ctx: WriteContext): Promise<LotQcResult> {
-  requirePermission(ctx.actor, "inventory:update");
+  // Its own permission, so the quality release authority can be kept apart
+  // from the people who receive and move stock.
+  requirePermission(ctx.actor, "quality:decide");
   const companyId = ctx.actor.companyId;
 
   return runInTransaction(async (tx) => {

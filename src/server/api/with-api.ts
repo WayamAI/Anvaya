@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
-import { ZodError, type ZodSchema } from "zod";
+import { ZodError, type ZodType, type ZodTypeDef } from "zod";
 import { Prisma } from "@prisma/client";
 import { AppError, ErrorCode, type ErrorDetail } from "@/server/errors/app-error";
 import { logger } from "@/server/logger";
@@ -165,7 +165,7 @@ function handleError(
 
   const prismaMapped = mapPrismaError(error);
   if (prismaMapped) {
-    log.warn({ code: prismaMapped.code, durationMs }, prismaMapped.message);
+    log.warn({ code: prismaMapped.code, durationMs, err: error }, prismaMapped.message);
     return fail(prismaMapped.status, prismaMapped.code, prismaMapped.message, requestId, prismaMapped.details);
   }
 
@@ -215,6 +215,15 @@ function mapPrismaError(error: unknown) {
         message: "A referenced record does not exist",
         details: undefined,
       };
+    // A value past its column's precision. Inputs are bounded at the door,
+    // so this is a backstop; the driver's wording stays in the log.
+    case "P2020":
+      return {
+        status: 422,
+        code: ErrorCode.VALIDATION_FAILED,
+        message: "A value is too large to record",
+        details: undefined,
+      };
     case "P2025":
       return {
         status: 404,
@@ -228,7 +237,10 @@ function mapPrismaError(error: unknown) {
 }
 
 /** Parse and validate a JSON body, throwing the standard validation error. */
-export async function parseBody<T>(req: NextRequest, schema: ZodSchema<T>): Promise<T> {
+/** Any input shape: a schema may transform what it parses (e.g. a comma list into an array). */
+type Schema<T> = ZodType<T, ZodTypeDef, unknown>;
+
+export async function parseBody<T>(req: NextRequest, schema: Schema<T>): Promise<T> {
   let raw: unknown;
   try {
     raw = await req.json();
@@ -244,7 +256,7 @@ export async function parseBody<T>(req: NextRequest, schema: ZodSchema<T>): Prom
 }
 
 /** Parse and validate the query string the same way. */
-export function parseQuery<T>(req: NextRequest, schema: ZodSchema<T>): T {
+export function parseQuery<T>(req: NextRequest, schema: Schema<T>): T {
   const params = Object.fromEntries(new URL(req.url).searchParams);
   const result = schema.safeParse(params);
   if (!result.success) {

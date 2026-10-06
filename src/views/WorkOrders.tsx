@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import StatusBadge from "@/components/StatusBadge";
 import { DataTable, type Column } from "@/components/app/data-table";
@@ -7,6 +7,8 @@ import { SkeletonBlock } from "@/components/app/skeleton-block";
 import { btnSecondary } from "@/components/app/controls";
 import { PageIcon } from "@/components/app/page-icon";
 import { apiGet } from "@/lib/api";
+import { LoadMore } from "@/components/app/load-more";
+import { useDebounced, usePagedQuery } from "@/lib/use-paged-query";
 import { formatQty } from "@/lib/format";
 import { NewWorkOrderButton, WorkOrderActions } from "@/components/production/wo-actions";
 import type { WorkOrderDetail, WorkOrderList, WorkOrderRow, WorkOrderStatus } from "@/server/production/work-orders";
@@ -173,15 +175,13 @@ export default function WorkOrders() {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [detailWO, setDetailWO] = useState<string | null>(null);
 
-  const q = useQuery({
-    queryKey: ["work-orders"],
-    queryFn: ({ signal }) => apiGet<WorkOrderList>("/work-orders", undefined, { signal }),
-  });
-
-  const orders = q.data?.orders ?? [];
-  const filtered = activeTab === "all" ? orders
-    : activeTab === "overdue" ? orders.filter((o) => o.overdue)
-      : orders.filter((o) => o.status === activeTab);
+  // Paged on the server: the tab and search filter there; counts cover the company.
+  const [search, setSearch] = useState("");
+  const term = useDebounced(search.trim());
+  const q = usePagedQuery<WorkOrderList>(["work-orders"], "/work-orders", { status: activeTab === "all" ? undefined : activeTab, q: term || undefined });
+  const list = q.data?.pages[0]?.data;
+  const total = q.data?.pages[0]?.meta?.total;
+  const filtered = useMemo(() => q.data?.pages.flatMap((p) => p.data.orders) ?? [], [q.data]);
 
   const columns: Column<WorkOrderRow>[] = [
     { key: "wo", header: "Work order", width: "w-[130px]", value: w => w.orderNumber, cell: w => <span className="identifier text-body-sm text-foreground">{w.orderNumber}</span> },
@@ -205,7 +205,7 @@ export default function WorkOrders() {
     { key: "status", header: "Status", width: "w-[120px]", value: w => statusBadge[w.status].label, cell: w => <StatusBadge {...statusBadge[w.status]} /> },
   ];
 
-  const getCount = (key: TabKey) => (q.data ? q.data.counts[key] : "—");
+  const getCount = (key: TabKey) => (list ? list.counts[key] : "—");
 
   return (
     <div className="px-6 py-5 space-y-6">
@@ -242,12 +242,17 @@ export default function WorkOrders() {
               title={activeTab === "all" ? "No work orders yet" : "No work orders in this view"}
               description={activeTab === "all" ? "Work orders appear here once production is planned." : "Try another tab."} />}
             searchable
+            searchValue={search}
+            onSearchChange={setSearch}
             columnToggle
             exportable
             pageSize={25}
             onRowClick={w => setDetailWO(w.id)}
             isRowSelected={w => w.id === detailWO}
           />
+        )}
+        {!q.error && (
+          <LoadMore shown={filtered.length} total={total} hasMore={!!q.hasNextPage} loading={q.isFetchingNextPage} onLoadMore={() => void q.fetchNextPage()} />
         )}
       </div>
 

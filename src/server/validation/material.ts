@@ -9,6 +9,17 @@ export const listMaterialsQuery = z.object({
   /** Matches code or name, case-insensitively. */
   q: z.string().trim().max(100).optional(),
   kind: z.nativeEnum(MaterialKind).optional(),
+  /** Several kinds, comma-separated: what a picker offers (e.g. all but FINISHED). */
+  kinds: z.string().optional().transform((v, ctx) => {
+    if (!v) return undefined;
+    const list = v.split(",").map((k) => k.trim().toUpperCase()).filter(Boolean);
+    const bad = list.filter((k) => !(k in MaterialKind));
+    if (bad.length) {
+      ctx.addIssue({ code: "custom", message: `unknown material kind: ${bad.join(", ")}` });
+      return z.NEVER;
+    }
+    return list as MaterialKind[];
+  }),
   categoryId: z.string().min(1).optional(),
   active: activeFilter,
   limit: z.coerce.number().int().min(1).max(200).default(50),

@@ -390,3 +390,43 @@ export const SETTINGS = [
   { namespace: "inventory", key: "defaultValuationMethod", value: "MOVING_AVERAGE", description: "How stock value is computed." },
   { namespace: "procurement", key: "requirePoApproval", value: true, description: "Whether a purchase order needs approval before ordering." },
 ] as const;
+
+/**
+ * Lots for the part of each batch-tracked opening balance that no seeded lot
+ * accounts for. Issues and dispatches of a batch-tracked material draw only
+ * from released lots, so stock on hand with no lot behind it could be planned
+ * against but never used. Each gap becomes one released "opening stock" lot,
+ * received a month before the as-of date, expiring after the material's
+ * shelf life (if it has one).
+ */
+export function openingLots(
+  balances: SeedBalance[],
+  /** Every seeded lot that holds stock: received ones and produced ones, net of what left them. */
+  lots: { material: string; location: string; receivedQty: number; consumedQty: number }[],
+  materials: { code: string; isBatchTracked: boolean; shelfLifeDays?: number }[],
+): SeedLot[] {
+  const tracked = new Map(materials.filter((m) => m.isBatchTracked).map((m) => [m.code, m]));
+  const inLots = new Map<string, number>();
+  for (const l of lots) {
+    const k = `${l.material}@${l.location}`;
+    inLots.set(k, (inLots.get(k) ?? 0) + l.receivedQty - l.consumedQty);
+  }
+  const receiptDate = shiftIso(AS_OF_DATE, -30);
+  return balances.flatMap((b) => {
+    const m = tracked.get(b.material);
+    const gap = Math.round((b.onHandQty - (inLots.get(`${b.material}@${b.location}`) ?? 0)) * 1e6) / 1e6;
+    if (!m || gap <= 0) return [];
+    return [{
+      lotNumber: `OPN-${b.material}-${b.location}`, material: b.material, location: b.location,
+      receivedQty: gap, consumedQty: 0, receiptDate,
+      expiryDate: m.shelfLifeDays ? shiftIso(receiptDate, m.shelfLifeDays) : undefined,
+      qcStatus: QcStatus.APPROVED, coaReference: "Opening balance",
+    }];
+  });
+}
+
+function shiftIso(iso: string, days: number): string {
+  const t = new Date(`${iso}T00:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + days);
+  return t.toISOString().slice(0, 10);
+}

@@ -31,6 +31,12 @@ export const passwordSchema = z
   .refine((v) => /\d/.test(v), "Password must contain a number");
 
 export const loginSchema = z.object({
+  /*
+    The company code. Email is unique only within a company, and several
+    companies share one database, so the account is never guessed from the
+    email alone. Upper-cased, as codes are stored.
+  */
+  company: z.string().trim().min(1, "Company code is required").max(40).transform((v) => v.toUpperCase()),
   email: emailSchema,
   /*
     Deliberately NOT passwordSchema. Validating a login attempt against the

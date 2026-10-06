@@ -33,3 +33,11 @@ next-env.d.ts
 
 # typescript build info
 *.tsbuildinfo
+
+# local databases and test output
+*.db
+*.sqlite
+*.sqlite3
+coverage/
+test-results/
+playwright-report/

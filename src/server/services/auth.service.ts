@@ -34,12 +34,18 @@ export interface LoginResult {
  * Every failure path returns the same message. Distinguishing "no such user"
  * from "wrong password" hands an attacker a free account enumerator, and
  * saying "account locked" tells them the address is real and worth pursuing.
+ *
+ * Companies share the database and an email is unique only within one, so
+ * the account is looked up by company code and email together — never by
+ * email alone. An unknown or inactive company fails like a wrong password,
+ * at the same hashing cost.
  */
 export async function login(input: LoginInput, ctx: SessionContext = {}): Promise<LoginResult> {
-  const generic = "Incorrect email or password";
+  const generic = "Incorrect company, email or password";
 
-  const user = await prisma.user.findFirst({
-    where: { email: input.email },
+  const company = await prisma.company.findUnique({ where: { code: input.company }, select: { id: true, isActive: true } });
+  const user = !company?.isActive ? null : await prisma.user.findUnique({
+    where: { companyId_email: { companyId: company.id, email: input.email } },
     select: {
       id: true, companyId: true, email: true, name: true,
       passwordHash: true, isActive: true,
@@ -51,7 +57,7 @@ export async function login(input: LoginInput, ctx: SessionContext = {}): Promis
   const passwordOk = await verifyOrDummy(input.password, user?.passwordHash ?? null);
 
   if (!user) {
-    logger.warn({ email: input.email, ip: ctx.ipAddress }, "login failed: unknown account");
+    logger.warn({ company: input.company, email: input.email, ip: ctx.ipAddress }, "login failed: unknown account");
     throw AppError.unauthenticated(generic);
   }
 
@@ -68,15 +74,17 @@ export async function login(input: LoginInput, ctx: SessionContext = {}): Promis
   }
 
   if (!passwordOk) {
-    const failed = user.failedLoginCount + 1;
-    const shouldLock = failed >= MAX_FAILED_ATTEMPTS;
-    await prisma.user.update({
+    // Incremented in the database, not from the value read above: concurrent
+    // wrong guesses each count, so a burst cannot slip past the lock-out.
+    const { failedLoginCount: failed } = await prisma.user.update({
       where: { id: user.id },
-      data: {
-        failedLoginCount: failed,
-        lockedUntil: shouldLock ? new Date(Date.now() + LOCK_DURATION_MS) : null,
-      },
+      data: { failedLoginCount: { increment: 1 } },
+      select: { failedLoginCount: true },
     });
+    const shouldLock = failed >= MAX_FAILED_ATTEMPTS;
+    if (shouldLock) {
+      await prisma.user.update({ where: { id: user.id }, data: { lockedUntil: new Date(Date.now() + LOCK_DURATION_MS) } });
+    }
     await audit(user.companyId, user.id, AuditAction.LOGIN_FAILED, "bad password", ctx);
     logger.warn({ userId: user.id, failed, locked: shouldLock }, "login failed: bad password");
     throw AppError.unauthenticated(generic);

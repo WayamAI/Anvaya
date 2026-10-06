@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { id, isoDate, nonNegativeQty, optionalText, price, qty, reason, text } from "./common";
+import { cursorPage } from "@/server/api/pagination";
+import { PO_STATUSES } from "@/server/purchasing/purchase-orders";
+import { id, isoDate, listOrdersQuery, nonNegativeQty, optionalText, price, qty, reason, text } from "./common";
+
+/** GET /api/v1/purchase-orders */
+export const listPurchaseOrdersQuery = listOrdersQuery(PO_STATUSES);
 
 /**
  * Request bodies for purchase orders, goods receipts and lot quality
@@ -16,16 +21,12 @@ const poLine = z.object({
   expectedDeliveryDate: isoDate.optional(),
 });
 
-const lines = z.array(poLine).min(1, "a purchase order needs at least one line").max(200)
-  .superRefine((ls, ctx) => {
-    const seen = new Set<string>();
-    ls.forEach((l, i) => {
-      if (seen.has(l.materialId)) {
-        ctx.addIssue({ code: "custom", path: [i, "materialId"], message: "appears on more than one line; combine the quantities" });
-      }
-      seen.add(l.materialId);
-    });
-  });
+/**
+ * A material may appear on several lines due on different dates (MRP's
+ * time-phased orders). The same material twice on one date is refused by the
+ * service (`duplicateLineProblems`), which knows each line's effective date.
+ */
+const lines = z.array(poLine).min(1, "a purchase order needs at least one line").max(200);
 
 /** POST /api/v1/purchase-orders */
 export const createPurchaseOrderBody = z.object({
@@ -104,6 +105,7 @@ export const listVendorsQuery = z.object({
   active: z.enum(["true", "false", "all"]).default("true"),
   /** Only vendors that supply this material. */
   materialId: id.optional(),
+  ...cursorPage(50, 200),
 });
 
 export type ListVendorsQuery = z.infer<typeof listVendorsQuery>;

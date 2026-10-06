@@ -199,3 +199,19 @@ describe("DataTable", () => {
     if (!hadRevoke) delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
   });
 });
+
+describe("DataTable with server-side search", () => {
+  it("hands the search to the caller instead of filtering the loaded rows", () => {
+    const onSearchChange = vi.fn();
+    render(<DataTable columns={columns} rows={rows} rowKey={(r) => r.id} searchable searchValue="" onSearchChange={onSearchChange} />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "zenith" } });
+    expect(onSearchChange).toHaveBeenLastCalledWith("zenith");
+  });
+
+  it("shows every row it is given, since the server already filtered them", () => {
+    render(<DataTable columns={columns} rows={rows} rowKey={(r) => r.id} searchable searchValue="zenith" onSearchChange={() => {}} />);
+    expect(screen.getByRole("searchbox")).toHaveValue("zenith");
+    expect(screen.getByText("Aarti Industries")).toBeInTheDocument();
+    expect(screen.getByText("Mold-Tek Containers")).toBeInTheDocument();
+  });
+});

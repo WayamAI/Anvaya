@@ -722,3 +722,12 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+/*
+  Search fields draw their own clear button (DataTable); hide the browser's
+  native one so a filled search box does not show two.
+*/
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}

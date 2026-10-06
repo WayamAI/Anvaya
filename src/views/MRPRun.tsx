@@ -13,6 +13,9 @@ import { useSession } from "@/components/auth/session-context";
 import { ApiError, apiGet, apiSend } from "@/lib/api";
 import { formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ExceptionsPanel, type ExceptionsState, type MrpException } from "@/components/mrp/exceptions-panel";
+import { LoadMore } from "@/components/app/load-more";
+import { useDebounced, usePagedQuery } from "@/lib/use-paged-query";
 
 /**
  * MRP run and results, from the engine: run parameters, the latest run,
@@ -25,18 +28,17 @@ interface Run {
   triggeredBy: string; startedAt: string | null; completedAt: string | null; durationMs: number | null; errorMessage: string | null;
   materialsPlanned: number; plannedOrderCount: number; exceptionCount: number; isLatest: boolean;
   parameters: Record<string, unknown>;
+  /** Unresolved exceptions in the whole run, by severity — not just those loaded. */
+  openExceptions: { bySeverity: Record<string, number> };
 }
 interface PlannedOrder {
   id: string; type: "PURCHASE" | "PRODUCTION"; status: string;
   material: { id: string; code: string; name: string }; uom: string; location: { id: string; name: string };
   quantity: number; releaseDate: string; requiredDate: string; leadTimeDays: number; leadTimeSource: string | null;
   vendor: { code: string; name: string } | null; pastDue: boolean; summary: string | null; demands: string[];
+  /** Why it cannot be converted (no vendor, no active BOM); null when it can. */
+  blocker: string | null;
   convertedTo: { type: string; number: string | null } | null;
-}
-interface MrpException {
-  id: string; type: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; message: string; suggestedAction: string | null;
-  material: { code: string; name: string } | null; location: { name: string } | null; dueDate: string | null; daysLate: number | null;
-  isResolved: boolean;
 }
 interface PlannedOrderDetail {
   id: string; material: string; materialName: string; uom: string; location: string; quantity: number; type: string;
@@ -129,8 +131,11 @@ export default function MRPRun() {
     },
   });
   const run = runQ.data ?? null;
-  const ordersQ = useQuery({ queryKey: ["mrp", "planned", run?.id], queryFn: () => apiGet<PlannedOrder[]>(`/mrp/runs/${run!.id}/planned-orders`), enabled: !!run });
-  const exceptionsQ = useQuery({ queryKey: ["mrp", "exceptions", run?.id], queryFn: () => apiGet<MrpException[]>(`/mrp/runs/${run!.id}/exceptions`), enabled: !!run });
+  // Both lists are paged on the server; a large run loads a page at a time.
+  const [orderSearch, setOrderSearch] = useState("");
+  const orderTerm = useDebounced(orderSearch.trim());
+  const ordersQ = usePagedQuery<PlannedOrder[]>(["mrp", "planned", run?.id], `/mrp/runs/${run?.id}/planned-orders`, { q: orderTerm || undefined }, { enabled: !!run });
+  const exceptionsQ = usePagedQuery<MrpException[]>(["mrp", "exceptions", run?.id], `/mrp/runs/${run?.id}/exceptions`, {}, { enabled: !!run });
 
   const refresh = () => {
     setSelected(new Set());
@@ -155,15 +160,26 @@ export default function MRPRun() {
   });
   const resolve = useMutation({
     mutationFn: (id: string) => apiSend("POST", `/mrp/exceptions/${id}/resolve`),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["mrp", "exceptions"] }),
+    // The run's open count changes too, so refresh the run as well as the list.
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["mrp"] }),
     onError: (e) => toast.error((e as Error).message),
   });
 
-  const orders = useMemo(() => ordersQ.data ?? [], [ordersQ.data]);
-  const exceptionList = exceptionsQ.data ?? [];
-  const openExceptions = exceptionList.filter((e) => !e.isResolved).length;
-  const convertible = useMemo(() => new Set(orders.filter((o) => o.status === "PLANNED" && (o.type === "PRODUCTION" || o.vendor)).map((o) => o.id)), [orders]);
-  const canConvert = can("mrp:run") && run?.isLatest;
+  const orders = useMemo(() => ordersQ.data?.pages.flatMap((p) => p.data) ?? [], [ordersQ.data]);
+  const plannedTotal = ordersQ.data?.pages[0]?.meta?.total ?? run?.plannedOrderCount ?? 0;
+  const openExceptions = run ? Object.values(run.openExceptions?.bySeverity ?? {}).reduce((a, b) => a + b, 0) : 0;
+  const exceptionsState: ExceptionsState = exceptionsQ.isPending
+    ? { status: "pending" }
+    : exceptionsQ.error
+      ? { status: "error", error: exceptionsQ.error }
+      : { status: "success", exceptions: exceptionsQ.data?.pages.flatMap((p) => p.data) ?? [], hasMore: !!exceptionsQ.hasNextPage, loadingMore: exceptionsQ.isFetchingNextPage };
+  // Conversion is authorised by what it creates: purchases need the right to
+  // raise POs, production the right to plan work orders (the server checks too).
+  const canBuy = can("purchase-order:create");
+  const canMake = can("work-order:create");
+  const convertible = useMemo(() => new Set(orders.filter((o) => o.status === "PLANNED" &&
+    !o.blocker && (o.type === "PRODUCTION" ? canMake : canBuy)).map((o) => o.id)), [orders, canBuy, canMake]);
+  const canConvert = (canBuy || canMake) && run?.isLatest;
 
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
@@ -172,12 +188,21 @@ export default function MRPRun() {
       key: "select", header: "", width: "w-[44px]", sortable: false,
       cell: (o: PlannedOrder) => (
         <input type="checkbox" className="rounded" aria-label={`Select ${o.material.code}`} disabled={!convertible.has(o.id)}
+          title={o.status === "PLANNED" && o.blocker ? o.blocker : undefined}
           checked={selected.has(o.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(o.id)} />
       ),
     } satisfies Column<PlannedOrder>] : []),
     { key: "type", header: "Type", width: "w-[90px]", value: (o) => o.type, cell: (o) => (o.type === "PURCHASE" ? "Buy" : "Make") },
     { key: "code", header: "Code", width: "w-[96px]", value: (o) => o.material.code, cell: (o) => <span className="identifier text-body-sm">{o.material.code}</span> },
     { key: "name", header: "Material", value: (o) => o.material.name, cell: (o) => <span className="font-medium">{o.material.name}</span> },
+    {
+      key: "status", header: "Status", width: "w-[140px]", value: (o) => o.status,
+      cell: (o) => o.convertedTo
+        ? <StatusBadge status="green" label={o.convertedTo.number ?? "Converted"} />
+        : o.status === "PLANNED" && o.blocker
+          ? <span title={o.blocker}><StatusBadge status="amber" label={o.type === "PRODUCTION" ? "No BOM" : "No vendor"} /></span>
+          : <StatusBadge status={o.pastDue ? "red" : "blue"} label={titleCase(o.status)} />,
+    },
     { key: "location", header: "Location", width: "w-[120px]", value: (o) => o.location.name, cell: (o) => <span className="text-muted-foreground">{o.location.name}</span> },
     { key: "qty", header: "Quantity", align: "right", numeric: true, width: "w-[120px]", value: (o) => o.quantity, cell: (o) => `${formatQty(o.quantity)} ${o.uom}` },
     {
@@ -188,12 +213,6 @@ export default function MRPRun() {
     { key: "vendor", header: "Vendor", value: (o) => o.vendor?.name ?? "", cell: (o) => (o.type === "PRODUCTION" ? <span className="text-muted-foreground">In-house</span> : o.vendor?.name ?? <span className="text-danger">None</span>) },
     { key: "lead", header: "Lead (d)", align: "right", numeric: true, width: "w-[80px]", value: (o) => o.leadTimeDays, cell: (o) => o.leadTimeDays },
     { key: "demand", header: "For", value: (o) => o.demands.join(", "), cell: (o) => <span className="text-caption text-muted-foreground">{o.demands.slice(0, 2).join(", ")}{o.demands.length > 2 ? "…" : ""}</span> },
-    {
-      key: "status", header: "Status", width: "w-[140px]", value: (o) => o.status,
-      cell: (o) => o.convertedTo
-        ? <StatusBadge status="green" label={o.convertedTo.number ?? "Converted"} />
-        : <StatusBadge status={o.pastDue ? "red" : "blue"} label={titleCase(o.status)} />,
-    },
   ];
 
   return (
@@ -240,7 +259,7 @@ export default function MRPRun() {
           <div><span className="text-muted-foreground">Duration:</span> <span className="font-medium">{fmtDuration(run.durationMs)}</span></div>
           <div><span className="text-muted-foreground">Materials:</span> <span className="font-semibold">{run.materialsPlanned}</span></div>
           <div><span className="text-muted-foreground">Planned orders:</span> <span className="font-semibold">{run.plannedOrderCount}</span></div>
-          <div><span className="text-muted-foreground">Open exceptions:</span> <span className={cn("font-semibold", openExceptions ? "text-danger" : "")}>{exceptionsQ.data ? openExceptions : run.exceptionCount}</span></div>
+          <div><span className="text-muted-foreground">Open exceptions:</span> <span className={cn("font-semibold", openExceptions ? "text-danger" : "")}>{run.openExceptions ? openExceptions : run.exceptionCount}</span></div>
         </div>
       )}
       <ErrorNote error={start.error} />
@@ -248,7 +267,7 @@ export default function MRPRun() {
       {run && (
         <>
           <div className="flex gap-1 border-b border-border">
-            {([["planned", `Planned orders (${orders.length})`], ["exceptions", `Exceptions (${openExceptions})`], ["pegging", "Pegging"]] as const).map(([key, label]) => (
+            {([["planned", `Planned orders (${plannedTotal})`], ["exceptions", `Exceptions (${openExceptions})`], ["pegging", "Pegging"]] as const).map(([key, label]) => (
               <button key={key} onClick={() => setTab(key)}
                 className={`-mb-px px-4 py-2 text-body-md font-medium border-b-2 transition-colors ${tab === key ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                 {label}
@@ -260,15 +279,25 @@ export default function MRPRun() {
             <div className="space-y-3">
               {canConvert && (
                 <div className="flex flex-wrap items-center gap-2 text-body-sm">
-                  <button className={btnGhostSm} onClick={() => setSelected(new Set(convertible))}>Select all convertible ({convertible.size})</button>
+                  <button className={btnGhostSm} onClick={() => setSelected(new Set(convertible))}>
+                    Select all convertible ({convertible.size}{plannedTotal > orders.length ? " loaded" : ""})
+                  </button>
                   {selected.size > 0 && <button className={btnGhostSm} onClick={() => setSelected(new Set())}>Clear</button>}
                   <button className={btnPrimary} disabled={!selected.size || convert.isPending} onClick={() => convert.mutate()}>
                     {convert.isPending ? "Converting…" : `Convert ${selected.size || ""} to orders`}
                   </button>
-                  <span className="text-muted-foreground">Purchases become draft POs grouped by vendor; production becomes work orders.</span>
+                  <span className="text-muted-foreground">
+                    {canBuy && canMake ? "Purchases become draft POs grouped by vendor; production becomes work orders."
+                      : canBuy ? "Purchases become draft POs grouped by vendor. Production is converted by planners."
+                        : "Production becomes work orders. Purchases are converted by procurement."}
+                  </span>
                 </div>
               )}
               <ErrorNote error={convert.error} />
+              {ordersQ.error ? (
+                <EmptyState title="Planned orders could not be loaded" description={ordersQ.error.message}
+                  action={<button className={btnSecondary} onClick={() => void ordersQ.refetch()}>Try again</button>} />
+              ) : (<>
               <DataTable
                 columns={columns}
                 rows={orders}
@@ -276,42 +305,23 @@ export default function MRPRun() {
                 name="Planned orders"
                 loading={ordersQ.isPending}
                 searchable
+                searchValue={orderSearch}
+                onSearchChange={setOrderSearch}
                 columnToggle
                 exportable
                 pageSize={25}
                 onRowClick={(o) => { setPegged(o.id); setTab("pegging"); }}
                 empty={<EmptyState title="Nothing to order" description="Stock and open supply cover every requirement in the horizon." />}
               />
+              <LoadMore shown={orders.length} total={plannedTotal} hasMore={!!ordersQ.hasNextPage} loading={ordersQ.isFetchingNextPage}
+                onLoadMore={() => void ordersQ.fetchNextPage()} />
+              </>)}
             </div>
           )}
 
           {tab === "exceptions" && (
-            exceptionList.length === 0
-              ? <EmptyState title="No exceptions" description="The plan needs no attention." />
-              : (
-                <div className="overflow-x-auto">
-                  <table className="data-table w-full text-body-md">
-                    <thead><tr className="border-b border-border">
-                      {["Severity", "Type", "Material", "Detail", "Recommended action", ""].map((h) => <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
-                    </tr></thead>
-                    <tbody>
-                      {exceptionList.map((e) => (
-                        <tr key={e.id} className={cn("border-b border-border", e.isResolved && "opacity-50")}>
-                          <td className="px-3 py-2"><StatusBadge status={severityColor[e.severity]} label={titleCase(e.severity)} /></td>
-                          <td className="px-3 py-2 whitespace-nowrap">{titleCase(e.type)}</td>
-                          <td className="px-3 py-2"><span className="identifier">{e.material?.code ?? "—"}</span> <span className="text-muted-foreground">{e.location?.name ?? ""}</span></td>
-                          <td className="px-3 py-2">{e.message}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{e.suggestedAction ?? "—"}</td>
-                          <td className="px-3 py-2">
-                            {e.isResolved ? <span className="text-caption text-muted-foreground">Resolved</span>
-                              : can("mrp:run") && <button className={btnGhostSm} disabled={resolve.isPending} onClick={() => resolve.mutate(e.id)}>Resolve</button>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
+            <ExceptionsPanel state={exceptionsState} canResolve={can("mrp:run")} resolving={resolve.isPending}
+              onResolve={(id) => resolve.mutate(id)} onRetry={() => void exceptionsQ.refetch()} onLoadMore={() => void exceptionsQ.fetchNextPage()} />
           )}
 
           {tab === "pegging" && (

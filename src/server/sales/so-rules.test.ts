@@ -66,7 +66,7 @@ describe("allocateFefo", () => {
   });
 
   it("skips held and expired lots, and refuses when released stock is short", () => {
-    expect(() => allocateFefo(lots, D(35), "2026-05-01", "FG-1")).toThrow(/Not enough released, unexpired FG-1 to ship 35: 34 available/);
+    expect(() => allocateFefo(lots, D(35), "2026-05-01", "FG-1")).toThrow(/Not enough released, unexpired FG-1 for 35: 34 available/);
   });
 });
 

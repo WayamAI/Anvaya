@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { btnDestructive, btnGhostSm, btnPrimary, btnSecondary, inputSm, selectSm } from "@/components/app/controls";
 import { ErrorNote, newIdempotencyKey } from "@/components/app/api-error-note";
+import { SearchPicker } from "@/components/app/search-picker";
 import { useSession } from "@/components/auth/session-context";
 import { apiGet, apiGetWithMeta, apiSend } from "@/lib/api";
 import { formatQty } from "@/lib/format";
@@ -35,7 +36,12 @@ function useRefreshSales() {
 
 interface Option { id: string; code: string; name: string }
 interface MaterialOption extends Option { unit: { code: string }; kind: string }
-interface DraftLine { materialId: string; quantity: string; unitPrice: string }
+interface DraftLine { material: MaterialOption | null; quantity: string; unitPrice: string }
+
+/** What can be sold: finished and semi-finished goods. */
+const SELLABLE_KINDS = { kinds: "FINISHED,SEMI_FINISHED" };
+const formatMaterial = (m: MaterialOption) => `${m.code} — ${m.name} (${m.unit.code})`;
+const formatOption = (c: Option) => `${c.code} — ${c.name}`;
 
 export function NewSalesOrderButton({ onCreated }: { onCreated: (id: string) => void }) {
   const { can } = useSession();
@@ -51,26 +57,20 @@ export function NewSalesOrderButton({ onCreated }: { onCreated: (id: string) => 
 
 function NewSalesOrderDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const refresh = useRefreshSales();
-  const customers = useQuery({ queryKey: ["customers", "active"], queryFn: () => apiGet<Option[]>("/customers") });
   const locations = useQuery({ queryKey: ["locations", "active"], queryFn: () => apiGet<Option[]>("/locations") });
-  const materials = useQuery({
-    queryKey: ["materials", "sellable"],
-    queryFn: async () => (await apiGetWithMeta<MaterialOption[]>("/materials", { limit: 200 })).data
-      .filter((m) => m.kind === "FINISHED" || m.kind === "SEMI_FINISHED"),
-  });
 
-  const [customerId, setCustomerId] = useState("");
+  const [customer, setCustomer] = useState<Option | null>(null);
   const [locationId, setLocationId] = useState("");
   const [requiredDate, setRequiredDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<DraftLine[]>([{ materialId: "", quantity: "", unitPrice: "" }]);
+  const [lines, setLines] = useState<DraftLine[]>([{ material: null, quantity: "", unitPrice: "" }]);
   const setLine = (i: number, patch: Partial<DraftLine>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
   const create = useMutation({
     mutationFn: () => apiSend<{ id: string; orderNumber: string }>("POST", "/sales-orders", {
-      customerId, locationId, requiredDate, notes: notes || undefined,
-      lines: lines.filter((l) => l.materialId).map((l) => ({
-        materialId: l.materialId, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice),
+      customerId: customer?.id, locationId, requiredDate, notes: notes || undefined,
+      lines: lines.filter((l) => l.material).map((l) => ({
+        materialId: l.material!.id, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice),
       })),
     }),
     onSuccess: (so) => {
@@ -81,8 +81,8 @@ function NewSalesOrderDialog({ onClose, onCreated }: { onClose: () => void; onCr
     },
   });
 
-  const ready = customerId && locationId && requiredDate &&
-    lines.some((l) => l.materialId && Number(l.quantity) > 0 && l.unitPrice !== "");
+  const ready = customer && locationId && requiredDate &&
+    lines.some((l) => l.material && Number(l.quantity) > 0 && l.unitPrice !== "");
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -92,12 +92,9 @@ function NewSalesOrderDialog({ onClose, onCreated }: { onClose: () => void; onCr
           <DialogDescription>Booked as confirmed. Every line ships from the chosen location.</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label><span className={label}>Customer</span>
-            <select className={selectSm} value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-              <option value="">Choose…</option>
-              {customers.data?.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-            </select>
-          </label>
+          <div><span className={label}>Customer</span>
+            <SearchPicker<Option> endpoint="/customers" label="Customer" value={customer} onChange={setCustomer} format={formatOption} />
+          </div>
           <label><span className={label}>Ship from</span>
             <select className={selectSm} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
               <option value="">Choose…</option>
@@ -112,10 +109,8 @@ function NewSalesOrderDialog({ onClose, onCreated }: { onClose: () => void; onCr
           <span className={label}>Lines</span>
           {lines.map((l, i) => (
             <div key={i} className="grid grid-cols-[1fr_110px_110px_auto] gap-2 items-center">
-              <select className={selectSm} aria-label={`Line ${i + 1} product`} value={l.materialId} onChange={(e) => setLine(i, { materialId: e.target.value })}>
-                <option value="">Product…</option>
-                {materials.data?.map((m) => <option key={m.id} value={m.id}>{m.code} — {m.name} ({m.unit.code})</option>)}
-              </select>
+              <SearchPicker<MaterialOption> endpoint="/materials" params={SELLABLE_KINDS} label={`Line ${i + 1} product`}
+                value={l.material} onChange={(m) => setLine(i, { material: m })} format={formatMaterial} />
               <input className={inputSm} inputMode="decimal" placeholder="Qty" aria-label={`Line ${i + 1} quantity`}
                 value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} />
               <input className={inputSm} inputMode="decimal" placeholder="Price (₹)" aria-label={`Line ${i + 1} unit price`}
@@ -124,7 +119,7 @@ function NewSalesOrderDialog({ onClose, onCreated }: { onClose: () => void; onCr
                 onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
             </div>
           ))}
-          <button className={btnGhostSm} onClick={() => setLines((ls) => [...ls, { materialId: "", quantity: "", unitPrice: "" }])}>Add line</button>
+          <button className={btnGhostSm} onClick={() => setLines((ls) => [...ls, { material: null, quantity: "", unitPrice: "" }])}>Add line</button>
         </div>
         <label><span className={label}>Notes</span>
           <textarea className={`${inputSm} h-16 rounded-lg py-1.5`} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={2000} />

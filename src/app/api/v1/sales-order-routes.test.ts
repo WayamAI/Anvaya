@@ -15,7 +15,8 @@ vi.hoisted(() => {
 });
 
 const db = vi.hoisted(() => ({
-  salesOrder: { findMany: vi.fn(), findFirst: vi.fn() },
+  salesOrder: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn(), groupBy: vi.fn(), aggregate: vi.fn() },
+  salesOrderLine: { findMany: vi.fn(), fields: { quantity: "quantity" } },
   stockMovement: { findMany: vi.fn() },
   inventoryBalance: { findMany: vi.fn() },
   workOrder: { findMany: vi.fn() },
@@ -68,6 +69,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   session.resolveSession.mockResolvedValue(actor(["sales-order:read"]));
   db.stockMovement.findMany.mockResolvedValue([]);
+  db.salesOrderLine.findMany.mockResolvedValue([]);
+  db.salesOrder.count.mockResolvedValue(0);
+  db.salesOrder.groupBy.mockResolvedValue([]);
+  db.salesOrder.aggregate.mockResolvedValue({ _count: { _all: 0 }, _sum: { totalAmount: null } });
   db.inventoryBalance.findMany.mockResolvedValue([]);
   db.workOrder.findMany.mockResolvedValue([]);
 });
@@ -91,20 +96,37 @@ describe("authentication and permission", () => {
   });
 });
 
+/*
+ * The list's tab counts, "overdue" and headline figures are SQL over the whole
+ * company; their arithmetic is proven against Postgres in
+ * list-pagination.integration.test.ts. Here: the rows, the paging, the
+ * company scoping of every query, and the dispatched value worked from the
+ * month's ledger issues.
+ */
 describe("GET /api/v1/sales-orders", () => {
-  it("lists the caller's company's orders as of the planning date", async () => {
+  it("lists one page of the caller's company's orders as of the planning date", async () => {
     db.salesOrder.findMany.mockResolvedValue([so(), delivered()]);
-    db.stockMovement.findMany.mockResolvedValue([{ referenceId: "sol-1", quantity: D(-240), occurredAt: day("2026-03-24") }]);
+    db.salesOrder.groupBy.mockResolvedValue([{ status: "CONFIRMED", _count: { _all: 1 } }, { status: "DELIVERED", _count: { _all: 1 } }]);
+    db.salesOrder.count.mockResolvedValue(2);
+    db.salesOrder.aggregate.mockImplementation(({ where }: { where: { status?: { notIn?: string[] } } }) =>
+      Promise.resolve(where.status?.notIn ? { _count: { _all: 1 }, _sum: { totalAmount: D(487000) } } : { _count: { _all: 0 }, _sum: { totalAmount: null } }));
+    db.stockMovement.findMany.mockResolvedValue([{ referenceId: "sol-1", quantity: D(-240) }]);
+    db.salesOrderLine.findMany.mockResolvedValue([{ id: "sol-1", unitPrice: D(890) }]);
 
     const res = await listSOs(request("/sales-orders"));
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(db.salesOrder.findMany.mock.calls[0][0].where).toEqual({ companyId: COMPANY });
-    // Dispatches are read only for this company's own lines.
+    expect(db.salesOrder.findMany.mock.calls[0][0]).toMatchObject({ where: { companyId: COMPANY }, take: 51 });
+    for (const call of [...db.salesOrder.count.mock.calls, ...db.salesOrder.groupBy.mock.calls, ...db.salesOrder.aggregate.mock.calls]) {
+      expect(call[0].where).toMatchObject({ companyId: COMPANY });
+    }
+    // This month's dispatches, for this company's own materials and lines only.
     expect(db.stockMovement.findMany.mock.calls[0][0].where).toMatchObject({
-      type: "ISSUE", referenceType: "SALES_ORDER_LINE", referenceId: { in: ["l1", "l2", "sol-1"] },
+      type: "ISSUE", referenceType: "SALES_ORDER_LINE", material: { companyId: COMPANY },
+      occurredAt: { gte: new Date("2026-03-01T00:00:00Z"), lt: new Date("2026-03-26T00:00:00Z") },
     });
+    expect(db.salesOrderLine.findMany.mock.calls[0][0].where).toMatchObject({ id: { in: ["sol-1"] }, salesOrder: { companyId: COMPANY } });
     expect(body.data.asOf).toBe("2026-03-25T00:00:00.000Z");
     expect(body.data.orders[0]).toEqual({
       id: "so-4538", orderNumber: "SO-4538",
@@ -113,13 +135,22 @@ describe("GET /api/v1/sales-orders", () => {
       invoiceNumber: null, dispatchDate: null, totalAmount: 487000, currencyCode: "INR",
       lineCount: 2, overdue: false, totalMismatch: false,
     });
-    expect(body.data.counts).toMatchObject({ all: 2, CONFIRMED: 1, DELIVERED: 1, overdue: 0 });
+    expect(body.data.counts).toMatchObject({ all: 2, CONFIRMED: 1, DELIVERED: 1 });
     expect(body.data.kpis).toEqual({
       open: { count: 1, value: 487000 },
       dueNext7Days: { count: 0, value: 0 },
       bookedToday: { count: 0, value: 0 },
       dispatchedMtd: 213600,
     });
+    expect(body.meta).toEqual({ nextCursor: null, limit: 50, total: 2 });
+  });
+
+  it("passes the tab, search and page through, and refuses an oversized page", async () => {
+    db.salesOrder.findMany.mockResolvedValue([]);
+    await listSOs(request("/sales-orders?status=overdue&q=dmart&limit=10&cursor=so-1"));
+    expect(db.salesOrder.findMany.mock.calls[0][0]).toMatchObject({ take: 11, cursor: { id: "so-1" }, skip: 1 });
+    expect((await listSOs(request("/sales-orders?limit=201"))).status).toBe(422);
+    expect((await listSOs(request("/sales-orders?status=SHIPPED"))).status).toBe(422);
   });
 
   it("marks an order awaiting dispatch past its line date as overdue", async () => {
@@ -129,7 +160,6 @@ describe("GET /api/v1/sales-orders", () => {
     })]);
     const body = await (await listSOs(request("/sales-orders"))).json();
     expect(body.data.orders[0].overdue).toBe(true);
-    expect(body.data.counts.overdue).toBe(1);
   });
 
   it("flags a header total that disagrees with its lines", async () => {
@@ -138,12 +168,13 @@ describe("GET /api/v1/sales-orders", () => {
     expect(body.data.orders[0].totalMismatch).toBe(true);
   });
 
-  it("returns an empty list, zeroed KPIs and no ledger query when there are no orders", async () => {
+  it("returns an empty page and zeroed figures when there are no orders", async () => {
     db.salesOrder.findMany.mockResolvedValue([]);
     const body = await (await listSOs(request("/sales-orders"))).json();
     expect(body.data.orders).toEqual([]);
-    expect(body.data.kpis.dispatchedMtd).toBe(0);
-    expect(db.stockMovement.findMany).not.toHaveBeenCalled();
+    expect(body.data.kpis).toEqual({ open: { count: 0, value: 0 }, dueNext7Days: { count: 0, value: 0 }, bookedToday: { count: 0, value: 0 }, dispatchedMtd: 0 });
+    // No dispatches this month, so no prices to look up.
+    expect(db.salesOrderLine.findMany).not.toHaveBeenCalled();
   });
 });
 

@@ -1,3 +1,9 @@
-"use client";
+import { notFound } from "next/navigation";
 
-export { default } from "@/views/DemandForecast";
+/*
+  Not offered yet: this screen has no backend and its view showed sample data.
+  It answers 404 until it is wired to real data (view kept at views/DemandForecast).
+*/
+export default function Page() {
+  notFound();
+}

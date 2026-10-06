@@ -50,6 +50,13 @@ interface DataTableProps<T> {
   /** Extra controls, placed at the left of the toolbar. */
   toolbar?: React.ReactNode;
   className?: string;
+  /**
+   * Server-side search: the search box is controlled by the caller, which
+   * fetches matching rows, and the loaded rows are shown unfiltered. For lists
+   * that are paged, where filtering only what is loaded would miss rows.
+   */
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
 }
 
 type SortState = { key: string; dir: "asc" | "desc" } | null;
@@ -93,8 +100,13 @@ export function DataTable<T>({
   isRowSelected,
   toolbar,
   className,
+  searchValue,
+  onSearchChange,
 }: DataTableProps<T>) {
-  const [query, setQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
+  const serverSearch = !!onSearchChange;
+  const query = serverSearch ? searchValue ?? "" : localQuery;
+  const setQuery = serverSearch ? onSearchChange : setLocalQuery;
   const [sort, setSort] = useState<SortState>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
@@ -110,11 +122,11 @@ export function DataTable<T>({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q || !searchable_.length) return rows;
+    if (serverSearch || !q || !searchable_.length) return rows;
     return rows.filter((r) =>
       searchable_.some((c) => String(c.value!(r)).toLowerCase().includes(q)),
     );
-  }, [rows, query, searchable_]);
+  }, [rows, query, searchable_, serverSearch]);
 
   const sorted = useMemo(() => {
     if (!sort) return filtered;

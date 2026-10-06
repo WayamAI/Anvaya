@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { id, isoDate, optionalText, price, qty, reason, text } from "./common";
+import { cursorPage } from "@/server/api/pagination";
+import { SO_STATUSES } from "@/server/sales/sales-orders";
+import { id, isoDate, listOrdersQuery, optionalText, price, qty, reason, text } from "./common";
+
+/** GET /api/v1/sales-orders */
+export const listSalesOrdersQuery = listOrdersQuery(SO_STATUSES);
 
 /**
  * Request bodies for sales orders and dispatch. Shape and range only; the
@@ -84,6 +89,7 @@ export type DeliverInput = z.infer<typeof deliverBody>;
 export const listCustomersQuery = z.object({
   q: z.string().trim().max(100).optional(),
   active: z.enum(["true", "false", "all"]).default("true"),
+  ...cursorPage(50, 200),
 });
 
 export type ListCustomersQuery = z.infer<typeof listCustomersQuery>;

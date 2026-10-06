@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { MATERIALS, BOM_FG001 } from "./master-data";
 import {
   AS_OF_DATE, BALANCES, LOTS, SALES_ORDERS, WORK_ORDERS,
-  PRODUCED_LOTS, COMPONENT_LOTS, LOT_DISPATCHES,
+  PRODUCED_LOTS, COMPONENT_LOTS, LOT_DISPATCHES, openingLots,
 } from "./operational-data";
 
 /**
@@ -123,5 +123,39 @@ describe("sales orders", () => {
   it("do not reuse an order number", () => {
     const numbers = SALES_ORDERS.map((so) => so.orderNumber);
     expect(new Set(numbers).size).toBe(numbers.length);
+  });
+});
+
+describe("opening lots", () => {
+  const materials = [
+    { code: "RM-A", isBatchTracked: true, shelfLifeDays: 365 },
+    { code: "RM-B", isBatchTracked: true },
+    { code: "PM-C", isBatchTracked: false },
+  ];
+  const balances = [
+    { material: "RM-A", location: "PUNE", onHandQty: 1000 },
+    { material: "RM-A", location: "MUMBAI", onHandQty: 50 },
+    { material: "RM-B", location: "PUNE", onHandQty: 200 },
+    { material: "PM-C", location: "PUNE", onHandQty: 900 },
+  ];
+  const held = [
+    { material: "RM-A", location: "PUNE", receivedQty: 800, consumedQty: 100 },
+    { material: "RM-B", location: "PUNE", receivedQty: 300, consumedQty: 100 },
+  ];
+  const lots = openingLots(balances, held, materials);
+
+  it("holds the rest of each batch-tracked balance in one released lot", () => {
+    expect(lots.map((l) => [l.lotNumber, l.receivedQty])).toEqual([["OPN-RM-A-PUNE", 300], ["OPN-RM-A-MUMBAI", 50]]);
+    expect(lots.every((l) => l.qcStatus === "APPROVED" && l.consumedQty === 0)).toBe(true);
+  });
+
+  it("adds nothing where lots already hold the balance, or for untracked materials", () => {
+    expect(lots.some((l) => l.material === "RM-B" || l.material === "PM-C")).toBe(false);
+  });
+
+  it("expires the lot after the material's shelf life, from a receipt before the as-of date", () => {
+    const [l] = lots;
+    expect(l.receiptDate < AS_OF_DATE).toBe(true);
+    expect(Date.parse(l.expiryDate!) - Date.parse(l.receiptDate)).toBe(365 * 86_400_000);
   });
 });

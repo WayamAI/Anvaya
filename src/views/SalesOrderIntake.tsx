@@ -8,6 +8,9 @@ import { MetricRow, type Metric } from "@/components/app/metric-row";
 import { SkeletonBlock } from "@/components/app/skeleton-block";
 import { btnSecondary } from "@/components/app/controls";
 import { apiGet } from "@/lib/api";
+import { LoadMore } from "@/components/app/load-more";
+import { useDebounced, usePagedQuery } from "@/lib/use-paged-query";
+
 import { formatQty, inrCompact } from "@/lib/format";
 import { NewSalesOrderButton, SalesOrderActions } from "@/components/sales/so-actions";
 import type {
@@ -193,17 +196,13 @@ export default function SalesOrderIntake() {
   const [tab, setTab] = useState<TabKey>("all");
   const [selected, setSelected] = useState<string | null>(null);
 
-  const q = useQuery({
-    queryKey: ["sales-orders"],
-    queryFn: ({ signal }) => apiGet<SalesOrderList>("/sales-orders", undefined, { signal }),
-  });
-
-  const filtered = useMemo(() => {
-    const all = q.data?.orders ?? [];
-    if (tab === "all") return all;
-    if (tab === "overdue") return all.filter((o) => o.overdue);
-    return all.filter((o) => o.status === tab);
-  }, [q.data, tab]);
+  // Paged on the server: the tab and search filter there; counts and KPIs cover the company.
+  const [search, setSearch] = useState("");
+  const term = useDebounced(search.trim());
+  const q = usePagedQuery<SalesOrderList>(["sales-orders"], "/sales-orders", { status: tab === "all" ? undefined : tab, q: term || undefined });
+  const list = q.data?.pages[0]?.data;
+  const total = q.data?.pages[0]?.meta?.total;
+  const filtered = useMemo(() => q.data?.pages.flatMap((p) => p.data.orders) ?? [], [q.data]);
 
   const columns: Column<SalesOrderRow>[] = [
     { key: "so", header: "SO number", width: "w-[130px]", value: o => o.orderNumber, cell: o => <span className="identifier text-body-sm text-foreground">{o.orderNumber}</span> },
@@ -230,25 +229,25 @@ export default function SalesOrderIntake() {
     },
   ];
 
-  const k = q.data?.kpis;
+  const k = list?.kpis;
   const metrics: Metric[] = [
     { label: "Open orders", value: k ? k.open.count : "—", hint: k ? `${inrCompact(k.open.value)} not yet delivered` : undefined },
     {
       label: "Due in next 7 days", value: k ? k.dueNext7Days.count : "—",
-      hint: k ? (q.data!.counts.overdue ? `${inrCompact(k.dueNext7Days.value)} · ${orders(q.data!.counts.overdue)} overdue` : inrCompact(k.dueNext7Days.value)) : undefined,
-      tone: q.data?.counts.overdue ? "danger" : "default",
+      hint: k ? (list!.counts.overdue ? `${inrCompact(k.dueNext7Days.value)} · ${orders(list!.counts.overdue)} overdue` : inrCompact(k.dueNext7Days.value)) : undefined,
+      tone: list?.counts.overdue ? "danger" : "default",
     },
     { label: "Booked today", value: k ? k.bookedToday.count : "—", hint: k ? inrCompact(k.bookedToday.value) : undefined },
     { label: "Dispatched this month", value: k ? inrCompact(k.dispatchedMtd) : "—", hint: k ? "From the stock ledger" : undefined },
   ];
 
-  const count = (key: TabKey) => (q.data ? q.data.counts[key] : "—");
-  const asOf = q.data ? fmtDate(q.data.asOf) : null;
+  const count = (key: TabKey) => (list ? list.counts[key] : "—");
+  const asOf = list ? fmtDate(list.asOf) : null;
 
   return (
     <div className="px-6 py-5">
       <PageHeader title="Sales order intake"
-        description={q.data ? `${orders(filtered.length)} · as of ${asOf}` : q.isPending ? "Loading…" : undefined}
+        description={list && total !== undefined ? `${orders(total)} · as of ${asOf}` : q.isPending ? "Loading…" : undefined}
         actions={<NewSalesOrderButton onCreated={setSelected} />} />
 
       {!q.error && <MetricRow metrics={metrics} className="mb-4" />}
@@ -282,13 +281,18 @@ export default function SalesOrderIntake() {
           name="Sales orders"
           loading={q.isPending}
           searchable
+          searchValue={search}
+          onSearchChange={setSearch}
           columnToggle
           exportable
           pageSize={25}
           onRowClick={o => setSelected(o.id)}
           isRowSelected={o => o.id === selected}
-          empty={<EmptyState title="No sales orders" description={tab === "all" ? "Sales orders appear here once they are booked." : "Nothing matches this filter yet."} />}
+          empty={<EmptyState title="No sales orders" description={tab === "all" && !term ? "Sales orders appear here once they are booked." : "Nothing matches this filter yet."} />}
         />
+      )}
+      {!q.error && (
+        <LoadMore shown={filtered.length} total={total} hasMore={!!q.hasNextPage} loading={q.isFetchingNextPage} onLoadMore={() => void q.fetchNextPage()} />
       )}
 
       {selected && <SalesOrderPanel key={selected} id={selected} />}

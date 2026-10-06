@@ -15,5 +15,5 @@ export const POST = withApi<{ id: string }>(
     const input = await parseBody(req, lotQcBody);
     return ok(await decideLotQuality(params.id, input, { actor: actor!, requestId, clientInfo }));
   },
-  { permission: "inventory:update" },
+  { permission: "quality:decide" },
 );

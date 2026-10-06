@@ -22,6 +22,7 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "company:create": "tsx scripts/create-company.ts",
+    "maintenance:purge": "tsx scripts/purge-expired.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

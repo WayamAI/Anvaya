@@ -60,6 +60,9 @@ export const policyBody = z.object({
   if (p.maxOrderQty !== null && p.maxOrderQty < p.minOrderQty) {
     ctx.addIssue({ code: "custom", path: ["maxOrderQty"], message: "cannot be below the minimum order quantity" });
   }
+  if (p.maxOrderQty !== null && p.maxOrderQty > 0 && p.orderMultiple > 0 && p.maxOrderQty < p.orderMultiple) {
+    ctx.addIssue({ code: "custom", path: ["maxOrderQty"], message: "cannot be below the order multiple" });
+  }
   if (p.reorderPoint < p.safetyStock) {
     ctx.addIssue({ code: "custom", path: ["reorderPoint"], message: "cannot be below safety stock" });
   }
@@ -161,6 +164,7 @@ export type UpdateLocationInput = z.infer<typeof updateLocationBody>;
 const pct = z.number().min(0).max(100);
 export const updateSettingsBody = nonEmpty({
   "purchasing.overReceiptTolerancePct": pct.optional(),
+  "mrp.rescheduleInToleranceDays": z.number().int().min(0).max(90).optional(),
   "purchasing.allowSelfApproval": z.boolean().optional(),
   "sales.overDispatchTolerancePct": pct.optional(),
   "production.overProductionTolerancePct": pct.optional(),

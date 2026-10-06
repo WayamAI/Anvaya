@@ -1,6 +1,7 @@
 "use client";
 
 import type { ApiError } from "@/lib/api";
+import { describeProblem } from "@/lib/field-label";
 
 /** Shared pieces for forms that write through the API. */
 
@@ -23,7 +24,7 @@ export function ErrorNote({ error }: { error: unknown }) {
       <p className="font-medium">{e.message}</p>
       {e.details?.length ? (
         <ul className="mt-1 list-disc pl-4">
-          {e.details.map((d, i) => <li key={i}><span className="identifier">{d.path}</span>: {d.message}</li>)}
+          {e.details.map((d, i) => <li key={i}>{describeProblem(d)}</li>)}
         </ul>
       ) : null}
       {e.requestId && <p className="mt-1 text-caption opacity-70">Reference {e.requestId}</p>}

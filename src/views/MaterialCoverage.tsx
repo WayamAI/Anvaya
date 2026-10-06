@@ -1,77 +1,174 @@
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import StatusBadge from "@/components/StatusBadge";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import { DataTable, type Column } from "@/components/app/data-table";
+import { EmptyState } from "@/components/app/empty-state";
+import { SkeletonBlock } from "@/components/app/skeleton-block";
+import { btnLink, btnPrimary, btnSecondary } from "@/components/app/controls";
+import { PageIcon } from "@/components/app/page-icon";
+import { useSession } from "@/components/auth/session-context";
+import { ApiError, apiGet } from "@/lib/api";
+import { formatQty } from "@/lib/format";
 import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE } from "@/lib/chart-colors";
 
-import { btnLink } from "@/components/app/controls";
-import { PageIcon } from "@/components/app/page-icon";
-const coverageData = [
-  { week: "W1", "Polypropylene": 6.2, "Stearic Acid": 3.1, "HDPE Resin": 8.4, "SLS": 4.5, "TiO2": 5.1, "EDTA": 3.8 },
-  { week: "W3", "Polypropylene": 5.1, "Stearic Acid": 2.2, "HDPE Resin": 7.2, "SLS": 3.8, "TiO2": 4.3, "EDTA": 3.0 },
-  { week: "W5", "Polypropylene": 4.5, "Stearic Acid": 1.8, "HDPE Resin": 6.2, "SLS": 3.2, "TiO2": 3.5, "EDTA": 2.5 },
-  { week: "W7", "Polypropylene": 3.8, "Stearic Acid": 1.2, "HDPE Resin": 5.4, "SLS": 2.6, "TiO2": 2.8, "EDTA": 1.8 },
-  { week: "W9", "Polypropylene": 4.2, "Stearic Acid": 0.8, "HDPE Resin": 4.8, "SLS": 2.1, "TiO2": 2.2, "EDTA": 1.2 },
-  { week: "W11", "Polypropylene": 3.4, "Stearic Acid": 0.5, "HDPE Resin": 4.2, "SLS": 1.5, "TiO2": 1.6, "EDTA": 0.8 },
-  { week: "W13", "Polypropylene": 5.8, "Stearic Acid": 3.5, "HDPE Resin": 5.8, "SLS": 4.1, "TiO2": 3.8, "EDTA": 3.2 },
-];
+/**
+ * Material coverage from the latest MRP run: how many days current stock and
+ * open supply last before falling below safety stock, and the date the next
+ * order must be placed. Materials below two weeks of cover lead the chart.
+ */
 
-const materials = [
-  { name: "Stearic Acid", coverage: 4.3, trend: "Declining", riskLevel: "Critical", nextPO: "Immediate", action: "Emergency PO" },
-  { name: "Fragrance Blend FG-04", coverage: 3.7, trend: "Declining", riskLevel: "Critical", nextPO: "Immediate", action: "Emergency PO" },
-  { name: "EDTA Disodium Salt", coverage: 5.3, trend: "Declining", riskLevel: "High", nextPO: "24 Mar 2026", action: "Expedite" },
-  { name: "Shrink Labels (Type B)", coverage: 6.2, trend: "Stable", riskLevel: "High", nextPO: "25 Mar 2026", action: "Raise PO" },
-  { name: "Pine Oil", coverage: 3.8, trend: "Declining", riskLevel: "Critical", nextPO: "Immediate", action: "Emergency PO" },
-  { name: "Titanium Dioxide", coverage: 8.2, trend: "Declining", riskLevel: "Medium", nextPO: "25 Mar 2026", action: "Monitor" },
-  { name: "Polypropylene Granules", coverage: 15.0, trend: "Stable", riskLevel: "Low", nextPO: "29 Mar 2026", action: "Planned" },
-  { name: "HDPE Resin", coverage: 38.0, trend: "Stable", riskLevel: "None", nextPO: "N/A", action: "—" },
-  { name: "Sodium Hypochlorite", coverage: 10.0, trend: "Declining", riskLevel: "Medium", nextPO: "26 Mar 2026", action: "Monitor" },
-  { name: "Citric Acid Monohydrate", coverage: 11.0, trend: "Stable", riskLevel: "Low", nextPO: "30 Mar 2026", action: "Planned" },
-];
+interface Row {
+  material: { id: string; code: string; name: string; kind: string };
+  category: string | null; uom: string; location: { id: string; code: string; name: string };
+  procurementType: "BUY" | "MAKE" | null;
+  openingStock: number; grossRequirement: number; scheduledReceipts: number; safetyStock: number;
+  netRequirement: number; coverDays: number | null; horizonDays: number; nextPlannedRelease: string | null;
+  status: "critical" | "short" | "covered" | "adequate";
+}
+
+const RISK = {
+  critical: { status: "red", label: "Critical" },
+  short: { status: "amber", label: "Needs order" },
+  covered: { status: "green", label: "Covered" },
+  adequate: { status: "gray", label: "No demand" },
+} as const;
+const CRITICAL_DAYS = 14;
+
+const fmtDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 export default function MaterialCoverage() {
+  const { can } = useSession();
+  const router = useRouter();
+  const [withDemandOnly, setWithDemandOnly] = useState(true);
+
+  const runQ = useQuery({
+    queryKey: ["mrp", "run", "latest"],
+    queryFn: async () => {
+      try {
+        return await apiGet<{ id: string; runNumber: string; asOfDate: string }>("/mrp/runs/latest");
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    },
+  });
+  const run = runQ.data ?? null;
+  const rowsQ = useQuery({ queryKey: ["mrp", "materials", run?.id], queryFn: () => apiGet<Row[]>(`/mrp/runs/${run!.id}/materials`), enabled: !!run });
+  const rows = useMemo(() => rowsQ.data ?? [], [rowsQ.data]);
+  const shown = withDemandOnly ? rows.filter((r) => r.status !== "adequate") : rows;
+
+  // Lowest cover first; a material that holds all horizon sorts last.
+  const coverOf = (r: Row) => r.coverDays ?? r.horizonDays;
+  const chartData = useMemo(() => rows
+    .filter((r) => r.status !== "adequate")
+    .sort((a, b) => coverOf(a) - coverOf(b))
+    .slice(0, 12)
+    .map((r) => ({ name: r.material.code, label: `${r.material.name} — ${r.location.name}`, cover: coverOf(r), beyond: r.coverDays === null })), [rows]);
+
+  const actionFor = (r: Row) => {
+    if (!r.nextPlannedRelease) return null;
+    return r.procurementType === "MAKE"
+      ? { label: "Plan production", to: "/mrp-run" }
+      : { label: "Plan purchase", to: "/purchase-planning" };
+  };
+
+  const columns: Column<Row>[] = [
+    {
+      key: "material", header: "Material", value: (r) => `${r.material.code} ${r.material.name}`,
+      cell: (r) => <span><span className="identifier text-body-sm text-muted-foreground">{r.material.code}</span> <span className="font-medium">{r.material.name}</span></span>,
+    },
+    { key: "location", header: "Location", width: "w-[120px]", value: (r) => r.location.name, cell: (r) => <span className="text-muted-foreground">{r.location.name}</span> },
+    { key: "type", header: "Source", width: "w-[80px]", value: (r) => r.procurementType ?? "", cell: (r) => (r.procurementType === "MAKE" ? "Make" : r.procurementType === "BUY" ? "Buy" : "—") },
+    { key: "stock", header: "On hand", align: "right", numeric: true, width: "w-[120px]", value: (r) => r.openingStock, cell: (r) => `${formatQty(r.openingStock)} ${r.uom}` },
+    { key: "demand", header: "Demand (horizon)", align: "right", numeric: true, width: "w-[140px]", value: (r) => r.grossRequirement, cell: (r) => formatQty(r.grossRequirement) },
+    {
+      key: "cover", header: "Cover", align: "right", numeric: true, width: "w-[90px]", value: coverOf,
+      cell: (r) => r.coverDays === null
+        ? <span className="text-muted-foreground">{r.horizonDays}d+</span>
+        : <span className={r.coverDays < CRITICAL_DAYS ? "font-medium text-danger" : "font-medium"}>{r.coverDays}d</span>,
+    },
+    {
+      key: "until", header: "Covered until", width: "w-[130px]", value: coverOf,
+      cell: (r) => (run ? (r.coverDays === null ? <span className="text-muted-foreground">Beyond horizon</span> : fmtDate(addDays(run.asOfDate, r.coverDays))) : "—"),
+    },
+    { key: "orderBy", header: "Order by", width: "w-[130px]", value: (r) => r.nextPlannedRelease ?? "9999", cell: (r) => (r.nextPlannedRelease ? <span className="font-medium">{fmtDate(r.nextPlannedRelease)}</span> : <span className="text-muted-foreground">—</span>) },
+    { key: "risk", header: "Risk", width: "w-[120px]", value: (r) => RISK[r.status].label, cell: (r) => <StatusBadge {...RISK[r.status]} /> },
+    {
+      key: "action", header: "", align: "right", width: "w-[130px]", sortable: false,
+      cell: (r) => {
+        const a = actionFor(r);
+        return a ? <button className={btnLink} onClick={() => router.push(a.to)}>{a.label}</button> : null;
+      },
+    },
+  ];
+
   return (
     <div className="px-6 py-5 space-y-6">
-      <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="flex items-center gap-2.5 font-display text-display-page text-foreground">
           <PageIcon />
           <span className="min-w-0">Material coverage monitor</span>
         </h1>
-      <div>
-        <h3 className="text-body-md font-semibold mb-3">Coverage trend (weeks of stock)</h3>
-        <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={coverageData}>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-            <YAxis width={44} tick={{ fontSize: 11 }} />
-            <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
-            <ReferenceLine y={2} stroke={CHART_COLORS.primary} strokeDasharray="5 5" label={{ value: "Critical (2w)", fontSize: 10, fill: CHART_COLORS.primary }} />
-            <Line type="monotone" dataKey="Polypropylene" stroke={SERIES[0]} strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="Stearic Acid" stroke={SERIES[1]} strokeWidth={1.5} dot={false} />
-            <Line type="monotone" dataKey="HDPE Resin" stroke={SERIES[2]} strokeWidth={1.5} dot={false} />
-            <Line type="monotone" dataKey="SLS" stroke={SERIES[3]} strokeWidth={1.5} dot={false} />
-            <Line type="monotone" dataKey="TiO2" stroke={SERIES[4]} strokeWidth={1.5} dot={false} />
-            <Line type="monotone" dataKey="EDTA" stroke={CHART_COLORS.muted} strokeWidth={1.5} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
+        <label className="flex items-center gap-1.5 text-body-sm whitespace-nowrap">
+          <input type="checkbox" className="rounded" checked={withDemandOnly} onChange={() => setWithDemandOnly(!withDemandOnly)} /> Materials with demand only
+        </label>
       </div>
-      <div className="overflow-x-auto">
-        <table className="data-table w-full text-body-md">
-          <thead><tr className="border-b border-border">
-            {["Material", "Coverage (days)", "Trend", "Risk level", "Next PO due", "Action"].map(h =>
-              <th key={h} className="text-left px-3 py-2.5 font-medium text-muted-foreground">{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {materials.map((m, i) => (
-              <tr key={i} className="border-b border-border hover:bg-sunken">
-                <td className="px-3 py-2 font-medium">{m.name}</td>
-                <td className="px-3 py-2 tabular-nums font-medium">{m.coverage}d</td>
-                <td className="px-3 py-2"><StatusBadge status={m.trend === "Declining" ? "red" : "green"} label={m.trend} /></td>
-                <td className="px-3 py-2"><StatusBadge status={m.riskLevel === "Critical" ? "red" : m.riskLevel === "High" ? "red" : m.riskLevel === "Medium" ? "amber" : "green"} label={m.riskLevel} /></td>
-                <td className="px-3 py-2">{m.nextPO}</td>
-                <td className="px-3 py-2"><button className={btnLink}>{m.action}</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+
+      {runQ.error || rowsQ.error ? (
+        <EmptyState title="Coverage could not be loaded" description={(runQ.error ?? rowsQ.error)!.message}
+          action={<button className={btnSecondary} onClick={() => { void runQ.refetch(); void rowsQ.refetch(); }}>Try again</button>} />
+      ) : !runQ.isPending && !run ? (
+        <EmptyState title="No MRP run yet" description="Coverage is measured against the MRP plan; it appears once MRP has been run."
+          action={can("mrp:run") ? <button className={btnPrimary} onClick={() => router.push("/mrp-run")}>Go to MRP run</button> : undefined} />
+      ) : (
+        <>
+          {run && (
+            <p className="text-body-sm text-muted-foreground">
+              From <span className="identifier">{run.runNumber}</span>, planned as of {fmtDate(run.asOfDate)}. Cover is the days until stock and open supply, without new orders, fall below safety stock.
+            </p>
+          )}
+          <div>
+            <h3 className="text-body-md font-semibold mb-3">Lowest cover (days)</h3>
+            {runQ.isPending || rowsQ.isPending ? (
+              <SkeletonBlock className="h-[280px] w-full" />
+            ) : chartData.length === 0 ? (
+              <EmptyState title="No demand in the plan" description="No material has requirements in the planning horizon." />
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} interval={0} />
+                  <YAxis width={44} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} />
+                  <Tooltip
+                    contentStyle={CHART_TOOLTIP_STYLE}
+                    cursor={{ fill: CHART_COLORS.grid, opacity: 0.4 }}
+                    labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ""}
+                    formatter={(v: number, _n, p) => [`${v}${(p.payload as { beyond: boolean }).beyond ? "+" : ""} days`, "Cover"]}
+                  />
+                  <ReferenceLine y={CRITICAL_DAYS} stroke={CHART_COLORS.primary} strokeDasharray="5 5" label={{ value: `${CRITICAL_DAYS} days`, fontSize: 10, fill: CHART_COLORS.primary, position: "insideTopLeft" }} />
+                  {/* A material with no cover left still gets a visible stub: it is the most urgent bar. */}
+                  <Bar dataKey="cover" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={36} minPointSize={3} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          <DataTable
+            columns={columns}
+            rows={shown}
+            rowKey={(r) => `${r.material.id}|${r.location.id}`}
+            name="Material coverage"
+            loading={runQ.isPending || rowsQ.isPending}
+            searchable
+            columnToggle
+            exportable
+            pageSize={25}
+            empty={<EmptyState title="Nothing to show" description="No material has demand in the planning horizon." />}
+          />
+        </>
+      )}
     </div>
   );
 }

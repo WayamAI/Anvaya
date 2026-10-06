@@ -37,7 +37,7 @@ describe("password policy", () => {
 
 describe("login schema", () => {
   it("accepts valid credentials", () => {
-    const r = loginSchema.safeParse({ email: "Admin@Anvaya.in", password: "anything" });
+    const r = loginSchema.safeParse({ company: "anvaya", email: "Admin@Anvaya.in", password: "anything" });
     expect(r.success).toBe(true);
     if (r.success) expect(r.data.email).toBe("admin@anvaya.in");
   });
@@ -48,11 +48,18 @@ describe("login schema", () => {
       password predates a policy change, and would tell an attacker which
       candidate passwords are even worth submitting.
     */
-    expect(loginSchema.safeParse({ email: "a@b.com", password: "old" }).success).toBe(true);
+    expect(loginSchema.safeParse({ company: "ANVAYA", email: "a@b.com", password: "old" }).success).toBe(true);
+  });
+
+  it("requires the company, normalised the way company codes are stored", () => {
+    // Email is unique only within a company; the company is never guessed.
+    expect(loginSchema.safeParse({ email: "a@b.com", password: "x" }).success).toBe(false);
+    expect(loginSchema.safeParse({ company: "  ", email: "a@b.com", password: "x" }).success).toBe(false);
+    expect(loginSchema.parse({ company: " acme ", email: "a@b.com", password: "x" }).company).toBe("ACME");
   });
 
   it("still requires a non-empty password", () => {
-    expect(loginSchema.safeParse({ email: "a@b.com", password: "" }).success).toBe(false);
+    expect(loginSchema.safeParse({ company: "ANVAYA", email: "a@b.com", password: "" }).success).toBe(false);
   });
 });
 

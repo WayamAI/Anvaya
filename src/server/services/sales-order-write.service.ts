@@ -7,7 +7,7 @@ import { nextDocumentNumber } from "@/server/db/sequence";
 import { lockRow, runInTransaction, type Tx } from "@/server/db/transaction";
 import { AppError, type ErrorDetail } from "@/server/errors/app-error";
 import { MOVEMENT_REF } from "@/server/inventory/lots";
-import { lineTotal, orderTotal } from "@/server/purchasing/po-rules";
+import { amountProblems, lineTotal, orderTotal } from "@/server/purchasing/po-rules";
 import { assertSoTransition, planDispatch, statusAfterDispatch, type DispatchLineInput } from "@/server/sales/so-rules";
 import type {
   CancelSalesOrderInput, CreateSalesOrderInput, DeliverInput, DispatchInput, UpdateSalesOrderInput,
@@ -71,6 +71,7 @@ async function resolveLines(tx: Tx, companyId: string, lines: LineInput[], defau
     };
   });
 
+  if (!problems.length) problems.push(...amountProblems(resolved.map((l) => ({ orderedQty: l.quantity, unitPrice: l.unitPrice }))));
   if (problems.length) throw AppError.unprocessable("Some lines cannot be booked", problems);
   return resolved;
 }

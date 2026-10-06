@@ -20,6 +20,7 @@ export const ErrorCode = {
   UNPROCESSABLE: "UNPROCESSABLE",
   RATE_LIMITED: "RATE_LIMITED",
   INTERNAL: "INTERNAL",
+  UNAVAILABLE: "UNAVAILABLE",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -33,6 +34,7 @@ const STATUS: Record<ErrorCode, number> = {
   UNPROCESSABLE: 422,
   RATE_LIMITED: 429,
   INTERNAL: 500,
+  UNAVAILABLE: 503,
 };
 
 /** Field-level detail, shaped so a form can map it straight onto inputs. */
@@ -100,6 +102,11 @@ export class AppError extends Error {
   /** `retryAfterSeconds` is sent to the client as a Retry-After header. */
   static rateLimited(message = "Too many requests — please slow down", retryAfterSeconds?: number) {
     return new AppError(ErrorCode.RATE_LIMITED, message, { context: { retryAfterSeconds } });
+  }
+
+  /** A dependency (the database) cannot serve requests; the cause stays in the log. */
+  static unavailable(message = "The service is unavailable", cause?: unknown) {
+    return new AppError(ErrorCode.UNAVAILABLE, message, { cause });
   }
 
   static internal(message = "An unexpected error occurred", cause?: unknown) {

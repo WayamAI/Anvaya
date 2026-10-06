@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Prisma } from "@prisma/client";
 import { AppError } from "@/server/errors/app-error";
 import {
-  assertOutputWithinPlan, assertWoTransition, outputUnitCost, planIssue, snapshotComponents, type BomLine,
+  assertCompletable, assertOutputWithinPlan, assertWoTransition, componentShortfalls, outputUnitCost, planIssue, snapshotComponents, type BomLine,
 } from "./wo-rules";
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -94,5 +94,76 @@ describe("output", () => {
 
   it("falls back to standard cost with nothing issued", () => {
     expect(outputUnitCost({ issuedValue: D(0), capitalisedValue: D(0), quantity: D(5), remainingToMake: D(5), completing: false, standardCost: D(7) }).toNumber()).toBe(7);
+  });
+});
+
+describe("componentShortfalls", () => {
+  // Planned 100; the snapshot requires 51 kg RM (incl. 2% scrap) and 100 PM.
+  const comps = (rm: number, pm: number) => [
+    { materialCode: "RM", requiredQty: D(51), issuedQty: D(rm) },
+    { materialCode: "PM", requiredQty: D(100), issuedQty: D(pm) },
+  ];
+  const short = (rm: number, pm: number, produced: number) =>
+    componentShortfalls(comps(rm, pm), D(100), D(produced)).map((s) => [s.materialCode, s.requiredQty.toNumber(), s.issuedQty.toNumber(), s.shortQty.toNumber()]);
+
+  it("finds nothing short when everything was issued", () => {
+    expect(short(51, 100, 100)).toEqual([]);
+  });
+
+  it("names each component issued short of what the output needed", () => {
+    expect(short(30, 100, 100)).toEqual([["RM", 51, 30, 21]]);
+  });
+
+  it("counts a component never issued as entirely short", () => {
+    expect(short(0, 0, 100)).toEqual([["RM", 51, 0, 51], ["PM", 100, 0, 100]]);
+  });
+
+  it("accepts over-issue (within the issue tolerance) as covered", () => {
+    expect(short(55, 105, 100)).toEqual([]);
+  });
+
+  it("scales the requirement to the quantity actually produced", () => {
+    // 40 of 100 made: 51 × 0.4 = 20.4 kg and 40 PM are needed, not the full snapshot.
+    expect(short(20.4, 40, 40)).toEqual([]);
+    expect(short(20, 40, 40)).toEqual([["RM", 20.4, 20, 0.4]]);
+    // Nothing made, nothing needed.
+    expect(short(0, 0, 0)).toEqual([]);
+  });
+});
+
+describe("assertCompletable", () => {
+  const shortfalls = componentShortfalls([{ materialCode: "RM", requiredQty: D(51), issuedQty: D(30) }], D(100), D(100));
+  const refusal = (fn: () => unknown) => {
+    try {
+      fn();
+    } catch (e) {
+      if (AppError.is(e)) return e;
+      throw e;
+    }
+    throw new Error("expected a refusal");
+  };
+
+  it("passes a fully issued order with no override", () => {
+    expect(assertCompletable({ shortfalls: [], orderNumber: "WO-1", canOverride: false })).toBeNull();
+    // A reason with nothing short is not an override.
+    expect(assertCompletable({ shortfalls: [], orderNumber: "WO-1", canOverride: false, overrideReason: "x" })).toBeNull();
+  });
+
+  it("refuses a short order, listing what is missing", () => {
+    const e = refusal(() => assertCompletable({ shortfalls, orderNumber: "WO-1", canOverride: true }));
+    expect(e.status).toBe(422);
+    expect(e.message).toMatch(/WO-1.*not fully issued/);
+    expect(e.details).toEqual([{ path: "components", message: "RM: 30 issued, 51 needed for the output — 21 short" }]);
+  });
+
+  it("needs the override permission as well as a reason", () => {
+    expect(refusal(() => assertCompletable({ shortfalls, orderNumber: "WO-1", canOverride: false, overrideReason: "Yield better than BOM" })).status).toBe(403);
+  });
+
+  it("returns what was overridden when permitted, for the audit trail", () => {
+    expect(assertCompletable({ shortfalls, orderNumber: "WO-1", canOverride: true, overrideReason: "Yield better than BOM" })).toEqual({
+      reason: "Yield better than BOM",
+      shortfalls: [{ material: "RM", required: "51", issued: "30", short: "21" }],
+    });
   });
 });

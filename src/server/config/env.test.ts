@@ -67,6 +67,16 @@ describe("env configuration", () => {
     expect(env.SESSION_MAX_AGE_SECONDS).toBe(3600);
   });
 
+  it("refuses a pinned planning date in production", async () => {
+    // A pinned date would silently plan every production MRP run from it.
+    await expect(loadEnv({ NODE_ENV: "production", PLANNING_AS_OF_DATE: "2026-03-25" })).rejects.toThrow(/PLANNING_AS_OF_DATE.*production/);
+  });
+
+  it("allows a pinned planning date outside production, and none in production", async () => {
+    expect((await loadEnv({ NODE_ENV: "development", PLANNING_AS_OF_DATE: "2026-03-25" })).env.PLANNING_AS_OF_DATE).toBe("2026-03-25");
+    expect((await loadEnv({ NODE_ENV: "production", PLANNING_AS_OF_DATE: "" })).env.PLANNING_AS_OF_DATE).toBeUndefined();
+  });
+
   it("parses LOG_PRETTY into a boolean", async () => {
     const { env } = await loadEnv({ LOG_PRETTY: "true" });
     expect(env.LOG_PRETTY).toBe(true);

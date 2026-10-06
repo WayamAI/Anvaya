@@ -110,7 +110,13 @@ describe("an MRP run", () => {
   it("summarises requirements per material and exposes the time-phased record", async () => {
     const rows = await materialRequirements(f.companyId, runId);
     const pm = rows.find((r) => r.material.code === "PM-T1")!;
-    expect(pm).toMatchObject({ openingStock: 50, grossRequirement: 200, scheduledReceipts: 0, netRequirement: 150, plannedReceipts: 150, status: "short", coverDays: 18 });
+    expect(pm).toMatchObject({ openingStock: 50, grossRequirement: 200, scheduledReceipts: 0, netRequirement: 150, plannedReceipts: 150, status: "short", coverDays: 18, nextPlannedRelease: addDays(today, 13) });
+    // A planned purchase carries its suggested vendor's list price, when one is on file.
+    const vm = await prisma.vendorMaterial.findFirstOrThrow({ where: { vendorId: f.vendor.id, materialId: f.pack.id } });
+    await prisma.vendorMaterial.update({ where: { id: vm.id }, data: { unitPrice: D(12.5) } });
+    const buys = await listPlannedOrders(f.companyId, runId, { type: "PURCHASE", materialId: f.pack.id });
+    expect(buys[0].price).toEqual({ unitPrice: 12.5, currencyCode: "INR" });
+    await prisma.vendorMaterial.update({ where: { id: vm.id }, data: { unitPrice: vm.unitPrice } });
     const record = await timePhased(f.companyId, runId, f.pack.id, f.plant.id);
     expect(record.find((r) => r.bucketStart === addDays(today, 18))).toMatchObject({ grossRequirement: 200, netRequirement: 150, plannedReceipt: 150, projectedOnHand: 0 });
     expect(record.find((r) => r.bucketStart === addDays(today, 13))).toMatchObject({ plannedRelease: 150 });
@@ -180,6 +186,39 @@ describe("conversion", () => {
     // Nothing half-done.
     expect((await listPlannedOrders(f.companyId, r.id, { type: "PRODUCTION" }))[0].status).toBe("PLANNED");
   });
+
+  it("flags production with no active BOM as unconvertible, and refuses it line by line", async () => {
+    await prisma.salesOrderLine.updateMany({ where: { salesOrder: { companyId: f.companyId } }, data: { quantity: D(400) } });
+    await prisma.bomVersion.updateMany({ where: { bom: { companyId: f.companyId, materialId: f.finished.id } }, data: { isActive: false } });
+    try {
+      const r = await run();
+      const make = (await listPlannedOrders(f.companyId, r.id, { type: "PRODUCTION", materialId: f.finished.id }))[0];
+      expect(make.blocker).toMatch(/no active BOM/i);
+      const e = await failure(convertPlannedOrders(r.id, [make.id], f.ctx(planner)));
+      expect(e.status).toBe(422);
+      expect(e.details?.[0]).toMatchObject({ path: "plannedOrderIds.0", message: expect.stringMatching(/no active BOM/) });
+    } finally {
+      await prisma.bomVersion.updateMany({ where: { bom: { companyId: f.companyId, materialId: f.finished.id } }, data: { isActive: true } });
+    }
+  });
+
+  it("lets procurement convert purchases without the right to run MRP, but not production", async () => {
+    const buyer = await f.actor(["mrp:read", "purchase-order:create"], "Buyer");
+    await prisma.salesOrderLine.updateMany({ where: { salesOrder: { companyId: f.companyId } }, data: { quantity: D(400) } });
+    const r = await run();
+    const make = await listPlannedOrders(f.companyId, r.id, { type: "PRODUCTION" });
+    const buy = (await listPlannedOrders(f.companyId, r.id, { type: "PURCHASE" })).filter((o) => o.vendor);
+    expect(buy.length).toBeGreaterThan(0);
+    expect((await failure(convertPlannedOrders(r.id, [make[0].id, buy[0].id], f.ctx(buyer)))).status).toBe(403);
+    const done = await convertPlannedOrders(r.id, [buy[0].id], f.ctx(buyer));
+    expect(done.purchaseOrders).toHaveLength(1);
+    expect(done.workOrders).toHaveLength(0);
+    // Leave no new supply behind for the tests that follow.
+    const poId = done.purchaseOrders[0].id;
+    await prisma.plannedOrder.updateMany({ where: { convertedToPurchaseOrderId: poId }, data: { convertedToPurchaseOrderId: null } });
+    await prisma.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: poId } });
+    await prisma.purchaseOrder.delete({ where: { id: poId } });
+  });
 });
 
 describe("exceptions", () => {
@@ -198,5 +237,25 @@ describe("exceptions", () => {
     } finally {
       await prisma.vendorMaterial.updateMany({ where: { vendorId: f.vendor.id }, data: { isActive: true } });
     }
+  });
+});
+
+describe("simulations", () => {
+  it("plan from another date only when asked, and never become the plan", async () => {
+    const past = addDays(today, -30);
+    // A planning run cannot be backdated.
+    expect((await failure(run({ asOfDate: past }))).status).toBe(422);
+
+    const plan = await run();
+    const sim = await run({ asOfDate: past, simulation: true });
+    expect(await prisma.mrpRun.findUniqueOrThrow({ where: { id: sim.id } }))
+      .toMatchObject({ isSimulation: true, status: "COMPLETED", asOfDate: new Date(`${past}T00:00:00Z`) });
+
+    // Newer, but the plan is still the planning run, and the what-if cannot be ordered from.
+    expect((await getRun(f.companyId, "latest")).id).toBe(plan.id);
+    const orders = await listPlannedOrders(f.companyId, sim.id, {});
+    const e = await failure(convertPlannedOrders(sim.id, [orders[0]?.id ?? "none"], f.ctx(planner)));
+    expect(e.status).toBe(409);
+    expect(e.message).toMatch(/simulation/);
   });
 });

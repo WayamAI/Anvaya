@@ -9,7 +9,11 @@ import * as v from "@/server/validation/masterdata";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi(
-  async ({ req, actor }) => ok(await listCustomers(actor!.companyId, parseQuery(req, listCustomersQuery))),
+  async ({ req, actor }) => {
+    const query = parseQuery(req, listCustomersQuery);
+    const { items, nextCursor, total } = await listCustomers(actor!.companyId, query);
+    return ok(items, { meta: { nextCursor, limit: query.limit, total } });
+  },
   { permission: "customer:read" },
 );
 

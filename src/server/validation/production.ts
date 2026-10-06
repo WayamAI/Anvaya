@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { id, isoDate, nonNegativeQty, optionalText, qty, reason, text } from "./common";
+import { WORK_ORDER_STATUSES } from "@/server/production/work-orders";
+import { id, isoDate, listOrdersQuery, nonNegativeQty, optionalText, qty, reason, text } from "./common";
+
+/** GET /api/v1/work-orders */
+export const listWorkOrdersQuery = listOrdersQuery(WORK_ORDER_STATUSES);
 
 /** Request bodies for work orders. Shape and range only. */
 
@@ -66,11 +70,23 @@ export const outputBody = z.object({
   bin: optionalText(50),
   /** Mark the order COMPLETED with this report. */
   complete: z.boolean().optional(),
+  /**
+   * Complete although components are issued short of the output: needs
+   * `work-order:complete-short`, and is recorded in the audit trail.
+   */
+  shortIssueReason: reason.optional(),
 }).strict().refine((b) => b.quantity > 0 || (b.scrappedQty ?? 0) > 0 || b.complete, {
   path: ["quantity"], message: "report some output or scrap, or complete the order",
 });
 
 export type OutputInput = z.infer<typeof outputBody>;
+
+/** POST /api/v1/work-orders/:id/complete — the body is optional. */
+export const completeWorkOrderBody = z.object({
+  /** See `outputBody.shortIssueReason`. */
+  shortIssueReason: reason.optional(),
+}).strict();
+export type CompleteWorkOrderInput = z.infer<typeof completeWorkOrderBody>;
 
 export const cancelWorkOrderBody = z.object({ reason }).strict();
 export type CancelWorkOrderInput = z.infer<typeof cancelWorkOrderBody>;

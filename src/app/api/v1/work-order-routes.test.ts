@@ -13,7 +13,7 @@ vi.hoisted(() => {
 });
 
 const db = vi.hoisted(() => ({
-  workOrder: { findMany: vi.fn(), findFirst: vi.fn() },
+  workOrder: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn().mockResolvedValue(0), groupBy: vi.fn().mockResolvedValue([]) },
   inventoryBalance: { findMany: vi.fn() },
   stockMovement: { findMany: vi.fn() },
 }));
@@ -81,6 +81,7 @@ describe("authentication and permission", () => {
 
 describe("GET /api/v1/work-orders", () => {
   it("lists orders with derived overdue, route, trace and counts", async () => {
+    db.workOrder.groupBy.mockResolvedValue([{ status: "RELEASED", _count: { _all: 1 } }, { status: "COMPLETED", _count: { _all: 1 } }]);
     db.workOrder.findMany.mockResolvedValue([
       order({ id: "wo-104", orderNumber: "WO-2026-0104", status: "RELEASED", producedQty: D("0"), plannedEndDate: day("2026-03-27") }),
       order(),
@@ -88,8 +89,13 @@ describe("GET /api/v1/work-orders", () => {
 
     const body = await (await listWorkOrders(request("/work-orders"))).json();
 
-    expect(db.workOrder.findMany.mock.calls[0][0].where).toEqual({ companyId: COMPANY });
-    expect(body.data.counts).toMatchObject({ all: 2, overdue: 1, RELEASED: 1, COMPLETED: 1 });
+    // Counts and "overdue" across the company are SQL, proven against Postgres
+    // in list-pagination.integration.test.ts; the per-row overdue flag is here.
+    expect(db.workOrder.findMany.mock.calls[0][0]).toMatchObject({ where: { companyId: COMPANY }, take: 51 });
+    for (const call of [...db.workOrder.count.mock.calls, ...db.workOrder.groupBy.mock.calls]) {
+      expect(call[0].where).toMatchObject({ companyId: COMPANY });
+    }
+    expect(body.data.counts).toMatchObject({ all: 2, RELEASED: 1, COMPLETED: 1 });
     expect(body.data.orders[0]).toMatchObject({ orderNumber: "WO-2026-0104", overdue: true, traceComplete: null });
     expect(body.data.orders[1]).toMatchObject({
       orderNumber: "WO-2026-0091", status: "COMPLETED", overdue: false,

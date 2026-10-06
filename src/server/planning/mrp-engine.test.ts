@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { lowLevelCodes, runMrp, type EngineBom, type EngineInput, type EnginePolicy } from "./mrp-engine";
 import { independentDemand } from "./demand";
-import { sizeLot } from "./lot-sizing";
+import { lotSizingConflict, sizeLot } from "./lot-sizing";
 
 /*
  * Every expected number below is worked by hand in the comment beside it.
@@ -275,7 +275,7 @@ describe("forecast consumption", () => {
   it("counts orders against the forecast, not on top of it", () => {
     // April forecast 300, orders 120 in April → 180 more expected, plus the 120 ordered.
     const { events, forecastUse } = independentDemand(
-      [{ id: "l1", reference: "SO-1", materialId: "FG", locationId: "PLANT", requiredDate: "2026-04-10", openQty: 120 }],
+      [{ id: "l1", reference: "SO-1", materialId: "FG", locationId: "PLANT", requiredDate: "2026-04-10", openQty: 120, bookedQty: 120 }],
       [period], "2026-04-01", "2026-06-30", true,
     );
     expect(forecastUse).toEqual([{ periodId: "fp-apr", forecastQty: 300, consumedBySales: 120, netForecast: 180 }]);
@@ -289,11 +289,39 @@ describe("forecast consumption", () => {
     // From the 16th, 15 of 30 days remain → half of 300.
     expect(independentDemand([], [period], "2026-04-16", "2026-06-30", true).forecastUse[0].netForecast).toBe(150);
     const over = independentDemand(
-      [{ id: "l1", reference: "SO-1", materialId: "FG", locationId: "PLANT", requiredDate: "2026-04-10", openQty: 400 }],
+      [{ id: "l1", reference: "SO-1", materialId: "FG", locationId: "PLANT", requiredDate: "2026-04-10", openQty: 400, bookedQty: 400 }],
       [period], "2026-04-01", "2026-06-30", true,
     );
     expect(over.forecastUse[0].netForecast).toBe(0);
     expect(over.events.map((e) => e.sourceType)).toEqual(["SALES_ORDER"]);
+  });
+
+  it("counts orders already shipped against the forecast, not only open ones", () => {
+    // April forecast 1000. 600 booked for April has already shipped (nothing
+    // open), 200 is open: 1000 − 800 = 200 more expected, plus the 200 open.
+    const { events, forecastUse } = independentDemand(
+      [
+        { id: "l1", reference: "SO-1", materialId: "FG", locationId: "PLANT", requiredDate: "2026-04-05", openQty: 0, bookedQty: 600 },
+        { id: "l2", reference: "SO-2", materialId: "FG", locationId: "PLANT", requiredDate: "2026-04-20", openQty: 200, bookedQty: 200 },
+      ],
+      [{ ...period, forecastQty: 1000 }], "2026-04-01", "2026-06-30", true,
+    );
+    expect(forecastUse[0]).toMatchObject({ consumedBySales: 800, netForecast: 200 });
+    // The shipped line is history, not demand.
+    expect(events.filter((e) => e.sourceType === "SALES_ORDER").map((e) => e.sourceId)).toEqual(["l2"]);
+    expect(events.reduce((s, e) => s + e.qty, 0)).toBeCloseTo(400, 6);
+  });
+
+  it("does not let an overdue order consume the forecast still ahead", () => {
+    // From the 16th, 15 of 30 days remain → 150 of 300 still ahead. The open
+    // order due the 10th belongs to the half already past: it is overdue
+    // demand of its own and leaves the 150 untouched (270 in all).
+    const { events, forecastUse } = independentDemand(
+      [{ id: "l1", reference: "SO-1", materialId: "FG", locationId: "PLANT", requiredDate: "2026-04-10", openQty: 120, bookedQty: 120 }],
+      [period], "2026-04-16", "2026-06-30", true,
+    );
+    expect(forecastUse[0]).toMatchObject({ consumedBySales: 0, netForecast: 150 });
+    expect(events.reduce((s, e) => s + e.qty, 0)).toBeCloseTo(270, 6);
   });
 
   it("can plan from orders alone", () => {
@@ -314,5 +342,153 @@ describe("sizeLot", () => {
     expect(sizeLot(0.3, s("LOT_FOR_LOT", 0, 0.1))).toEqual([0.3]);
     expect(sizeLot(250, s("LOT_FOR_LOT", 0, 30, 100))).toEqual([90, 90, 90]);
     expect(sizeLot(0, s("MIN_ORDER_QTY", 100))).toEqual([]);
+  });
+
+  it("never inflates the total when the maximum is below the order multiple", () => {
+    // Need 1000, multiple 100, max 10: no order can be both ≤ 10 and a whole
+    // 100. The multiple is what the vendor can ship, so it wins: ten orders of
+    // 100, still 1000 in all — not a hundred orders of 100 (10,000).
+    const orders = sizeLot(1000, s("LOT_FOR_LOT", 0, 100, 10));
+    expect(orders).toEqual(Array(10).fill(100));
+    expect(orders.reduce((a, b) => a + b, 0)).toBe(1000);
+    // Need 250 → rounded to 300 by the multiple, three orders of 100.
+    expect(sizeLot(250, s("LOT_FOR_LOT", 0, 100, 10))).toEqual([100, 100, 100]);
+  });
+
+  it("names a maximum that no whole multiple fits under", () => {
+    expect(lotSizingConflict(s("LOT_FOR_LOT", 0, 100, 10))).toMatch(/maximum order quantity 10 is below the order multiple 100/);
+    expect(lotSizingConflict(s("LOT_FOR_LOT", 0, 30, 100))).toBeNull();
+    expect(lotSizingConflict(s("LOT_FOR_LOT", 0, 100, null))).toBeNull();
+    expect(lotSizingConflict(s("LOT_FOR_LOT", 0, 0, 10))).toBeNull();
+  });
+});
+
+describe("exceptions are reported once per condition", () => {
+  const fingerprint = (e: { type: string; materialId: string | null; locationId: string | null; referenceId: string | null; message: string }) =>
+    [e.type, e.materialId, e.locationId, e.referenceId, e.message].join("|");
+
+  it("names a BOM line in the wrong unit once, however many orders explode it", () => {
+    // FG is split into three orders by its maximum; each explodes the BOM,
+    // and the PM line is quoted in a unit with no conversion.
+    const out = runMrp(input({
+      policies: [policy("FG", { procurementType: "MAKE", lotSizing: { rule: "LOT_FOR_LOT", minOrderQty: 0, orderMultiple: 0, maxOrderQty: 100 } }), policy("RM")],
+      boms: [{ materialId: "FG", versionId: "v", baseQuantity: 1, components: [
+        { materialId: "RM", quantity: 1, scrapFactor: 0, leadTimeOffsetDays: 0, isOptional: false, unitMatches: true },
+        { materialId: "PM", quantity: 1, scrapFactor: 0, leadTimeOffsetDays: 0, isOptional: false, unitMatches: false },
+      ] }],
+      vendors: [vendor("RM", 2)],
+      demand: [so("FG", "2026-04-20", 250)],
+    }));
+    expect(out.plannedOrders.filter((p) => p.materialId === "FG")).toHaveLength(3);
+    expect(out.exceptions.filter((e) => e.type === "MISSING_BOM" && /PM/.test(e.message))).toHaveLength(1);
+  });
+
+  it("never holds two identical exceptions in one run", () => {
+    const out = runMrp(input({
+      policies: [policy("FG", { procurementType: "MAKE", lotSizing: { rule: "LOT_FOR_LOT", minOrderQty: 0, orderMultiple: 0, maxOrderQty: 100 } }), policy("RM", { safetyStock: 50 })],
+      boms: [{ materialId: "FG", versionId: "v", baseQuantity: 1, components: [
+        { materialId: "RM", quantity: 1, scrapFactor: 0, leadTimeOffsetDays: 0, isOptional: false, unitMatches: true },
+        { materialId: "PM", quantity: 1, scrapFactor: 0, leadTimeOffsetDays: 0, isOptional: false, unitMatches: false },
+      ] }],
+      demand: [so("FG", "2026-04-03", 250), so("FG", "2026-04-04", 120, "SO-2")],
+      receipts: [{ materialId: "RM", locationId: "PLANT", date: "2026-03-20", qty: 10, type: "PURCHASE_ORDER", id: "late-line", reference: "PO-9" }],
+    }));
+    const prints = out.exceptions.map(fingerprint);
+    expect(prints.length).toBeGreaterThanOrEqual(3); // several kinds: wrong unit, late supply, past-due releases
+    expect(new Set(prints).size).toBe(prints.length);
+  });
+});
+
+describe("rescheduling open supply in", () => {
+  const poReceipt = (date: string, qty: number, ref: string) =>
+    ({ materialId: "RM", locationId: "PLANT", date, qty, type: "PURCHASE_ORDER" as const, id: `${ref}-line`, reference: ref });
+  const plan = (over: Partial<EngineInput>) => runMrp(input({
+    policies: [policy("RM")], vendors: [vendor("RM", 5)], rescheduleInToleranceDays: 3, ...over,
+  }));
+  const ofType = (out: ReturnType<typeof runMrp>, type: string) => out.exceptions.filter((e) => e.type === type);
+
+  it("expedites a PO arriving within the tolerance instead of ordering again", () => {
+    // 100 needed on the 20th; PO-1 brings 100 on the 22nd, 2 days late.
+    const out = plan({ demand: [so("RM", "2026-04-20", 100)], receipts: [poReceipt("2026-04-22", 100, "PO-1")] });
+    expect(out.plannedOrders).toEqual([]);
+    expect(ofType(out, "RESCHEDULE_IN")).toEqual([expect.objectContaining({
+      materialId: "RM", locationId: "PLANT", severity: "HIGH", quantity: 100,
+      dueDate: "2026-04-20", daysLate: 2, referenceType: "PURCHASE_ORDER", referenceId: "PO-1-line",
+      message: expect.stringMatching(/PO-1.*2026-04-22.*2026-04-20/),
+    })]);
+    // Reported once: not again as late supply.
+    expect(ofType(out, "LATE_SUPPLY")).toEqual([]);
+    // Not pretended on time: the record keeps the receipt on its own date, so
+    // stock shows short until it is expedited.
+    const rows = out.requirements.filter((r) => r.materialId === "RM");
+    expect(rows.find((r) => r.bucketStart === "2026-04-20")).toMatchObject({ grossRequirement: 100, scheduledReceipts: 0, projectedOnHand: -100, plannedReceipt: 0 });
+    expect(rows.find((r) => r.bucketStart === "2026-04-22")).toMatchObject({ scheduledReceipts: 100, projectedOnHand: 0 });
+  });
+
+  it("orders anew when the PO arrives later than the tolerance", () => {
+    // 4 days late with a 3-day tolerance: genuine new supply, PO-1 left alone.
+    const out = plan({ demand: [so("RM", "2026-04-20", 100)], receipts: [poReceipt("2026-04-24", 100, "PO-1")] });
+    expect(out.plannedOrders.map((p) => `${p.quantity}@${p.requiredDate}`)).toEqual(["100@2026-04-20"]);
+    expect(ofType(out, "RESCHEDULE_IN")).toEqual([]);
+    expect(ofType(out, "LATE_SUPPLY")).toHaveLength(1);
+  });
+
+  it("counts the tolerance in whole days, inclusive", () => {
+    const onEdge = plan({ demand: [so("RM", "2026-04-20", 100)], receipts: [poReceipt("2026-04-23", 100, "PO-1")] });
+    expect(onEdge.plannedOrders).toEqual([]);
+  });
+
+  it("never lets two requirements use the same receipt", () => {
+    // 60 on the 20th pulls PO-1 (100 on the 22nd) in; its other 40 covers part
+    // of the 60 on the 21st, and 20 is ordered. PO-1 must not count again on
+    // the 22nd, so the 100 on the 30th is ordered in full. 220 needed, 100 on
+    // order, 120 planned.
+    const out = plan({
+      demand: [so("RM", "2026-04-20", 60), so("RM", "2026-04-21", 60, "SO-2"), so("RM", "2026-04-30", 100, "SO-3")],
+      receipts: [poReceipt("2026-04-22", 100, "PO-1")],
+    });
+    expect(out.plannedOrders.map((p) => `${p.quantity}@${p.requiredDate}`)).toEqual(["20@2026-04-21", "100@2026-04-30"]);
+    expect(ofType(out, "RESCHEDULE_IN")).toHaveLength(1);
+  });
+
+  it("pulls several receipts in date order, then orders only what is still short", () => {
+    // 130 on the 20th: PO-B (50, 21st) first, then PO-A (50, 22nd); PO-C on
+    // the 25th is outside the tolerance, so the last 30 is ordered.
+    const out = plan({
+      demand: [so("RM", "2026-04-20", 130)],
+      receipts: [poReceipt("2026-04-22", 50, "PO-A"), poReceipt("2026-04-21", 50, "PO-B"), poReceipt("2026-04-25", 50, "PO-C")],
+    });
+    expect(ofType(out, "RESCHEDULE_IN").map((e) => e.referenceId)).toEqual(["PO-B-line", "PO-A-line"]);
+    expect(out.plannedOrders.map((p) => `${p.quantity}@${p.requiredDate}`)).toEqual(["30@2026-04-20"]);
+  });
+
+  it("keeps lot sizing for what is still short", () => {
+    // 130 short, 50 pulled in, 80 left → minimum order 100, multiple 25.
+    const out = plan({
+      policies: [policy("RM", { lotSizing: { rule: "MIN_ORDER_QTY", minOrderQty: 100, orderMultiple: 25, maxOrderQty: null } })],
+      demand: [so("RM", "2026-04-20", 130)], receipts: [poReceipt("2026-04-21", 50, "PO-B")],
+    });
+    expect(out.plannedOrders.map((p) => p.quantity)).toEqual([100]);
+  });
+
+  it("is off with a tolerance of zero, as before", () => {
+    const out = plan({ rescheduleInToleranceDays: 0, demand: [so("RM", "2026-04-20", 100)], receipts: [poReceipt("2026-04-22", 100, "PO-1")] });
+    expect(out.plannedOrders.map((p) => p.quantity)).toEqual([100]);
+    expect(ofType(out, "RESCHEDULE_IN")).toEqual([]);
+  });
+});
+
+describe("lot sizing conflicts in a run", () => {
+  it("plans the true quantity and reports a maximum below the vendor's multiple once", () => {
+    // The policy caps orders at 10; the vendor only ships in 100s.
+    const out = runMrp(input({
+      policies: [policy("RM", { lotSizing: { rule: "LOT_FOR_LOT", minOrderQty: 0, orderMultiple: 0, maxOrderQty: 10 } })],
+      vendors: [vendor("RM", 5, { orderMultiple: 100 })],
+      demand: [so("RM", "2026-04-20", 1000), so("RM", "2026-05-20", 50, "SO-2")],
+    }));
+    expect(out.plannedOrders.reduce((s, p) => s + p.quantity, 0)).toBe(1100);
+    const conflicts = out.exceptions.filter((e) => e.type === "POLICY_CONFLICT");
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toMatchObject({ materialId: "RM", locationId: "PLANT", severity: "HIGH" });
   });
 });

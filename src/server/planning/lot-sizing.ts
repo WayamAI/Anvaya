@@ -46,8 +46,12 @@ export function sizeLot(net: number, s: LotSizing): number[] {
   total = roundUpTo(total, s.orderMultiple);
 
   if (s.maxOrderQty === null || s.maxOrderQty <= 0 || total <= s.maxOrderQty) return [total];
-  // Largest order the maximum allows, kept a whole multiple.
-  const chunk = roundDownTo(s.maxOrderQty, s.orderMultiple) || s.maxOrderQty;
+  // Largest order the maximum allows, kept a whole multiple. When the maximum
+  // is below one multiple no order can honour both; the multiple is what the
+  // vendor ships, so it wins and each order is a single multiple. Falling
+  // back to the raw maximum instead would round every chunk up to a multiple
+  // and multiply the total (see `lotSizingConflict`, which the engine reports).
+  const chunk = roundDownTo(s.maxOrderQty, s.orderMultiple) || (s.orderMultiple > 0 ? s.orderMultiple : s.maxOrderQty);
   const orders: number[] = [];
   let left = total;
   while (left > 1e-9) {
@@ -56,4 +60,15 @@ export function sizeLot(net: number, s: LotSizing): number[] {
     left = r6(left - q);
   }
   return orders;
+}
+
+/**
+ * Why the rules cannot all be honoured, or null when they can. The policy
+ * screen refuses this combination, but the multiple may come from the
+ * vendor record, which the policy cannot be checked against when it is saved.
+ */
+export function lotSizingConflict(s: LotSizing): string | null {
+  if (s.maxOrderQty === null || s.maxOrderQty <= 0 || s.orderMultiple <= 0) return null;
+  if (roundDownTo(s.maxOrderQty, s.orderMultiple) > 0) return null;
+  return `maximum order quantity ${s.maxOrderQty} is below the order multiple ${s.orderMultiple}`;
 }

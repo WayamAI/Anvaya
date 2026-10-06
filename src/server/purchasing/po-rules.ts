@@ -65,6 +65,49 @@ export function orderTotal(lines: { orderedQty: Prisma.Decimal.Value; unitPrice:
   return lines.reduce((s, l) => s.plus(lineTotal(l.orderedQty, l.unitPrice)), ZERO);
 }
 
+/**
+ * A material may be on a PO more than once only for different delivery
+ * dates — MRP's time-phased orders. Twice on one date is a data-entry slip
+ * the receipt screen could not tell apart, so it is refused. A line without
+ * its own date is due on the header's.
+ */
+export function duplicateLineProblems(
+  lines: { materialId: string; expectedDeliveryDate?: string }[],
+  headerExpected: string,
+): ErrorDetail[] {
+  const first = new Map<string, number>();
+  const problems: ErrorDetail[] = [];
+  lines.forEach((l, i) => {
+    const date = l.expectedDeliveryDate ?? headerExpected;
+    const key = `${l.materialId}|${date}`;
+    const earlier = first.get(key);
+    if (earlier === undefined) first.set(key, i);
+    else problems.push({ path: `lines.${i}.materialId`, message: `is already on line ${earlier + 1} for delivery on ${date}; combine the quantities` });
+  });
+  return problems;
+}
+
+/** Money columns are Decimal(18,4): fourteen integer digits. */
+const MONEY_LIMIT = D("1e14");
+
+/**
+ * Line and order totals too large for the money columns. Quantity and price
+ * are each bounded at the door; their product and the sum can still exceed
+ * what can be stored, which must be a 422, not a database error.
+ */
+export function amountProblems(lines: { orderedQty: Prisma.Decimal.Value; unitPrice: Prisma.Decimal.Value }[]): ErrorDetail[] {
+  const problems: ErrorDetail[] = [];
+  lines.forEach((l, i) => {
+    if (lineTotal(l.orderedQty, l.unitPrice).gte(MONEY_LIMIT)) {
+      problems.push({ path: `lines.${i}.unitPrice`, message: "makes the line total too large to record" });
+    }
+  });
+  if (!problems.length && orderTotal(lines).gte(MONEY_LIMIT)) {
+    problems.push({ path: "lines", message: "the order total is too large to record" });
+  }
+  return problems;
+}
+
 /** Status after a receipt, from every line's ordered and received quantities. */
 export function statusAfterReceipt(lines: { orderedQty: Prisma.Decimal.Value; receivedQty: Prisma.Decimal.Value }[]): PoStatus {
   const complete = lines.every((l) => D(l.receivedQty).gte(l.orderedQty));

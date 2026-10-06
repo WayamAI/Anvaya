@@ -10,6 +10,7 @@ vi.hoisted(() => {
 const session = vi.hoisted(() => ({ resolveSession: vi.fn() }));
 const read = vi.hoisted(() => ({
   listRuns: vi.fn(), getRun: vi.fn(), listPlannedOrders: vi.fn(), listExceptions: vi.fn(),
+  pageRuns: vi.fn(), pagePlannedOrders: vi.fn(), pageExceptions: vi.fn(),
   materialRequirements: vi.fn(), timePhased: vi.fn(), getPlannedOrder: vi.fn(),
 }));
 const write = vi.hoisted(() => ({ startMrpRun: vi.fn(), resolveException: vi.fn() }));
@@ -43,6 +44,7 @@ const p = { params: { id: "latest" } };
 beforeEach(() => {
   vi.clearAllMocks();
   Object.values(read).forEach((fn) => fn.mockResolvedValue([]));
+  for (const fn of [read.pageRuns, read.pagePlannedOrders, read.pageExceptions]) fn.mockResolvedValue({ items: [], nextCursor: null, total: 0 });
   write.startMrpRun.mockResolvedValue({ id: "r1", runNumber: "MRP-2026-0001" });
   read.getRun.mockResolvedValue({ id: "r1" });
   convert.convertPlannedOrders.mockResolvedValue({ purchaseOrders: [], workOrders: [] });
@@ -58,7 +60,7 @@ describe("permissions", () => {
     ["GET requirements", "mrp:read", () => requirements(req("/mrp/runs/latest/requirements?materialId=m&locationId=l"), p)],
     ["GET planned order", "mrp:read", () => plannedOrder(req("/mrp/planned-orders/x"), { params: { id: "x" } })],
     ["POST run", "mrp:run", () => startRun(req("/mrp/runs", "POST", {}))],
-    ["POST convert", "mrp:run", () => convertRoute(req("/mrp/runs/r1/convert", "POST", { plannedOrderIds: ["a"] }), { params: { id: "r1" } })],
+    ["POST convert", "mrp:read", () => convertRoute(req("/mrp/runs/r1/convert", "POST", { plannedOrderIds: ["a"] }), { params: { id: "r1" } })],
     ["POST resolve", "mrp:run", () => resolve(req("/mrp/exceptions/e/resolve", "POST"), { params: { id: "e" } })],
   ] as const;
 
@@ -80,8 +82,10 @@ describe("validation", () => {
 
   it("applies defaults and bounds to run parameters", async () => {
     await startRun(req("/mrp/runs", "POST", {}));
-    expect(write.startMrpRun.mock.calls[0][0]).toEqual({ horizonDays: 90, bucketSizeDays: 1, includeForecast: true, respectSafetyStock: true });
-    for (const bad of [{ horizonDays: 3 }, { horizonDays: 400 }, { bucketSizeDays: 3 }, { asOfDate: "2026-02-30" }, { extra: 1 }]) {
+    expect(write.startMrpRun.mock.calls[0][0]).toEqual({ horizonDays: 90, bucketSizeDays: 1, includeForecast: true, respectSafetyStock: true, simulation: false });
+    await startRun(req("/mrp/runs", "POST", { simulation: true, asOfDate: "2026-03-25" }));
+    expect(write.startMrpRun.mock.calls[1][0]).toMatchObject({ simulation: true, asOfDate: "2026-03-25" });
+    for (const bad of [{ horizonDays: 3 }, { horizonDays: 400 }, { bucketSizeDays: 3 }, { asOfDate: "2026-02-30" }, { simulation: "yes" }, { extra: 1 }]) {
       expect((await startRun(req("/mrp/runs", "POST", bad))).status).toBe(422);
     }
   });
@@ -89,6 +93,18 @@ describe("validation", () => {
   it("requires distinct planned orders to convert", async () => {
     expect((await convertRoute(req("/mrp/runs/r1/convert", "POST", { plannedOrderIds: [] }), { params: { id: "r1" } })).status).toBe(422);
     expect((await convertRoute(req("/mrp/runs/r1/convert", "POST", { plannedOrderIds: ["a", "a"] }), { params: { id: "r1" } })).status).toBe(422);
+  });
+
+  it("pages the growing lists with bounded sizes, returning the cursor in meta", async () => {
+    read.pagePlannedOrders.mockResolvedValue({ items: [{ id: "p1" }], nextCursor: "p1", total: 7 });
+    const res = await plannedOrders(req("/mrp/runs/latest/planned-orders?limit=1&q=resin"), p);
+    expect(await res.json()).toEqual({ data: [{ id: "p1" }], meta: { nextCursor: "p1", limit: 1, total: 7 } });
+    expect(read.pagePlannedOrders.mock.calls[0][2]).toMatchObject({ limit: 1, q: "resin" });
+    expect((await plannedOrders(req("/mrp/runs/latest/planned-orders?limit=501"), p)).status).toBe(422);
+    expect((await exceptions(req("/mrp/runs/latest/exceptions?limit=501"), p)).status).toBe(422);
+    expect((await listRuns(req("/mrp/runs?limit=101"))).status).toBe(422);
+    await exceptions(req("/mrp/runs/latest/exceptions"), p);
+    expect(read.pageExceptions).toHaveBeenLastCalledWith("c1", "latest", { limit: 100 });
   });
 
   it("requires material and location for a time-phased record", async () => {

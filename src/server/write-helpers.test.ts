@@ -3,6 +3,7 @@ import { formatDocumentNumber, parseSuffix, seriesFor } from "@/server/db/sequen
 import { hashBody } from "@/server/api/idempotency";
 import { addDays, todayIn } from "@/server/config/business-date";
 import { createGoodsReceiptBody, createPurchaseOrderBody, lotQcBody } from "@/server/validation/purchasing";
+import { duplicateLineProblems } from "@/server/purchasing/po-rules";
 
 /** Small pure helpers behind the write side: numbering, idempotency hashing, business dates, validation. */
 
@@ -52,13 +53,17 @@ describe("validation", () => {
     expect(createPurchaseOrderBody.safeParse({ ...po, status: "APPROVED" }).success).toBe(false);
   });
 
-  it("rejects bad quantities, dates and duplicate materials", () => {
+  it("rejects bad quantities and dates; duplicate materials are judged by the service", () => {
     const issues = (b: unknown) => (createPurchaseOrderBody.safeParse(b) as { error?: { issues: { path: (string | number)[] }[] } })
       .error?.issues.map((i) => i.path.join("."));
     expect(issues({ ...po, lines: [{ materialId: "m", orderedQty: 0 }] })).toEqual(["lines.0.orderedQty"]);
     expect(issues({ ...po, lines: [{ materialId: "m", orderedQty: 1.1234567 }] })).toEqual(["lines.0.orderedQty"]);
     expect(issues({ ...po, expectedDeliveryDate: "2026-02-30" })).toEqual(["expectedDeliveryDate"]);
-    expect(issues({ ...po, lines: [{ materialId: "m", orderedQty: 1 }, { materialId: "m", orderedQty: 2 }] })).toEqual(["lines.1.materialId"]);
+    // One material twice on the same date is still refused — by the service,
+    // which knows each line's effective date (it may default to the header).
+    const twice = { ...po, lines: [{ materialId: "m", orderedQty: 1 }, { materialId: "m", orderedQty: 2 }] };
+    expect(issues(twice)).toBeUndefined();
+    expect(duplicateLineProblems(twice.lines, po.expectedDeliveryDate).map((p) => p.path)).toEqual(["lines.1.materialId"]);
   });
 
   it("allows 6-decimal quantities", () => {

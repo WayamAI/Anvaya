@@ -1,11 +1,9 @@
-import type { Metadata } from "next";
-import { DashboardShell } from "@/components/command-center/dashboard-shell";
+import { notFound } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Command Center — Anvaya",
-  description: "Live plant health, exception queue and asset telemetry.",
-};
-
-export default function CommandCenterPage() {
-  return <DashboardShell />;
+/*
+  Not offered yet: this screen has no backend and its view showed sample data.
+  It answers 404 until it is wired to real data.
+*/
+export default function Page() {
+  notFound();
 }

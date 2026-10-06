@@ -158,13 +158,6 @@ export async function revokeAllSessionsForUser(userId: string, exceptSessionId?:
   return count;
 }
 
-/** Housekeeping: drop sessions that expired long enough ago to be useless. */
-export async function purgeExpiredSessions(olderThanDays = 30) {
-  const cutoff = new Date(Date.now() - olderThanDays * 86_400_000);
-  const { count } = await prisma.session.deleteMany({ where: { expiresAt: { lt: cutoff } } });
-  return count;
-}
-
 /**
  * Constant-time comparison for any place a caller compares secrets directly.
  * Exported because `===` on secrets is exactly the kind of thing that looks

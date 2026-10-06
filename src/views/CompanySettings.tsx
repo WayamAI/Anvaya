@@ -27,10 +27,10 @@ interface Company {
 type Operational = Record<
   "purchasing.overReceiptTolerancePct" | "sales.overDispatchTolerancePct" | "production.overProductionTolerancePct" | "production.overIssueTolerancePct",
   number
-> & { "purchasing.allowSelfApproval": boolean };
+> & { "purchasing.allowSelfApproval": boolean; "mrp.rescheduleInToleranceDays": number };
 interface Location { id: string; code: string; name: string; type: string; city: string | null; state: string | null; isManufacturing: boolean; isActive: boolean }
 
-const TOLERANCES: { key: keyof Omit<Operational, "purchasing.allowSelfApproval">; label: string; help: string }[] = [
+const TOLERANCES: { key: keyof Omit<Operational, "purchasing.allowSelfApproval" | "mrp.rescheduleInToleranceDays">; label: string; help: string }[] = [
   { key: "purchasing.overReceiptTolerancePct", label: "Over-receipt tolerance", help: "How far above the ordered quantity a PO line may be received." },
   { key: "sales.overDispatchTolerancePct", label: "Over-dispatch tolerance", help: "How far above the ordered quantity a sales order line may ship." },
   { key: "production.overIssueTolerancePct", label: "Over-issue tolerance", help: "Extra component a work order may draw beyond its requirement." },
@@ -60,6 +60,15 @@ function OperationalSettings({ values, canEdit }: { values: Operational; canEdit
               value={draft[t.key]} onChange={(e) => setDraft((d) => ({ ...d, [t.key]: Number(e.target.value) }))} />
           </label>
         ))}
+        <label className="block">
+          <span className="block text-body-sm font-medium">Reschedule-in window (days)</span>
+          <span className="block text-caption text-muted-foreground mb-1">
+            How late an open PO or work order may be and still be expedited to cover a need, instead of MRP planning more. 0 turns it off.
+          </span>
+          <input className={inputSm} type="number" min={0} max={90} step="1" disabled={!canEdit}
+            value={draft["mrp.rescheduleInToleranceDays"]}
+            onChange={(e) => setDraft((d) => ({ ...d, "mrp.rescheduleInToleranceDays": Number(e.target.value) }))} />
+        </label>
         <label className="flex items-start gap-2">
           <input type="checkbox" className="mt-1" disabled={!canEdit} checked={draft["purchasing.allowSelfApproval"]}
             onChange={(e) => setDraft((d) => ({ ...d, "purchasing.allowSelfApproval": e.target.checked }))} />

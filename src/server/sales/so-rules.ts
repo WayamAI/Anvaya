@@ -99,7 +99,7 @@ export function allocateFefo(
   }
   if (left.gt(0)) {
     const have = qty.minus(left);
-    throw AppError.unprocessable(`Not enough released, unexpired ${materialCode} to ship ${qty}: ${have} available in lots`, [
+    throw AppError.unprocessable(`Not enough released, unexpired ${materialCode} for ${qty}: ${have} available in lots`, [
       { path: "quantity", message: `only ${have} available in released lots` },
     ]);
   }

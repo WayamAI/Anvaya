@@ -13,7 +13,11 @@ import * as v from "@/server/validation/masterdata";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi(
-  async ({ req, actor }) => ok(await listVendors(actor!.companyId, parseQuery(req, listVendorsQuery))),
+  async ({ req, actor }) => {
+    const query = parseQuery(req, listVendorsQuery);
+    const { items, nextCursor, total } = await listVendors(actor!.companyId, query);
+    return ok(items, { meta: { nextCursor, limit: query.limit, total } });
+  },
   { permission: "vendor:read" },
 );
 

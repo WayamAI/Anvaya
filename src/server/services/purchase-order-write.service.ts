@@ -6,7 +6,7 @@ import { getSetting } from "@/server/config/company-settings";
 import { nextDocumentNumber } from "@/server/db/sequence";
 import { lockRow, runInTransaction, type Tx } from "@/server/db/transaction";
 import { AppError, type ErrorDetail } from "@/server/errors/app-error";
-import { assertPoTransition, lineTotal, orderTotal } from "@/server/purchasing/po-rules";
+import { amountProblems, assertPoTransition, duplicateLineProblems, lineTotal, orderTotal } from "@/server/purchasing/po-rules";
 import type {
   CancelPurchaseOrderInput, CreatePurchaseOrderInput, UpdatePurchaseOrderInput,
 } from "@/server/validation/purchasing";
@@ -77,7 +77,9 @@ async function resolveLines(
     },
   });
   const byId = new Map(materials.map((m) => [m.id, m]));
-  const problems: ErrorDetail[] = [];
+  // Schema-validated, so materialId is present; the cast only bridges zod's
+  // inferred optionals under this repo's non-strict tsconfig.
+  const problems: ErrorDetail[] = duplicateLineProblems(lines as { materialId: string; expectedDeliveryDate?: string }[], headerExpected);
 
   const resolved = lines.map((l, i): ResolvedLine | null => {
     const m = byId.get(l.materialId);
@@ -105,6 +107,7 @@ async function resolveLines(
     };
   });
 
+  if (!problems.length) problems.push(...amountProblems(resolved as ResolvedLine[]));
   if (problems.length) throw AppError.unprocessable("Some lines cannot be ordered", problems);
   return resolved as ResolvedLine[];
 }

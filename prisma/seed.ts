@@ -28,15 +28,50 @@ import {
 import {
   AS_OF_DATE, BALANCES, LOTS, PURCHASE_ORDERS, GOODS_RECEIPTS,
   SALES_ORDERS, FORECASTS, WORK_ORDERS, CONSTRAINTS, INTEGRATIONS, SETTINGS,
-  PRODUCED_LOTS, COMPONENT_LOTS, LOT_DISPATCHES,
+  PRODUCED_LOTS, COMPONENT_LOTS, LOT_DISPATCHES, openingLots,
 } from "./seed/operational-data";
 import { MOVEMENT_REF } from "../src/server/inventory/lots";
+import { seedRefusal } from "./seed/guard";
+
+// Before anything connects: demo credentials must never reach production.
+const refusal = seedRefusal(process.env);
+if (refusal) {
+  console.error(`
+${refusal}
+`);
+  process.exit(1);
+}
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
+/**
+ * The demo data is written around AS_OF_DATE and rebased onto the day it is
+ * seeded (or SEED_AS_OF_DATE, to reproduce a fixed demo), so that "today" in
+ * the data is today on the clock: orders, receipts and MRP runs made during
+ * a demo then line up with the seeded ones without pinning the planning date.
+ * Every date moves by the same number of days; calendar periods (forecast
+ * months, the scorecard quarter) move by whole months so they stay months.
+ */
+const SEED_AS_OF = process.env.SEED_AS_OF_DATE?.trim()
+  || new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+if (!/^\d{4}-\d{2}-\d{2}$/.test(SEED_AS_OF)) throw new Error(`SEED_AS_OF_DATE must be YYYY-MM-DD, got "${SEED_AS_OF}"`);
+const SHIFT_DAYS = Math.round((Date.parse(SEED_AS_OF) - Date.parse(AS_OF_DATE)) / 86_400_000);
+const SHIFT_MONTHS = (Number(SEED_AS_OF.slice(0, 4)) - Number(AS_OF_DATE.slice(0, 4))) * 12
+  + (Number(SEED_AS_OF.slice(5, 7)) - Number(AS_OF_DATE.slice(5, 7)));
+
 /** Dates are stored as DATE columns; parse at UTC midnight to avoid drift. */
-const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+const d = (iso: string) => {
+  const t = new Date(`${iso}T00:00:00.000Z`);
+  t.setUTCDate(t.getUTCDate() + SHIFT_DAYS);
+  return t;
+};
+/** A period boundary: a month start stays a month start, a month end a month end. */
+const dm = (iso: string) => {
+  const [y, m, day] = iso.split("-").map(Number);
+  const isMonthEnd = day === new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return isMonthEnd ? new Date(Date.UTC(y, m + SHIFT_MONTHS, 0)) : new Date(Date.UTC(y, m - 1 + SHIFT_MONTHS, day));
+};
 const dec = (n: number) => new Prisma.Decimal(n);
 
 const step = (label: string) => process.stdout.write(`  ${label.padEnd(44, ".")} `);
@@ -44,7 +79,7 @@ const done = (n: number | string) => console.log(String(n));
 
 async function main() {
   const started = Date.now();
-  console.log(`\nSeeding Anvaya demo data (as-of ${AS_OF_DATE})\n`);
+  console.log(`\nSeeding Anvaya demo data as of ${SEED_AS_OF} (written for ${AS_OF_DATE}, shifted ${SHIFT_DAYS} days)\n`);
 
   // -- Company ------------------------------------------------------------
   step("company");
@@ -234,9 +269,9 @@ async function main() {
 
     const sc = v.scorecard;
     await prisma.vendorScorecard.upsert({
-      where: { vendorId_periodStart_periodEnd: { vendorId: row.id, periodStart: d("2026-01-01"), periodEnd: d("2026-03-31") } },
+      where: { vendorId_periodStart_periodEnd: { vendorId: row.id, periodStart: dm("2026-01-01"), periodEnd: dm("2026-03-31") } },
       update: { defectRatePercent: dec(sc.defectRatePercent), onTimeDeliveryPercent: dec(sc.onTimeDeliveryPercent), copqAmount: dec(sc.copqAmount), lastAuditDate: d(sc.lastAuditDate), auditResult: sc.auditResult },
-      create: { vendorId: row.id, periodStart: d("2026-01-01"), periodEnd: d("2026-03-31"), defectRatePercent: dec(sc.defectRatePercent), onTimeDeliveryPercent: dec(sc.onTimeDeliveryPercent), copqAmount: dec(sc.copqAmount), lastAuditDate: d(sc.lastAuditDate), auditResult: sc.auditResult },
+      create: { vendorId: row.id, periodStart: dm("2026-01-01"), periodEnd: dm("2026-03-31"), defectRatePercent: dec(sc.defectRatePercent), onTimeDeliveryPercent: dec(sc.onTimeDeliveryPercent), copqAmount: dec(sc.copqAmount), lastAuditDate: d(sc.lastAuditDate), auditResult: sc.auditResult },
     });
   }
   done(`${vendorId.size} vendors / ${vendorMaterialCount} supplied materials`);
@@ -290,6 +325,7 @@ async function main() {
   // -- Inventory lots -----------------------------------------------------
   step("inventory lots");
   const lotId = new Map<string, string>();
+  // Every batch-tracked balance is held in lots, or it could never be issued.
   for (const l of LOTS) {
     const remaining = l.receivedQty - l.consumedQty;
     const row = await prisma.inventoryLot.upsert({
@@ -478,15 +514,15 @@ async function main() {
 
     for (const p of f.periods) {
       const data = {
-        periodEnd: d(p.periodEnd),
+        periodEnd: dm(p.periodEnd),
         forecastQty: dec(p.forecastQty),
         actualQty: p.actualQty !== undefined ? dec(p.actualQty) : null,
         consumedQty: dec(p.consumedQty ?? 0),
       };
       await prisma.forecastPeriod.upsert({
-        where: { forecastId_periodStart: { forecastId: forecast.id, periodStart: d(p.periodStart) } },
+        where: { forecastId_periodStart: { forecastId: forecast.id, periodStart: dm(p.periodStart) } },
         update: data,
-        create: { forecastId: forecast.id, periodStart: d(p.periodStart), ...data },
+        create: { forecastId: forecast.id, periodStart: dm(p.periodStart), ...data },
       });
       periodCount++;
     }
@@ -645,6 +681,38 @@ async function main() {
   done(`${PRODUCED_LOTS.length} produced lot / ${COMPONENT_LOTS.length} input links / ${LOT_DISPATCHES.length} dispatch`);
 
   // -- Constraints --------------------------------------------------------
+  // -- Opening lots -------------------------------------------------------
+  //
+  // Issues and dispatches of a batch-tracked material draw only from released
+  // lots, so any part of its balance no lot holds could be planned against
+  // but never used. Measured after the ledger is rebuilt, from what is stored.
+  step("opening lots for untracked balances");
+  const [balanceRows, lotRows] = await Promise.all([
+    prisma.inventoryBalance.findMany({
+      where: { material: { companyId: company.id, isBatchTracked: true } },
+      select: { onHandQty: true, material: { select: { code: true } }, location: { select: { code: true } } },
+    }),
+    prisma.inventoryLot.findMany({
+      where: { material: { companyId: company.id }, lotNumber: { not: { startsWith: "OPN-" } } },
+      select: { receivedQty: true, consumedQty: true, material: { select: { code: true } }, location: { select: { code: true } } },
+    }),
+  ]);
+  const opening = openingLots(
+    balanceRows.map((b) => ({ material: b.material.code, location: b.location.code, onHandQty: b.onHandQty.toNumber() })),
+    lotRows.map((l) => ({ material: l.material.code, location: l.location.code, receivedQty: l.receivedQty.toNumber(), consumedQty: l.consumedQty.toNumber() })),
+    MATERIALS,
+  );
+  for (const l of opening) {
+    const key = { materialId: materialId.get(l.material)!, lotNumber: l.lotNumber };
+    const data = {
+      locationId: locationId.get(l.location)!, receivedQty: dec(l.receivedQty), consumedQty: dec(0), remainingQty: dec(l.receivedQty),
+      receiptDate: d(l.receiptDate), expiryDate: l.expiryDate ? d(l.expiryDate) : null,
+      qcStatus: l.qcStatus, coaReference: l.coaReference ?? null,
+    };
+    await prisma.inventoryLot.upsert({ where: { materialId_lotNumber: key }, update: data, create: { ...key, ...data } });
+  }
+  done(opening.length);
+
   step("production constraints");
   for (const c of CONSTRAINTS) {
     const existing = await prisma.productionConstraint.findFirst({

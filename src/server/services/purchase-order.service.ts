@@ -2,9 +2,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db/client";
 import { AppError } from "@/server/errors/app-error";
 import { toNumber } from "@/server/api/decimal";
+import { cursorArgs, pageOf } from "@/server/api/pagination";
+import { startOfUtcDay } from "@/server/inventory/lots";
 import {
-  deliveredDate, isLineOverdue, isOpenPo, isPoOverdue, outstandingQty, poCounts, receivedPct, totalMatchesLines,
-  type PoLineFacts, type PurchaseOrderDetail, type PurchaseOrderList, type PurchaseOrderRow,
+  OPEN_PO_STATUSES, PO_STATUSES, deliveredDate, isLineOverdue, isOpenPo, isPoOverdue, outstandingQty, receivedPct, totalMatchesLines,
+  type PoCounts, type PoLineFacts, type PoStatus, type PurchaseOrderDetail, type PurchaseOrderList, type PurchaseOrderRow,
 } from "@/server/purchasing/purchase-orders";
 
 /**
@@ -53,15 +55,62 @@ function toRow(o: OrderWithRefs, asOf: Date): PurchaseOrderRow {
   };
 }
 
-/** Every PO, newest order first, with counts per status tab. */
-export async function listPurchaseOrders(companyId: string, asOf = new Date()): Promise<PurchaseOrderList> {
-  const orders = await prisma.purchaseOrder.findMany({
-    where: { companyId },
-    include: orderInclude,
-    orderBy: [{ orderDate: "desc" }, { orderNumber: "desc" }],
-  });
-  const rows = orders.map((o) => toRow(o, asOf));
-  return { asOf: asOf.toISOString(), orders: rows, counts: poCounts(rows) };
+export interface ListPurchaseOrdersQuery {
+  status?: PoStatus | "overdue";
+  q?: string;
+  /** Default 50, as the route schema has it. */
+  limit?: number;
+  cursor?: string;
+}
+
+/**
+ * "Overdue" (`isPoOverdue`) as SQL: open, with a line past its expected date
+ * and quantity still to come — so it can be counted and filtered across the
+ * whole company without loading every order.
+ */
+function overdueWhere(asOf: Date): Prisma.PurchaseOrderWhereInput {
+  return {
+    status: { in: [...OPEN_PO_STATUSES] },
+    lines: { some: { expectedDeliveryDate: { lt: startOfUtcDay(asOf) }, receivedQty: { lt: prisma.purchaseOrderLine.fields.orderedQty } } },
+  };
+}
+
+/**
+ * One page of POs, newest order first, filtered to a status tab and a search
+ * on number or vendor. The tab counts cover the whole company, whatever the
+ * page, tab or search.
+ */
+export async function listPurchaseOrders(companyId: string, query: ListPurchaseOrdersQuery, asOf = new Date()) {
+  const tab: Prisma.PurchaseOrderWhereInput =
+    query.status === "overdue" ? overdueWhere(asOf) : query.status ? { status: query.status } : {};
+  const search: Prisma.PurchaseOrderWhereInput = query.q
+    ? { OR: [
+        { orderNumber: { contains: query.q, mode: "insensitive" } },
+        { vendor: { name: { contains: query.q, mode: "insensitive" } } },
+        { vendor: { code: { contains: query.q, mode: "insensitive" } } },
+      ] }
+    : {};
+  const where: Prisma.PurchaseOrderWhereInput = { companyId, AND: [tab, search] };
+
+  const [orders, total, byStatus, overdue] = await Promise.all([
+    prisma.purchaseOrder.findMany({
+      where, include: orderInclude,
+      orderBy: [{ orderDate: "desc" }, { orderNumber: "desc" }, { id: "desc" }],
+      ...cursorArgs({ limit: query.limit ?? 50, cursor: query.cursor }),
+    }),
+    prisma.purchaseOrder.count({ where }),
+    prisma.purchaseOrder.groupBy({ by: ["status"], where: { companyId }, _count: { _all: true } }),
+    prisma.purchaseOrder.count({ where: { companyId, ...overdueWhere(asOf) } }),
+  ]);
+
+  const counts = Object.fromEntries(PO_STATUSES.map((s) => [s, 0])) as PoCounts;
+  for (const g of byStatus) counts[g.status] = g._count._all;
+  counts.all = byStatus.reduce((s, g) => s + g._count._all, 0);
+  counts.overdue = overdue;
+
+  const page = pageOf(orders, query.limit ?? 50);
+  const list: PurchaseOrderList = { asOf: asOf.toISOString(), orders: page.items.map((o) => toRow(o, asOf)), counts };
+  return { list, nextCursor: page.nextCursor, total };
 }
 
 /** One PO with its lines, goods receipts and who created and approved it. */

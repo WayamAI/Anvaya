@@ -27,7 +27,7 @@ beforeAll(async () => {
   f = await createFixture();
   buyer = await f.actor(ALL_PO, "Buyer");
   approver = await f.actor(["purchase-order:approve"], "Approver");
-  storekeeper = await f.actor(["goods-receipt:create", "inventory:update"], "Storekeeper");
+  storekeeper = await f.actor(["goods-receipt:create", "inventory:update", "quality:decide"], "Storekeeper");
 });
 
 afterAll(async () => {
@@ -332,6 +332,17 @@ describe("lot quality", () => {
     const grnLine = await prisma.goodsReceiptLine.findFirstOrThrow({ where: { lotId: lot.id } });
     expect(grnLine.inspectionStatus).toBe("APPROVED");
     expect(await prisma.auditLog.count({ where: { entityId: lot.id, action: "RELEASE" } })).toBe(1);
+  });
+
+  it("leaves quality decisions to quality:decide, apart from handling stock", async () => {
+    // Receiving and adjusting stock does not make someone the quality release authority.
+    const clerk = await f.actor(["goods-receipt:create", "inventory:update", "inventory:adjust"], "Clerk");
+    const lot = await pendingLot(3, "COA-SOD");
+    const e = await failure(decideLotQuality(lot.id, { status: "APPROVED" }, f.ctx(clerk)));
+    expect(e.status).toBe(403);
+    expect(e.message).toContain("quality:decide");
+    expect((await prisma.inventoryLot.findUniqueOrThrow({ where: { id: lot.id } })).qcStatus).toBe("PENDING");
+    await decideLotQuality(lot.id, { status: "APPROVED" }, f.ctx(storekeeper));
   });
 
   it("will not release a purchased lot with no certificate of analysis", async () => {

@@ -20,6 +20,13 @@ describe("listMaterialsQuery", () => {
     expect(listMaterialsQuery.safeParse({ kind: "GADGET" }).success).toBe(false);
   });
 
+  it("narrows to several kinds at once, for pickers", () => {
+    expect(listMaterialsQuery.parse({ kinds: "RAW,PACKAGING" }).kinds).toEqual(["RAW", "PACKAGING"]);
+    expect(listMaterialsQuery.parse({ kinds: " finished , semi_finished " }).kinds).toEqual(["FINISHED", "SEMI_FINISHED"]);
+    expect(listMaterialsQuery.safeParse({ kinds: "RAW,GADGET" }).success).toBe(false);
+    expect(listMaterialsQuery.parse({}).kinds).toBeUndefined();
+  });
+
   it("trims the search term", () => {
     expect(listMaterialsQuery.parse({ q: "  resin " }).q).toBe("resin");
   });

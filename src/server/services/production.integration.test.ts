@@ -7,7 +7,7 @@ import { runInTransaction } from "@/server/db/transaction";
 import { AppError } from "@/server/errors/app-error";
 import { createFixture, type Fixture } from "@/test/integration/fixtures";
 import {
-  cancelWorkOrder, closeWorkOrder, createWorkOrder, firmWorkOrder, issueComponents, releaseWorkOrder,
+  cancelWorkOrder, closeWorkOrder, completeWorkOrder, createWorkOrder, firmWorkOrder, issueComponents, releaseWorkOrder,
   reportOutput, updateWorkOrder,
 } from "./work-order-write.service";
 import { decideLotQuality } from "./lot-quality.service";
@@ -75,7 +75,7 @@ const output = (id: string, input: OutputInput) => runInTransaction((tx) => repo
 beforeAll(async () => {
   f = await createFixture();
   planner = await f.actor(["work-order:create", "work-order:update"], "Planner");
-  floor = await f.actor(["work-order:update", "inventory:update"], "Floor");
+  floor = await f.actor(["work-order:update", "inventory:update", "quality:decide"], "Floor");
 
   const bom = await prisma.bom.create({ data: { companyId: f.companyId, materialId: f.finished.id, code: "BOM-FG-T1", name: "Test detergent" } });
   await prisma.bomVersion.create({
@@ -218,5 +218,81 @@ describe("production", () => {
     const [a, b] = await Promise.all([run(), run()]);
     expect(a.body.lot!.lotNumber).toBe(b.body.lot!.lotNumber);
     expect((await prisma.workOrder.findUniqueOrThrow({ where: { id: wo.id } })).producedQty.toNumber()).toBe(4);
+  });
+});
+
+describe("completion", () => {
+  // Planned 10: the snapshot needs 5.1 kg RM-T1 and 10 PCS PM-T1.
+  async function inProgress(rm: number, pm: number) {
+    await rawLot(`C${Math.random().toString(36).slice(2, 7)}`, 20, 10, "2099-06-01");
+    await packStock(20, 2);
+    const wo = await plan(10);
+    await releaseWorkOrder(wo.id, f.ctx(planner));
+    const lines = [...(rm ? [{ materialId: f.raw.id, quantity: rm }] : []), ...(pm ? [{ materialId: f.pack.id, quantity: pm }] : [])];
+    if (lines.length) await issue(wo.id, { lines });
+    return wo;
+  }
+  const state = (id: string) => prisma.workOrder.findUniqueOrThrow({ where: { id }, select: { status: true, producedQty: true } });
+
+  it("completes when every component was issued for the output", async () => {
+    const wo = await inProgress(5.1, 10);
+    const done = await output(wo.id, { quantity: 10, qcStatus: "APPROVED", complete: true });
+    expect(done.workOrder.status).toBe("COMPLETED");
+  });
+
+  it("refuses to complete with components issued short, and posts nothing", async () => {
+    const wo = await inProgress(3, 10);
+    const fgBefore = await f.balance(f.finished.id);
+    const e = await failure(output(wo.id, { quantity: 10, qcStatus: "APPROVED", complete: true }));
+    expect(e.status).toBe(422);
+    expect(e.details).toEqual([{ path: "components", message: "RM-T1: 3 issued, 5.1 needed for the output — 2.1 short" }]);
+    // The output in the same request is rolled back with it: no stock, no lot.
+    expect(await f.balance(f.finished.id)).toEqual(fgBefore);
+    expect(await state(wo.id)).toMatchObject({ status: "IN_PROGRESS", producedQty: D(0) });
+  });
+
+  it("refuses a short close of an order whose output had nothing issued", async () => {
+    const wo = await inProgress(0, 10); // PM issued so the order is in progress; RM never.
+    await output(wo.id, { quantity: 4, qcStatus: "APPROVED" });
+    const e = await failure(completeWorkOrder(wo.id, {}, f.ctx(planner)));
+    expect(e.status).toBe(422);
+    expect(e.details?.map((d) => d.message)).toEqual(["RM-T1: 0 issued, 2.04 needed for the output — 2.04 short"]);
+    expect((await state(wo.id)).status).toBe("IN_PROGRESS");
+  });
+
+  it("scales the check to a partial output, so a short close of what was made succeeds", async () => {
+    const wo = await inProgress(2.04, 4); // 40% of each component
+    await output(wo.id, { quantity: 4, qcStatus: "APPROVED" });
+    await completeWorkOrder(wo.id, {}, f.ctx(planner));
+    expect((await state(wo.id)).status).toBe("COMPLETED");
+  });
+
+  it("lets a permitted user override with a reason, and audits it", async () => {
+    const supervisor = await f.actor(["work-order:update", "work-order:complete-short"], "Supervisor");
+    const wo = await inProgress(3, 10);
+    await output(wo.id, { quantity: 10, qcStatus: "APPROVED" });
+
+    // A reason alone is not enough.
+    expect((await failure(completeWorkOrder(wo.id, { shortIssueReason: "Yield beat the BOM" }, f.ctx(planner)))).status).toBe(403);
+
+    await completeWorkOrder(wo.id, { shortIssueReason: "Yield beat the BOM" }, f.ctx(supervisor));
+    expect((await state(wo.id)).status).toBe("COMPLETED");
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityId: wo.id, action: "COMPLETE" } });
+    expect(audit.userId).toBe(supervisor.userId);
+    expect(audit.newValues).toMatchObject({
+      status: "COMPLETED",
+      shortIssueOverride: { reason: "Yield beat the BOM", shortfalls: [{ material: "RM-T1", required: "5.1", issued: "3", short: "2.1" }] },
+    });
+  });
+
+  it("cannot be completed from another company", async () => {
+    const wo = await inProgress(5.1, 10);
+    const other = await createFixture();
+    try {
+      const outsider = await other.actor(["work-order:update", "work-order:complete-short"], "Outsider");
+      expect((await failure(completeWorkOrder(wo.id, {}, other.ctx(outsider)))).status).toBe(404);
+    } finally {
+      await other.destroy();
+    }
   });
 });

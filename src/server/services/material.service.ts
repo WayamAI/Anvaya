@@ -45,6 +45,7 @@ export async function listMaterials(companyId: string, query: ListMaterialsQuery
     companyId,
     ...activeWhere(query.active),
     ...(query.kind ? { kind: query.kind } : {}),
+    ...(query.kinds?.length ? { kind: { in: query.kinds } } : {}),
     ...(query.categoryId ? { categoryId: query.categoryId } : {}),
     ...(query.q
       ? {

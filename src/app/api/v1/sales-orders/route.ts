@@ -1,8 +1,8 @@
-import { withApi, parseBody } from "@/server/api/with-api";
+import { withApi, parseBody, parseQuery } from "@/server/api/with-api";
 import { created, ok } from "@/server/api/respond";
 import { getSalesOrder, listSalesOrders } from "@/server/services/sales-order.service";
 import { createSalesOrder } from "@/server/services/sales-order-write.service";
-import { createSalesOrderBody } from "@/server/validation/sales";
+import { createSalesOrderBody, listSalesOrdersQuery } from "@/server/validation/sales";
 
 /**
  * GET  /api/v1/sales-orders — every sales order, newest first, with counts
@@ -14,7 +14,11 @@ import { createSalesOrderBody } from "@/server/validation/sales";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi(
-  async ({ actor }) => ok(await listSalesOrders(actor!.companyId)),
+  async ({ req, actor }) => {
+    const query = parseQuery(req, listSalesOrdersQuery);
+    const { list, nextCursor, total } = await listSalesOrders(actor!.companyId, query);
+    return ok(list, { meta: { nextCursor, limit: query.limit, total } });
+  },
   { permission: "sales-order:read" },
 );
 

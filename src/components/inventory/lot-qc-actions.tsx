@@ -11,7 +11,7 @@ import { apiSend } from "@/lib/api";
 /**
  * Quality decision on a lot: release, hold or reject.
  *
- * Offered to users with `inventory:update`, and only for decisions the lot
+ * Offered to users with `quality:decide`, and only for decisions the lot
  * can still take — a rejected lot is final. Holding or rejecting needs a
  * reason; releasing a purchased lot needs a CoA on record, which the server
  * enforces and reports back against the CoA field.
@@ -39,7 +39,7 @@ export function LotQcActions({ lot }: { lot: { id: string; lotNumber: string; qc
     },
   });
 
-  if (!can("inventory:update") || lot.qcStatus === "REJECTED") return null;
+  if (!can("quality:decide") || lot.qcStatus === "REJECTED") return null;
 
   const options: { status: Decision; label: string; cls: string }[] = [
     { status: "APPROVED" as const, label: "Release", cls: btnPrimary },
@@ -62,7 +62,7 @@ export function LotQcActions({ lot }: { lot: { id: string; lotNumber: string; qc
       {decision && (
         <div className="space-y-2">
           {decision === "APPROVED" ? (
-            <label className="block"><span className="block text-caption text-muted-foreground mb-1">Certificate of analysis reference</span>
+            <label className="block"><span className="block text-caption text-muted-foreground mb-1">Certificate of analysis reference — required to release a purchased lot</span>
               <input className={inputSm} value={coa} onChange={(e) => setCoa(e.target.value)} maxLength={100} />
             </label>
           ) : (

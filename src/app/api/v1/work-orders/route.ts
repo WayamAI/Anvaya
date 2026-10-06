@@ -1,8 +1,8 @@
-import { withApi, parseBody } from "@/server/api/with-api";
+import { withApi, parseBody, parseQuery } from "@/server/api/with-api";
 import { created, ok } from "@/server/api/respond";
 import { getWorkOrder, listWorkOrders } from "@/server/services/work-order.service";
 import { createWorkOrder } from "@/server/services/work-order-write.service";
-import { createWorkOrderBody } from "@/server/validation/production";
+import { createWorkOrderBody, listWorkOrdersQuery } from "@/server/validation/production";
 
 /**
  * GET  /api/v1/work-orders — all work orders, newest planned start first,
@@ -14,7 +14,11 @@ import { createWorkOrderBody } from "@/server/validation/production";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi(
-  async ({ actor }) => ok(await listWorkOrders(actor!.companyId)),
+  async ({ req, actor }) => {
+    const query = parseQuery(req, listWorkOrdersQuery);
+    const { list, nextCursor, total } = await listWorkOrders(actor!.companyId, query);
+    return ok(list, { meta: { nextCursor, limit: query.limit, total } });
+  },
   { permission: "work-order:read" },
 );
 

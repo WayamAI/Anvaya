@@ -352,6 +352,8 @@ export const PERMISSIONS: { code: string; description: string }[] = [
   { code: "inventory:adjust", description: "adjust stock levels" },
   { code: "goods-receipt:create", description: "receive goods against a purchase order" },
   { code: "sales-order:dispatch", description: "dispatch stock against a sales order" },
+  { code: "work-order:complete-short", description: "complete a work order whose components are issued short, giving a reason" },
+  { code: "quality:decide", description: "release, hold or reject a lot (quality decision)" },
   { code: "audit:read", description: "read the audit trail" },
 ];
 
@@ -408,7 +410,7 @@ export const ROLES = [
     isSystem: true,
     permissions: [
       "material:read", "location:read",
-      "inventory:read", "inventory:update", "inventory:adjust",
+      "inventory:read", "inventory:update", "inventory:adjust", "quality:decide",
       "goods-receipt:create", "purchase-order:read", "work-order:read",
       "sales-order:read", "sales-order:dispatch", "customer:read",
       "mrp:read", "setting:read",

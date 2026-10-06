@@ -13,16 +13,16 @@ import { AppError } from "@/server/errors/app-error";
 // Always evaluated at request time — a cached health check reports nothing.
 export const dynamic = "force-dynamic";
 
-export const GET = withApi(async () => {
-  let database: { ok: boolean; latencyMs: number | null; error?: string };
+export const GET = withApi(async ({ log }) => {
+  let database: { ok: boolean; latencyMs: number | null };
 
   try {
-    database = { ...(await checkDatabase()), error: undefined };
+    database = await checkDatabase();
   } catch (error) {
-    throw AppError.internal(
-      `Database is unreachable: ${(error as Error).message}`,
-      error,
-    );
+    // Public endpoint: the driver's message can name hosts, users and ports,
+    // so it goes to the log and the caller gets a bare 503.
+    log.error({ err: error }, "health check: database unreachable");
+    throw AppError.unavailable();
   }
 
   return ok({

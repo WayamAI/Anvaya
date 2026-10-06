@@ -8,6 +8,7 @@ import { btnDestructive, btnPrimary, btnSecondary, btnGhostSm, inputSm, selectSm
 import { useSession } from "@/components/auth/session-context";
 import { apiGet, apiGetWithMeta, apiSend } from "@/lib/api";
 import { ErrorNote, newIdempotencyKey } from "@/components/app/api-error-note";
+import { SearchPicker } from "@/components/app/search-picker";
 import { formatQty } from "@/lib/format";
 import type { PurchaseOrderDetail } from "@/server/purchasing/purchase-orders";
 
@@ -40,7 +41,12 @@ interface VendorOption { id: string; code: string; name: string; isApproved: boo
 interface LocationOption { id: string; code: string; name: string }
 interface MaterialOption { id: string; code: string; name: string; unit: { code: string }; kind: string }
 
-interface DraftLine { materialId: string; orderedQty: string; unitPrice: string }
+interface DraftLine { material: MaterialOption | null; orderedQty: string; unitPrice: string }
+
+/** What a PO can buy: anything but finished goods. */
+const ORDERABLE_KINDS = { kinds: "RAW,PACKAGING,SEMI_FINISHED,CONSUMABLE" };
+const formatMaterial = (m: MaterialOption) => `${m.code} — ${m.name} (${m.unit.code})`;
+const formatVendor = (v: VendorOption) => `${v.code} — ${v.name}${v.isApproved ? "" : " (not on ASL)"}`;
 
 export function NewPurchaseOrderButton({ onCreated }: { onCreated: (id: string) => void }) {
   const { can } = useSession();
@@ -56,25 +62,19 @@ export function NewPurchaseOrderButton({ onCreated }: { onCreated: (id: string) 
 
 function NewPurchaseOrderDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const refresh = useRefreshPurchasing();
-  const vendors = useQuery({ queryKey: ["vendors", "active"], queryFn: () => apiGet<VendorOption[]>("/vendors") });
   const locations = useQuery({ queryKey: ["locations", "active"], queryFn: () => apiGet<LocationOption[]>("/locations") });
-  const materials = useQuery({
-    queryKey: ["materials", "orderable"],
-    queryFn: async () => (await apiGetWithMeta<MaterialOption[]>("/materials", { limit: 200 })).data
-      .filter((m) => m.kind !== "FINISHED"),
-  });
 
-  const [vendorId, setVendorId] = useState("");
+  const [vendor, setVendor] = useState<VendorOption | null>(null);
   const [locationId, setLocationId] = useState("");
   const [expected, setExpected] = useState("");
   const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<DraftLine[]>([{ materialId: "", orderedQty: "", unitPrice: "" }]);
+  const [lines, setLines] = useState<DraftLine[]>([{ material: null, orderedQty: "", unitPrice: "" }]);
 
   const create = useMutation({
     mutationFn: () => apiSend<{ id: string; orderNumber: string }>("POST", "/purchase-orders", {
-      vendorId, locationId, expectedDeliveryDate: expected, notes: notes || undefined,
-      lines: lines.filter((l) => l.materialId).map((l) => ({
-        materialId: l.materialId,
+      vendorId: vendor?.id, locationId, expectedDeliveryDate: expected, notes: notes || undefined,
+      lines: lines.filter((l) => l.material).map((l) => ({
+        materialId: l.material!.id,
         orderedQty: Number(l.orderedQty),
         // Blank → the vendor's price on file.
         unitPrice: l.unitPrice === "" ? undefined : Number(l.unitPrice),
@@ -89,7 +89,7 @@ function NewPurchaseOrderDialog({ onClose, onCreated }: { onClose: () => void; o
   });
 
   const setLine = (i: number, patch: Partial<DraftLine>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const ready = vendorId && locationId && expected && lines.some((l) => l.materialId && Number(l.orderedQty) > 0);
+  const ready = vendor && locationId && expected && lines.some((l) => l.material && Number(l.orderedQty) > 0);
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -100,14 +100,9 @@ function NewPurchaseOrderDialog({ onClose, onCreated }: { onClose: () => void; o
         </DialogHeader>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label><span className={label}>Vendor</span>
-            <select className={selectSm} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
-              <option value="">Choose…</option>
-              {vendors.data?.map((v) => (
-                <option key={v.id} value={v.id}>{v.code} — {v.name}{v.isApproved ? "" : " (not on ASL)"}</option>
-              ))}
-            </select>
-          </label>
+          <div><span className={label}>Vendor</span>
+            <SearchPicker<VendorOption> endpoint="/vendors" label="Vendor" value={vendor} onChange={setVendor} format={formatVendor} />
+          </div>
           <label><span className={label}>Deliver to</span>
             <select className={selectSm} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
               <option value="">Choose…</option>
@@ -123,10 +118,8 @@ function NewPurchaseOrderDialog({ onClose, onCreated }: { onClose: () => void; o
           <span className={label}>Lines</span>
           {lines.map((l, i) => (
             <div key={i} className="grid grid-cols-[1fr_110px_110px_auto] gap-2 items-center">
-              <select className={selectSm} aria-label={`Line ${i + 1} material`} value={l.materialId} onChange={(e) => setLine(i, { materialId: e.target.value })}>
-                <option value="">Material…</option>
-                {materials.data?.map((m) => <option key={m.id} value={m.id}>{m.code} — {m.name} ({m.unit.code})</option>)}
-              </select>
+              <SearchPicker<MaterialOption> endpoint="/materials" params={ORDERABLE_KINDS} label={`Line ${i + 1} material`}
+                value={l.material} onChange={(m) => setLine(i, { material: m })} format={formatMaterial} />
               <input className={inputSm} inputMode="decimal" placeholder="Qty" aria-label={`Line ${i + 1} quantity`}
                 value={l.orderedQty} onChange={(e) => setLine(i, { orderedQty: e.target.value })} />
               <input className={inputSm} inputMode="decimal" placeholder="Price (₹)" aria-label={`Line ${i + 1} unit price`}
@@ -135,7 +128,7 @@ function NewPurchaseOrderDialog({ onClose, onCreated }: { onClose: () => void; o
                 onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
             </div>
           ))}
-          <button className={btnGhostSm} onClick={() => setLines((ls) => [...ls, { materialId: "", orderedQty: "", unitPrice: "" }])}>
+          <button className={btnGhostSm} onClick={() => setLines((ls) => [...ls, { material: null, orderedQty: "", unitPrice: "" }])}>
             Add line
           </button>
         </div>
@@ -259,6 +252,9 @@ interface ReceiptDraft {
   inspectionStatus: "PENDING" | "APPROVED" | "QUARANTINE";
 }
 
+const fmtDueDate = (iso: string) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
 interface ReceiptResult { grnNumber: string; lines: { lot: { lotNumber: string } | null }[] }
 
 function ReceiveGoodsDialog({ po, onClose }: { po: PurchaseOrderDetail; onClose: () => void }) {
@@ -316,7 +312,7 @@ function ReceiveGoodsDialog({ po, onClose }: { po: PurchaseOrderDetail; onClose:
         <div className="overflow-x-auto">
           <table className="data-table w-full text-body-sm">
             <thead><tr className="border-b border-border">
-              {["", "Material", "Outstanding", "Accept", "Reject", "Supplier lot", "CoA ref", "Inspection"].map((h) =>
+              {["", "Material", "Due", "Outstanding", "Accept", "Reject", "Supplier lot", "CoA ref", "Inspection"].map((h) =>
                 <th key={h} className="text-left px-2 py-1.5 font-medium text-muted-foreground whitespace-nowrap">{h}</th>)}
             </tr></thead>
             <tbody>
@@ -328,6 +324,8 @@ function ReceiveGoodsDialog({ po, onClose }: { po: PurchaseOrderDetail; onClose:
                       <input type="checkbox" aria-label={`Receive line ${l.lineNumber}`} checked={d.receive} onChange={(e) => set(l.id, { receive: e.target.checked })} />
                     </td>
                     <td className="px-2 py-1.5"><span className="identifier text-muted-foreground">{l.material.code}</span> {l.material.name}</td>
+                    {/* A material may be on the order more than once, due on different dates. */}
+                    <td className="px-2 py-1.5 whitespace-nowrap tabular-nums">{fmtDueDate(l.expectedDeliveryDate)}</td>
                     <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{formatQty(l.outstandingQty)} {l.uom}</td>
                     <td className="px-2 py-1.5 w-[100px]">
                       <input className={inputSm} inputMode="decimal" aria-label={`Accepted quantity line ${l.lineNumber}`} disabled={!d.receive}

@@ -21,6 +21,13 @@ const DEFAULTS = {
   "production.overProductionTolerancePct": 10,
   /** Percentage a component may be issued beyond its requirement (extra scrap). */
   "production.overIssueTolerancePct": 10,
+  /**
+   * Days late an open PO or work order may be and still be expedited to
+   * cover a need, rather than MRP planning duplicate supply. 0 turns it off,
+   * and is the default: a company opts in, so introducing the policy never
+   * changes an existing tenant's plans unasked.
+   */
+  "mrp.rescheduleInToleranceDays": 0,
 } as const;
 
 export type SettingKey = keyof typeof DEFAULTS;

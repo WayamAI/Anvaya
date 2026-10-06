@@ -52,6 +52,15 @@ const schema = z.object({
   PLANNING_AS_OF_DATE: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "PLANNING_AS_OF_DATE must be YYYY-MM-DD")])
     .optional()
     .transform((v) => (v ? v : undefined)),
+}).superRefine((e, ctx) => {
+  // Every production MRP run would silently plan from the pinned date.
+  if (e.NODE_ENV === "production" && e.PLANNING_AS_OF_DATE) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["PLANNING_AS_OF_DATE"],
+      message: "must not be set in production; it pins the planning date for demo data only",
+    });
+  }
 });
 
 function load() {

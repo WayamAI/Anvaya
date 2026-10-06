@@ -1,254 +1,340 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, FileText, Package, Shield } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Zap, FileText, Package, Hash } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import StatusBadge from "@/components/StatusBadge";
 import { PageHeader } from "@/components/app/page-header";
 import { Section } from "@/components/app/section";
 import { MetricRow, type Metric } from "@/components/app/metric-row";
 import { DataTable, type Column } from "@/components/app/data-table";
+import { EmptyState } from "@/components/app/empty-state";
+import { SkeletonBlock } from "@/components/app/skeleton-block";
 import { btnPrimary, btnSecondary } from "@/components/app/controls";
-import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine
-} from "recharts";
-import { traceCompletenessByLine, missingScanExceptions } from "@/data/traceability";
-import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE, CHART_LEGEND_STYLE } from "@/lib/chart-colors";
-import { RangePicker } from "@/components/app/chart-card";
-import { useSeriesToggle } from "@/lib/chart-config";
-import { useState } from "react";
+import { useSession } from "@/components/auth/session-context";
+import { ApiError, apiGet } from "@/lib/api";
+import { formatQty, inrCompact } from "@/lib/format";
+import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE } from "@/lib/chart-colors";
+import type { MrpException } from "@/components/mrp/exceptions-panel";
+import type { ExhaustionAlerts } from "@/server/inventory/exhaustion";
+import type { InventoryHealth } from "@/server/inventory/health";
+import type { LotIndicators } from "@/server/inventory/lots";
+import type { PurchaseOrderList } from "@/server/purchasing/purchase-orders";
+import type { WorkOrderList, WorkOrderRow } from "@/server/production/work-orders";
+import type { SalesOrderList } from "@/server/sales/sales-orders";
 
-/* The five materials the coverage chart plots, in draw order. */
-const COVERAGE_SERIES = ["Polypropylene", "Stearic Acid", "HDPE Resin", "EDTA", "TiO2"] as const;
-const COVERAGE_RANGES = ["4W", "8W", "12W"] as const;
-type CoverageRange = (typeof COVERAGE_RANGES)[number];
+/**
+ * The landing screen: headline figures from each area the user may read, the
+ * latest MRP run, materials closest to running short, stock about to run out,
+ * the coming week's production and the plan's open exceptions. Each section
+ * is fetched only with that area's read permission and left out without it.
+ */
 
-const coverageData = [
-  { week: "W1", "Polypropylene": 6.2, "Stearic Acid": 3.1, "HDPE Resin": 8.4, "EDTA": 4.5, "TiO2": 5.1 },
-  { week: "W2", "Polypropylene": 5.8, "Stearic Acid": 2.8, "HDPE Resin": 7.9, "EDTA": 4.1, "TiO2": 4.8 },
-  { week: "W3", "Polypropylene": 5.1, "Stearic Acid": 2.2, "HDPE Resin": 7.2, "EDTA": 3.8, "TiO2": 4.3 },
-  { week: "W4", "Polypropylene": 4.5, "Stearic Acid": 1.8, "HDPE Resin": 6.8, "EDTA": 3.5, "TiO2": 3.9 },
-  { week: "W5", "Polypropylene": 5.2, "Stearic Acid": 3.5, "HDPE Resin": 6.2, "EDTA": 3.2, "TiO2": 3.5 },
-  { week: "W6", "Polypropylene": 4.8, "Stearic Acid": 3.1, "HDPE Resin": 5.8, "EDTA": 2.9, "TiO2": 3.1 },
-  { week: "W7", "Polypropylene": 4.2, "Stearic Acid": 2.6, "HDPE Resin": 5.4, "EDTA": 2.6, "TiO2": 2.8 },
-  { week: "W8", "Polypropylene": 3.8, "Stearic Acid": 2.1, "HDPE Resin": 5.1, "EDTA": 2.3, "TiO2": 2.5 },
-  { week: "W9", "Polypropylene": 4.5, "Stearic Acid": 1.5, "HDPE Resin": 4.8, "EDTA": 2.1, "TiO2": 2.2 },
-  { week: "W10", "Polypropylene": 3.9, "Stearic Acid": 1.2, "HDPE Resin": 4.5, "EDTA": 1.8, "TiO2": 1.9 },
-  { week: "W11", "Polypropylene": 3.4, "Stearic Acid": 0.8, "HDPE Resin": 4.2, "EDTA": 1.5, "TiO2": 1.6 },
-  { week: "W12", "Polypropylene": 3.1, "Stearic Acid": 0.5, "HDPE Resin": 3.9, "EDTA": 1.2, "TiO2": 1.3 },
-];
+interface Run {
+  id: string; runNumber: string; asOfDate: string; completedAt: string | null; durationMs: number | null; triggeredBy: string;
+  materialsPlanned: number; plannedOrderCount: number;
+  openExceptions: { bySeverity: Record<string, number> };
+  plannedOrders: { type: string; status: string; count: number }[];
+}
+interface Requirement {
+  material: { id: string; code: string; name: string }; location: { id: string; name: string };
+  coverDays: number | null; horizonDays: number; status: "critical" | "short" | "covered" | "adequate";
+}
 
-const stockAlerts = [
-  { sku: "Stearic Acid", stock: "180 kg", days: 4.3, reorder: "Immediate" },
-  { sku: "Fragrance Blend FG-04", stock: "22 L", days: 3.7, reorder: "Immediate" },
-  { sku: "EDTA Disodium Salt", stock: "95 kg", days: 5.1, reorder: "24 Mar 2026" },
-  { sku: "Shrink Labels (Type B)", stock: "1,200 pcs", days: 6.2, reorder: "25 Mar 2026" },
-  { sku: "Titanium Dioxide", stock: "640 kg", days: 8.2, reorder: "25 Mar 2026" },
-  { sku: "Foil Seals 5L", stock: "3,400 pcs", days: 9.1, reorder: "27 Mar 2026" },
-  { sku: "Sodium Lauryl Sulphate", stock: "520 kg", days: 11.4, reorder: "30 Mar 2026" },
-];
+const fmtDate = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+const fmtDuration = (ms: number | null) => (ms === null ? "—" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+const DAY = 86_400_000;
+const OPEN_WO = ["PLANNED", "FIRMED", "RELEASED", "IN_PROGRESS"] as const;
 
-const productionSchedule = [
-  { product: "Industrial Cleaner 5L", qty: "2,000", date: "24 Mar", readiness: "green" as const, status: "Confirmed" },
-  { product: "Floor Polish 1L", qty: "5,000", date: "24 Mar", readiness: "amber" as const, status: "Confirmed" },
-  { product: "Dish Wash Liquid 500ml", qty: "8,000", date: "25 Mar", readiness: "red" as const, status: "At Risk" },
-  { product: "Hand Wash 250ml", qty: "10,000", date: "25 Mar", readiness: "green" as const, status: "Confirmed" },
-  { product: "Glass Cleaner 1L", qty: "3,000", date: "26 Mar", readiness: "green" as const, status: "Planned" },
-  { product: "Toilet Cleaner 500ml", qty: "6,000", date: "27 Mar", readiness: "amber" as const, status: "Planned" },
-  { product: "Surface Disinfectant 5L", qty: "1,500", date: "28 Mar", readiness: "green" as const, status: "Planned" },
-];
+function SectionError({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  return <EmptyState title="Could not load" description={error.message} action={<button className={btnSecondary} onClick={onRetry}>Try again</button>} />;
+}
 
 export default function Dashboard() {
-  // Windowing the existing twelve weeks — the tail is the recent end, so a
-  // shorter range keeps the last N points rather than the first.
-  const [coverageRange, setCoverageRange] = useState<CoverageRange>("12W");
-  const coverageWindow = coverageData.slice(-parseInt(coverageRange, 10));
-  const coverageLegend = useSeriesToggle([...COVERAGE_SERIES]);
-
   const router = useRouter();
-  const [scanExceptions, setScanExceptions] = useState(missingScanExceptions);
+  const { can } = useSession();
+  const mrp = can("mrp:read");
+  const inv = can("inventory:read");
+  const pos = can("purchase-order:read");
+  const wos = can("work-order:read");
+  const sos = can("sales-order:read");
 
-  const resolveException = (index: number) => {
-    setScanExceptions(prev => prev.map((e, i) => i === index ? { ...e, resolved: true } : e));
-  };
-
-  const unresolved = scanExceptions.filter(e => !e.resolved).length;
-
-  // The nine figures that used to be nine bordered cards. Tone is applied only
-  // to the ones that need attention, so colour still carries meaning.
-  const metrics: Metric[] = [
-    { label: "Materials at risk", iconName: "materials-risk", value: "14", hint: "SKUs · up from 9 last week", tone: "danger" },
-    { label: "Open purchase orders", iconName: "purchase-orders", value: "87", hint: "₹4.2 Cr value" },
-    { label: "Schedule adherence", iconName: "schedule-adherence", value: "91.4%", delta: "2.1%", deltaDirection: "up" },
-    { label: "Inventory health", iconName: "inventory-health", value: "74", hint: "of 100 · below 80 target", tone: "warning" },
-    { label: "Pending work orders", iconName: "pending-work-orders", value: "23", hint: "6 overdue" },
-    { label: "Trace completeness", iconName: "trace-completeness", value: "92.4%", delta: "1.2%", deltaDirection: "up" },
-    { label: "Mean RCA time", iconName: "rca-time", value: "14.7", hint: "hrs · target under 12" },
-    { label: "Active suspect lots", iconName: "suspect-lots", value: "2", hint: "Up from 0 last week", tone: "danger" },
-    { label: "Recall accuracy", iconName: "recall-accuracy", value: "97.1%", hint: "Field containment" },
-  ];
-
-  type ScanException = (typeof scanExceptions)[number];
-  const exceptionColumns: Column<ScanException>[] = [
-    { key: "workOrder", header: "Work order", width: "w-[130px]", value: r => r.workOrder, cell: r => <span className="identifier text-body-sm">{r.workOrder}</span> },
-    { key: "part", header: "Part", width: "w-[130px]", value: r => r.part, cell: r => <span className="identifier text-body-sm text-muted-foreground">{r.part}</span> },
-    { key: "station", header: "Station", value: r => r.station, cell: r => r.station },
-    { key: "shift", header: "Shift", width: "w-[90px]", value: r => r.shift, cell: r => r.shift },
-    { key: "date", header: "Date", width: "w-[110px]", value: r => r.date, cell: r => r.date },
-    {
-      key: "action", header: "", align: "right", width: "w-[110px]",
-      cell: r => {
-        const i = scanExceptions.indexOf(r);
-        return r.resolved
-          ? <span className="text-body-sm text-muted-foreground">Resolved</span>
-          : <button onClick={() => resolveException(i)} className="h-7 rounded-lg border border-border bg-card px-2.5 text-body-sm font-medium text-foreground transition-colors hover:bg-secondary">Resolve</button>;
-      },
+  const runQ = useQuery({
+    queryKey: ["mrp", "run", "latest"],
+    enabled: mrp,
+    queryFn: async () => {
+      try {
+        return await apiGet<Run>("/mrp/runs/latest");
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
     },
-  ];
+  });
+  const run = runQ.data ?? null;
+  const reqQ = useQuery({ queryKey: ["mrp", "materials", run?.id], queryFn: () => apiGet<Requirement[]>(`/mrp/runs/${run!.id}/materials`), enabled: !!run });
+  const excQ = useQuery({ queryKey: ["mrp", "exceptions", run?.id, "dashboard"], queryFn: () => apiGet<MrpException[]>(`/mrp/runs/${run!.id}/exceptions`, { limit: 100 }), enabled: !!run });
+  const alertsQ = useQuery({ queryKey: ["inventory", "exhaustion-alerts"], queryFn: () => apiGet<ExhaustionAlerts>("/inventory/exhaustion-alerts"), enabled: inv });
+  const healthQ = useQuery({ queryKey: ["inventory", "health"], queryFn: () => apiGet<InventoryHealth>("/inventory/health"), enabled: inv });
+  const lotsQ = useQuery({ queryKey: ["inventory", "lots", "indicators"], queryFn: () => apiGet<LotIndicators>("/inventory/lots/indicators"), enabled: inv });
+  const poQ = useQuery({ queryKey: ["purchase-orders", "counts"], queryFn: () => apiGet<PurchaseOrderList>("/purchase-orders", { limit: 1 }), enabled: pos });
+  const woQ = useQuery({ queryKey: ["work-orders", "dashboard"], queryFn: () => apiGet<WorkOrderList>("/work-orders", { limit: 200 }), enabled: wos });
+  const soQ = useQuery({ queryKey: ["sales-orders", "counts"], queryFn: () => apiGet<SalesOrderList>("/sales-orders", { limit: 1 }), enabled: sos });
 
-  type Scheduled = (typeof productionSchedule)[number];
-  const scheduleColumns: Column<Scheduled>[] = [
+  const requirements = useMemo(() => reqQ.data ?? [], [reqQ.data]);
+  const atRisk = requirements.filter((r) => r.status === "critical" || r.status === "short");
+  const openExceptions = run ? Object.values(run.openExceptions?.bySeverity ?? {}).reduce((a, b) => a + b, 0) : 0;
+  const plannedToPlace = run?.plannedOrders.filter((g) => g.status === "PLANNED").reduce((a, g) => a + g.count, 0) ?? 0;
+
+  // Figures from each area the user can read; "—" while a figure loads.
+  const v = (loaded: unknown, value: string | number) => (loaded === undefined ? "—" : value);
+  const metrics: Metric[] = [];
+  if (mrp) {
+    metrics.push({
+      label: "Materials at risk", iconName: "materials-risk",
+      value: run === null ? 0 : v(reqQ.data, atRisk.length),
+      hint: run === null ? "No MRP run yet" : `${requirements.filter((r) => r.status === "critical").length} critical`,
+      tone: atRisk.length ? "danger" : "default",
+    });
+    metrics.push({
+      label: "Open MRP exceptions", iconName: "open-exceptions", value: run === null ? 0 : v(runQ.data, openExceptions),
+      hint: run ? `${plannedToPlace} planned orders to place` : undefined, tone: openExceptions ? "warning" : "default",
+    });
+  }
+  if (pos) {
+    const c = poQ.data?.counts;
+    const open = c ? c.DRAFT + c.APPROVED + c.ORDERED + c.PARTIALLY_RECEIVED : 0;
+    metrics.push({ label: "Open purchase orders", iconName: "purchase-orders", value: v(c, open), hint: c ? `${c.overdue} overdue · ${c.DRAFT} draft` : undefined, tone: c?.overdue ? "danger" : "default" });
+  }
+  if (wos) {
+    const c = woQ.data?.counts;
+    const open = c ? OPEN_WO.reduce((a, s) => a + c[s], 0) : 0;
+    metrics.push({ label: "Open work orders", iconName: "pending-work-orders", value: v(c, open), hint: c ? `${c.overdue} overdue` : undefined, tone: c?.overdue ? "warning" : "default" });
+  }
+  if (sos) {
+    const k = soQ.data?.kpis;
+    metrics.push({
+      label: "Open sales orders", iconName: "total-pos", value: v(k, k?.open.count ?? 0),
+      hint: k ? `${inrCompact(k.open.value)} · ${soQ.data!.counts.overdue} overdue` : undefined, tone: soQ.data?.counts.overdue ? "warning" : "default",
+    });
+  }
+  if (inv) {
+    const h = healthQ.data;
+    metrics.push({
+      label: "Inventory health", iconName: "inventory-health", value: h ? (h.overall.score ?? "—") : "—",
+      hint: h ? (h.overall.score === null ? "Not enough data to score" : `of 100 · target ${h.target}`) : undefined,
+      tone: h?.overall.score != null && h.overall.score < h.target ? "warning" : "default",
+    });
+    const l = lotsQ.data;
+    metrics.push({ label: "Trace completeness", iconName: "trace-completeness", value: l ? (l.backwardPct === null ? "—" : `${l.backwardPct}%`) : "—", hint: l ? `Backward, across ${l.lotCount} lots` : undefined });
+    metrics.push({
+      label: "Lots needing containment", iconName: "suspect-lots", value: v(l, l?.containmentLots ?? 0),
+      hint: l ? `${l.expiring.length} expiring in ${l.expiryWindowDays} days` : undefined, tone: l?.containmentLots ? "danger" : "default",
+    });
+  }
+
+  const lowestCover = useMemo(() => requirements
+    .filter((r) => r.status !== "adequate")
+    .map((r) => ({ name: r.material.code, label: `${r.material.name} — ${r.location.name}`, cover: r.coverDays ?? r.horizonDays, beyond: r.coverDays === null }))
+    .sort((a, b) => a.cover - b.cover)
+    .slice(0, 10), [requirements]);
+
+  // Open work orders starting within the next seven days (or already late).
+  const asOf = woQ.data?.asOf;
+  const upcoming = useMemo(() => {
+    if (!woQ.data || !asOf) return [];
+    const until = Date.parse(asOf) + 7 * DAY;
+    return woQ.data.orders
+      .filter((w) => (OPEN_WO as readonly string[]).includes(w.status) && Date.parse(w.plannedStartDate) <= until)
+      .sort((a, b) => a.plannedStartDate.localeCompare(b.plannedStartDate))
+      .slice(0, 7);
+  }, [woQ.data, asOf]);
+
+  const scheduleColumns: Column<WorkOrderRow>[] = [
     {
       key: "product", header: "Product",
-      // Readiness rides with the product name rather than taking a column of
-      // its own, which is what made this table overflow its third of the row.
-      cell: r => (
+      cell: (r) => (
         <span className="flex min-w-0 items-center gap-2">
-          <span
-            title={r.status}
-            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${r.readiness === "green" ? "bg-success" : r.readiness === "amber" ? "bg-warning" : "bg-danger"}`}
-          />
-          <span className="truncate">{r.product}</span>
+          <span title={r.overdue ? "Overdue" : r.status} className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${r.overdue ? "bg-danger" : r.status === "PLANNED" ? "bg-warning" : "bg-success"}`} />
+          <span className="truncate">{r.product.name}</span>
         </span>
       ),
     },
-    { key: "qty", header: "Qty", align: "right", numeric: true, width: "w-[72px]", cell: r => r.qty },
-    { key: "date", header: "Date", align: "right", width: "w-[76px]", cell: r => <span className="whitespace-nowrap">{r.date}</span> },
+    { key: "qty", header: "Qty", align: "right", numeric: true, width: "w-[80px]", cell: (r) => formatQty(r.plannedQty) },
+    { key: "date", header: "Start", align: "right", width: "w-[76px]", cell: (r) => <span className="whitespace-nowrap">{fmtDate(r.plannedStartDate)}</span> },
   ];
+
+  const exceptions = (excQ.data ?? []).filter((e) => !e.isResolved);
+  const severityColor = { CRITICAL: "red", HIGH: "red", MEDIUM: "amber", LOW: "gray" } as const;
+  const exceptionColumns: Column<MrpException>[] = [
+    { key: "severity", header: "Severity", width: "w-[110px]", value: (e) => e.severity, cell: (e) => <StatusBadge status={severityColor[e.severity]} label={e.severity.charAt(0) + e.severity.slice(1).toLowerCase()} /> },
+    { key: "material", header: "Material", width: "w-[130px]", value: (e) => e.material?.code ?? "", cell: (e) => <span className="identifier text-body-sm">{e.material?.code ?? "—"}</span> },
+    { key: "message", header: "Exception", value: (e) => e.message, cell: (e) => e.message },
+    { key: "action", header: "Suggested action", value: (e) => e.suggestedAction ?? "", cell: (e) => <span className="text-muted-foreground">{e.suggestedAction ?? "—"}</span> },
+    { key: "due", header: "Due", width: "w-[100px]", value: (e) => e.dueDate ?? "", cell: (e) => (e.dueDate ? fmtDate(e.dueDate) : "—") },
+  ];
+
+  const noAccess = !mrp && !inv && !pos && !wos && !sos;
 
   return (
     <div className="px-6 py-5">
       <PageHeader
         title="Dashboard"
-        description="Material planning, production readiness and traceability at a glance."
+        description="Material planning, production readiness and supply at a glance."
         actions={
           <>
-            <button onClick={() => router.push("/purchase-planning")} className={btnSecondary}>
-              <FileText /> Purchase plan
-            </button>
-            <button onClick={() => router.push("/mrp-run")} className={btnPrimary}>
-              <Zap /> Run MRP
-            </button>
+            {mrp && (
+              <button onClick={() => router.push("/purchase-planning")} className={btnSecondary}>
+                <FileText /> Purchase plan
+              </button>
+            )}
+            {mrp && (
+              <button onClick={() => router.push("/mrp-run")} className={btnPrimary}>
+                <Zap /> {can("mrp:run") ? "Run MRP" : "MRP results"}
+              </button>
+            )}
           </>
         }
       />
 
-      <MetricRow metrics={metrics} />
+      {noAccess ? (
+        <EmptyState title="Nothing to show yet" description="Your role does not include access to planning, inventory or order data. Ask an administrator if you need it." />
+      ) : (
+        <MetricRow metrics={metrics} />
+      )}
 
-      <div className="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-2">
-        <Section
-          title="Material coverage trend"
-          iconName="material-coverage"
-          description="Weeks of cover by material"
-          actions={<RangePicker<CoverageRange> value={coverageRange} options={COVERAGE_RANGES} onChange={setCoverageRange} />}
-        >
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={coverageWindow} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
-              <XAxis dataKey="week" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} tickMargin={6} />
-              <YAxis width={44} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} label={{ value: "Weeks of cover", angle: -90, position: "insideLeft", style: { fontSize: 11, fill: CHART_COLORS.axis, textAnchor: "middle" } }} />
-              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ stroke: CHART_COLORS.grid, strokeWidth: 1 }} formatter={(v: number | string) => (typeof v === "number" ? `${v} weeks` : v)} />
-              <ReferenceLine y={2} stroke={CHART_COLORS.primary} strokeDasharray="5 5" label={{ value: "Min 2w", fontSize: 10, fill: CHART_COLORS.primary }} />
-              {COVERAGE_SERIES.map((key, i) => (
-                <Line
-                  key={key}
-                  type="monotone"
-                  dataKey={key}
-                  stroke={SERIES[i]}
-                  strokeWidth={i === 0 ? 2 : 1.5}
-                  dot={false}
-                  // Hiding is what the legend toggles; the series stays in the
-                  // chart so its colour and legend entry do not reshuffle.
-                  hide={coverageLegend.isHidden(key)}
-                />
-              ))}
-              {/* Click a name to isolate or restore that material. */}
-              <Legend
-                iconSize={6}
-                wrapperStyle={{ ...CHART_LEGEND_STYLE, cursor: "pointer" }}
-                onClick={coverageLegend.onLegendClick}
-                formatter={(value: string) => (
-                  <span style={{ opacity: coverageLegend.isHidden(value) ? 0.4 : 1 }}>{value}</span>
-                )}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+      {(mrp || inv) && (
+        <div className="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-2">
+          {mrp && (
+            <Section
+              title="Lowest material cover"
+              iconName="material-coverage"
+              description={run ? `Days until stock falls below safety stock · ${run.runNumber}` : "From the latest MRP run"}
+              actions={<button onClick={() => router.push("/material-coverage")} className="text-body-sm text-muted-foreground transition-colors hover:text-foreground">View all</button>}
+            >
+              {runQ.error ? <SectionError error={runQ.error} onRetry={() => void runQ.refetch()} />
+                : reqQ.error ? <SectionError error={reqQ.error} onRetry={() => void reqQ.refetch()} />
+                  : runQ.isPending || (run && reqQ.isPending) ? <SkeletonBlock className="h-[260px] w-full" />
+                    : !run ? <EmptyState title="No MRP run yet" description="Run MRP to see how long stock will last." />
+                      : lowestCover.length === 0 ? <EmptyState title="No demand in the plan" description="No material has requirements in the horizon." />
+                        : (
+                          <ResponsiveContainer width="100%" height={260}>
+                            <BarChart data={lowestCover} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
+                              <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} interval={0} />
+                              <YAxis width={44} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} label={{ value: "Days of cover", angle: -90, position: "insideLeft", style: { fontSize: 11, fill: CHART_COLORS.axis, textAnchor: "middle" } }} />
+                              <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: CHART_COLORS.grid, opacity: 0.4 }}
+                                labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ""}
+                                formatter={(val: number, _n, p) => [`${val}${(p.payload as { beyond: boolean }).beyond ? "+" : ""} days`, "Cover"]} />
+                              <ReferenceLine y={14} stroke={CHART_COLORS.primary} strokeDasharray="5 5" label={{ value: "14 days", fontSize: 10, fill: CHART_COLORS.primary, position: "insideTopLeft" }} />
+                              {/* A material with no cover left still gets a visible stub: it is the most urgent bar. */}
+                              <Bar dataKey="cover" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={32} minPointSize={3} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        )}
+            </Section>
+          )}
+
+          {inv && (
+            <Section title="Stock value by location" iconName="trend-chart" description={healthQ.data ? `${inrCompact(healthQ.data.totals.value)} across ${healthQ.data.totals.stockedSkus} stocked SKUs` : "Valued at standard cost"}>
+              {healthQ.error ? <SectionError error={healthQ.error} onRetry={() => void healthQ.refetch()} />
+                : healthQ.isPending ? <SkeletonBlock className="h-[260px] w-full" />
+                  : healthQ.data.byLocation.length === 0 ? <EmptyState title="No stock recorded" description="Stock value appears once receipts or opening balances are posted." />
+                    : (
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={healthQ.data.byLocation} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
+                          <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} interval={0} />
+                          <YAxis width={56} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} tickFormatter={(n: number) => inrCompact(n)} />
+                          <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: CHART_COLORS.grid, opacity: 0.4 }} formatter={(val: number) => [inrCompact(val), "Stock value"]} />
+                          <Bar dataKey="value" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={48} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+            </Section>
+          )}
+        </div>
+      )}
+
+      {(mrp || inv || wos) && (
+        <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
+          {mrp && (
+            <Section title="MRP run status">
+              {runQ.error ? <SectionError error={runQ.error} onRetry={() => void runQ.refetch()} />
+                : runQ.isPending ? <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <SkeletonBlock key={i} className="h-5 w-full" />)}</div>
+                  : !run ? <EmptyState title="No MRP run yet" description={can("mrp:run") ? "Run MRP to plan from current stock, orders and forecasts." : "Ask a planner to run MRP."} />
+                    : (
+                      <dl className="divide-y divide-border">
+                        {[
+                          ["Last run", `${run.runNumber} · ${run.completedAt ? new Date(run.completedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}`],
+                          ["Run by", run.triggeredBy],
+                          ["Duration", fmtDuration(run.durationMs)],
+                          ["Materials planned", String(run.materialsPlanned)],
+                          ["Planned orders", `${run.plannedOrderCount} (${plannedToPlace} to place)`],
+                          ["Open exceptions", String(openExceptions)],
+                        ].map(([k, val]) => (
+                          <div key={k} className="flex items-baseline justify-between gap-3 py-2">
+                            <dt className="text-body-md text-muted-foreground">{k}</dt>
+                            <dd className="text-right text-body-md font-medium tabular-nums text-foreground">{val}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+            </Section>
+          )}
+
+          {inv && (
+            <Section
+              title="Stock exhaustion alerts"
+              description={alertsQ.data ? `${alertsQ.data.counts.total} running out within 14 days` : undefined}
+              actions={<button onClick={() => router.push("/stock-alerts")} className="text-body-sm text-muted-foreground transition-colors hover:text-foreground">View all</button>}
+            >
+              {alertsQ.error ? <SectionError error={alertsQ.error} onRetry={() => void alertsQ.refetch()} />
+                : alertsQ.isPending ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <SkeletonBlock key={i} className="h-5 w-full" />)}</div>
+                  : alertsQ.data.alerts.length === 0 ? <EmptyState title="No alerts" description="Nothing is running out within 14 days at current usage." />
+                    : (
+                      <ul className="divide-y divide-border">
+                        {alertsQ.data.alerts.slice(0, 7).map((a) => (
+                          <li key={`${a.materialId}|${a.location.id}`} className="flex items-baseline justify-between gap-3 py-2">
+                            <span className="min-w-0 truncate text-body-md text-foreground" title={`${a.name} — ${a.location.name}`}>{a.name}</span>
+                            <span className={`shrink-0 text-body-sm tabular-nums ${a.level === "critical" ? "text-danger" : "text-muted-foreground"}`}>
+                              {formatQty(a.stock)} {a.uom} · {a.coverDays}d
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+            </Section>
+          )}
+
+          {wos && (
+            <Section title="Production schedule" description="Open work orders starting in the next 7 days"
+              actions={<button onClick={() => router.push("/work-orders")} className="text-body-sm text-muted-foreground transition-colors hover:text-foreground">View all</button>}>
+              {woQ.error ? <SectionError error={woQ.error} onRetry={() => void woQ.refetch()} />
+                : <DataTable columns={scheduleColumns} rows={upcoming} rowKey={(r) => r.id} loading={woQ.isPending}
+                    onRowClick={() => router.push("/work-orders")}
+                    empty={<EmptyState title="Nothing scheduled" description="No open work order starts in the next 7 days." />} />}
+            </Section>
+          )}
+        </div>
+      )}
+
+      {mrp && run && (
+        <Section className="mt-8" title="Open MRP exceptions" description={`${openExceptions} unresolved in ${run.runNumber}`}
+          actions={<button onClick={() => router.push("/mrp-run")} className="text-body-sm text-muted-foreground transition-colors hover:text-foreground">Resolve on MRP run</button>}>
+          {excQ.error ? <SectionError error={excQ.error} onRetry={() => void excQ.refetch()} />
+            : <DataTable columns={exceptionColumns} rows={exceptions} rowKey={(e) => e.id} name="Open MRP exceptions" loading={excQ.isPending} searchable exportable pageSize={10}
+                empty={<EmptyState title="No open exceptions" description="The latest plan raised nothing that needs attention." />} />}
         </Section>
-
-        <Section title="Trace completeness by assembly line" iconName="trend-chart" description="Last 7 days">
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={traceCompletenessByLine} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
-              <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} />
-              <YAxis width={44} domain={[60, 100]} tick={{ fontSize: 11 }} stroke={CHART_COLORS.axis} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={CHART_TOOLTIP_STYLE}  formatter={(v: number | string) => (typeof v === "number" ? v.toLocaleString() : v)} />
-              <Bar dataKey="Line 1" fill={SERIES[0]} radius={[2, 2, 0, 0]} />
-              <Bar dataKey="Line 2" fill={SERIES[1]} radius={[2, 2, 0, 0]} />
-              <Bar dataKey="Line 3" fill={SERIES[2]} radius={[2, 2, 0, 0]} />
-              <Bar dataKey="Line 4" fill={SERIES[3]} radius={[2, 2, 0, 0]} />
-              <Legend iconSize={6} wrapperStyle={CHART_LEGEND_STYLE} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Section>
-      </div>
-
-      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <Section title="MRP run status">
-          <dl className="divide-y divide-border">
-            {[
-              ["Last run", "23 Mar 2026, 06:30 AM"],
-              ["Duration", "4m 12s"],
-              ["Planned orders", "312"],
-              ["Exceptions", "18"],
-            ].map(([k, v]) => (
-              <div key={k} className="flex items-baseline justify-between py-2">
-                <dt className="text-body-md text-muted-foreground">{k}</dt>
-                <dd className="text-body-md font-medium tabular-nums text-foreground">{v}</dd>
-              </div>
-            ))}
-          </dl>
-        </Section>
-
-        <Section
-          title="Stock exhaustion alerts"
-          actions={
-            <button onClick={() => router.push("/stock-alerts")} className="text-body-sm text-muted-foreground transition-colors hover:text-foreground">
-              View all
-            </button>
-          }
-        >
-          <ul className="divide-y divide-border">
-            {stockAlerts.slice(0, 7).map(a => (
-              <li key={a.sku} className="flex items-baseline justify-between gap-3 py-2">
-                <span className="min-w-0 truncate text-body-md text-foreground">{a.sku}</span>
-                <span className="shrink-0 text-body-sm tabular-nums text-muted-foreground">{a.stock} · {a.days}d</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-
-        <Section title="Production schedule" description="Next 7 days">
-          <DataTable columns={scheduleColumns} rows={productionSchedule} rowKey={r => r.product} />
-        </Section>
-      </div>
-
-      <Section className="mt-8" title="Missing scan exceptions" description={`${unresolved} unresolved`}>
-        <DataTable columns={exceptionColumns} rows={scanExceptions} rowKey={r => r.workOrder} name="Missing scan exceptions" searchable exportable />
-      </Section>
+      )}
 
       <div className="mt-8 flex flex-wrap gap-2 border-t border-border pt-5">
         {[
-          { label: "BOM traceability", icon: Shield, to: "/traceability" },
-          { label: "Slow-moving stock", icon: Package, to: "/inventory-health" },
-        ].map(({ label, icon: Icon, to }) => (
+          { label: "Lot traceability", icon: Hash, to: "/batch-tracking", show: inv },
+          { label: "Slow-moving stock", icon: Package, to: "/inventory-health", show: inv },
+        ].filter((l) => l.show).map(({ label, icon: Icon, to }) => (
           <button key={to} onClick={() => router.push(to)} className={btnSecondary}>
             <Icon className="h-4 w-4" /> {label}
           </button>

@@ -4,9 +4,11 @@ import { AppError } from "@/server/errors/app-error";
 import { toNumber } from "@/server/api/decimal";
 import { MOVEMENT_REF } from "@/server/inventory/lots";
 import {
-  componentReadiness, isOpen, isOverdue, statusCounts, traceCompleteness, workCentreRoute,
-  type WorkOrderDetail, type WorkOrderList, type WorkOrderRow,
+  WORK_ORDER_STATUSES, componentReadiness, isOpen, isOverdue, traceCompleteness, workCentreRoute,
+  type StatusCounts, type WorkOrderDetail, type WorkOrderList, type WorkOrderRow, type WorkOrderStatus,
 } from "@/server/production/work-orders";
+import { cursorArgs, pageOf } from "@/server/api/pagination";
+import { startOfUtcDay } from "@/server/inventory/lots";
 
 /**
  * Work orders — read side. Every query is scoped by the caller's company;
@@ -50,15 +52,67 @@ function toRow(o: OrderWithRefs, asOf: Date): WorkOrderRow {
   };
 }
 
-/** Every work order, newest planned start first, with counts per tab. */
-export async function listWorkOrders(companyId: string, asOf = new Date()): Promise<WorkOrderList> {
+/**
+ * Every work order as list rows, unpaged — for the production schedule, which
+ * plots them all. Screens that list orders use `listWorkOrders`.
+ */
+export async function allWorkOrderRows(companyId: string, asOf = new Date()): Promise<WorkOrderRow[]> {
   const orders = await prisma.workOrder.findMany({
     where: { companyId },
     include: orderInclude,
     orderBy: [{ plannedStartDate: "desc" }, { orderNumber: "desc" }],
   });
-  const rows = orders.map((o) => toRow(o, asOf));
-  return { asOf: asOf.toISOString(), orders: rows, counts: statusCounts(rows) };
+  return orders.map((o) => toRow(o, asOf));
+}
+
+export interface ListWorkOrdersQuery {
+  status?: WorkOrderStatus | "overdue";
+  q?: string;
+  /** Default 50, as the route schema has it. */
+  limit?: number;
+  cursor?: string;
+}
+
+/** `isOverdue` as SQL: still open, planned to have finished before today. */
+function overdueWhere(asOf: Date): Prisma.WorkOrderWhereInput {
+  return { status: { in: WORK_ORDER_STATUSES.filter(isOpen) }, plannedEndDate: { lt: startOfUtcDay(asOf) } };
+}
+
+/**
+ * One page of work orders, newest planned start first, filtered to a status
+ * tab and a search on number or product. Tab counts cover the whole company.
+ */
+export async function listWorkOrders(companyId: string, query: ListWorkOrdersQuery, asOf = new Date()) {
+  const tab: Prisma.WorkOrderWhereInput =
+    query.status === "overdue" ? overdueWhere(asOf) : query.status ? { status: query.status } : {};
+  const search: Prisma.WorkOrderWhereInput = query.q
+    ? { OR: [
+        { orderNumber: { contains: query.q, mode: "insensitive" } },
+        { material: { code: { contains: query.q, mode: "insensitive" } } },
+        { material: { name: { contains: query.q, mode: "insensitive" } } },
+      ] }
+    : {};
+  const where: Prisma.WorkOrderWhereInput = { companyId, AND: [tab, search] };
+
+  const [orders, total, byStatus, overdue] = await Promise.all([
+    prisma.workOrder.findMany({
+      where, include: orderInclude,
+      orderBy: [{ plannedStartDate: "desc" }, { orderNumber: "desc" }, { id: "desc" }],
+      ...cursorArgs({ limit: query.limit ?? 50, cursor: query.cursor }),
+    }),
+    prisma.workOrder.count({ where }),
+    prisma.workOrder.groupBy({ by: ["status"], where: { companyId }, _count: { _all: true } }),
+    prisma.workOrder.count({ where: { companyId, ...overdueWhere(asOf) } }),
+  ]);
+
+  const counts = Object.fromEntries(WORK_ORDER_STATUSES.map((s) => [s, 0])) as StatusCounts;
+  for (const g of byStatus) counts[g.status] = g._count._all;
+  counts.all = byStatus.reduce((s, g) => s + g._count._all, 0);
+  counts.overdue = overdue;
+
+  const page = pageOf(orders, query.limit ?? 50);
+  const list: WorkOrderList = { asOf: asOf.toISOString(), orders: page.items.map((o) => toRow(o, asOf)), counts };
+  return { list, nextCursor: page.nextCursor, total };
 }
 
 /**

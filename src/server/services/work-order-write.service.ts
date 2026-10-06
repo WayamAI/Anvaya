@@ -9,11 +9,12 @@ import { AppError, type ErrorDetail } from "@/server/errors/app-error";
 import { bucketForQc } from "@/server/inventory/ledger";
 import { MOVEMENT_REF } from "@/server/inventory/lots";
 import {
-  assertOutputWithinPlan, assertWoTransition, outputUnitCost, planIssue, snapshotComponents,
+  assertCompletable, assertOutputWithinPlan, assertWoTransition, componentShortfalls, outputUnitCost, planIssue, snapshotComponents,
   type IssueLineInput,
 } from "@/server/production/wo-rules";
+import { hasPermission } from "@/server/auth/rbac";
 import type {
-  CancelWorkOrderInput, CreateWorkOrderInput, IssueInput, OutputInput, UpdateWorkOrderInput,
+  CancelWorkOrderInput, CompleteWorkOrderInput, CreateWorkOrderInput, IssueInput, OutputInput, UpdateWorkOrderInput,
 } from "@/server/validation/production";
 import { resolveLotDraws } from "./lot-allocation.service";
 import { lockBalances, postMovement, refreshMovingAverage } from "./stock-ledger.service";
@@ -200,7 +201,7 @@ export async function updateWorkOrder(id: string, input: UpdateWorkOrderInput, c
 async function transition(
   id: string,
   ctx: WriteContext,
-  action: "firm" | "release" | "complete" | "close",
+  action: "firm" | "release" | "close",
   to: WorkOrderStatus,
   audit: AuditAction,
 ) {
@@ -208,12 +209,8 @@ async function transition(
   await runInTransaction(async (tx) => {
     const wo = await lockWo(tx, ctx.actor.companyId, id);
     assertWoTransition(wo.status, action, wo.orderNumber);
-    const { today } = await companyContext(ctx.actor.companyId, tx);
     if (action === "release" && !wo.location.isActive) throw AppError.unprocessable(`${wo.location.code} is inactive`);
-    await tx.workOrder.update({
-      where: { id },
-      data: { status: to, ...(action === "complete" ? { actualEndDate: dateOnly(today) } : {}) },
-    });
+    await tx.workOrder.update({ where: { id }, data: { status: to } });
     await recordAudit({
       ...auditMeta(ctx), tx,
       action: audit, entityType: "work_orders", entityId: id, entityLabel: wo.orderNumber,
@@ -224,9 +221,48 @@ async function transition(
 
 export const firmWorkOrder = (id: string, ctx: WriteContext) => transition(id, ctx, "firm", WorkOrderStatus.FIRMED, AuditAction.UPDATE);
 export const releaseWorkOrder = (id: string, ctx: WriteContext) => transition(id, ctx, "release", WorkOrderStatus.RELEASED, AuditAction.RELEASE);
-export const completeWorkOrder = (id: string, ctx: WriteContext) => transition(id, ctx, "complete", WorkOrderStatus.COMPLETED, AuditAction.COMPLETE);
 export const closeWorkOrder = (id: string, ctx: WriteContext) => transition(id, ctx, "close", WorkOrderStatus.CLOSED, AuditAction.UPDATE);
 
+/**
+ * Components short of what the order's output needed, as an override for
+ * the audit trail, or null. Throws when short and not overridden — see
+ * `assertCompletable`. `producedQty` is the order's total after this request.
+ */
+function checkComponentsIssued(
+  wo: { orderNumber: string; plannedQty: Prisma.Decimal; components: { requiredQty: Prisma.Decimal; issuedQty: Prisma.Decimal; material: { code: string } }[] },
+  producedQty: Prisma.Decimal,
+  ctx: WriteContext,
+  overrideReason: string | undefined,
+) {
+  return assertCompletable({
+    shortfalls: componentShortfalls(
+      wo.components.map((c) => ({ materialCode: c.material.code, requiredQty: c.requiredQty, issuedQty: c.issuedQty })),
+      wo.plannedQty,
+      producedQty,
+    ),
+    orderNumber: wo.orderNumber,
+    canOverride: hasPermission(ctx.actor, "work-order:complete-short"),
+    overrideReason,
+  });
+}
+
+/** IN_PROGRESS → COMPLETED with no further output (a short close). */
+export async function completeWorkOrder(id: string, input: CompleteWorkOrderInput, ctx: WriteContext): Promise<void> {
+  requirePermission(ctx.actor, "work-order:update");
+  await runInTransaction(async (tx) => {
+    const wo = await lockWo(tx, ctx.actor.companyId, id);
+    assertWoTransition(wo.status, "complete", wo.orderNumber);
+    const override = checkComponentsIssued(wo, wo.producedQty, ctx, input.shortIssueReason);
+    const { today } = await companyContext(ctx.actor.companyId, tx);
+    await tx.workOrder.update({ where: { id }, data: { status: WorkOrderStatus.COMPLETED, actualEndDate: dateOnly(today) } });
+    await recordAudit({
+      ...auditMeta(ctx), tx,
+      action: AuditAction.COMPLETE, entityType: "work_orders", entityId: id, entityLabel: wo.orderNumber,
+      previousValues: { status: wo.status },
+      newValues: { status: WorkOrderStatus.COMPLETED, ...(override ? { shortIssueOverride: override } : {}) },
+    });
+  });
+}
 export async function cancelWorkOrder(id: string, input: CancelWorkOrderInput, ctx: WriteContext): Promise<void> {
   requirePermission(ctx.actor, "work-order:update");
   await runInTransaction(async (tx) => {
@@ -341,6 +377,8 @@ export async function reportOutput(tx: Tx, id: string, input: OutputInput, ctx: 
   const scrapped = new Prisma.Decimal(input.scrappedQty ?? 0);
   const producedAfter = wo.producedQty.plus(qty);
   assertOutputWithinPlan(wo.plannedQty, producedAfter, await getSetting(companyId, "production.overProductionTolerancePct", tx), wo.orderNumber);
+  // Checked before anything is posted, so a refused completion leaves no output behind.
+  const override = input.complete ? checkComponentsIssued(wo, producedAfter, ctx, input.shortIssueReason) : null;
 
   const qcStatus = input.qcStatus ?? (wo.material.isBatchTracked ? "PENDING" : "APPROVED");
   if (!wo.material.isBatchTracked && qcStatus !== "APPROVED" && qty.gt(0)) {
@@ -418,6 +456,7 @@ export async function reportOutput(tx: Tx, id: string, input: OutputInput, ctx: 
     newValues: {
       status, producedQty: updated.producedQty.toString(), scrappedQty: updated.scrappedQty.toString(),
       output: qty.toString(), unitCost: unitCost.toString(), lot: lot?.lotNumber ?? null, producedDate,
+      ...(override ? { shortIssueOverride: override } : {}),
     },
   });
 

@@ -7,6 +7,9 @@ import { EmptyState } from "@/components/app/empty-state";
 import { SkeletonBlock } from "@/components/app/skeleton-block";
 import { btnSecondary } from "@/components/app/controls";
 import { apiGet } from "@/lib/api";
+import { LoadMore } from "@/components/app/load-more";
+import { useDebounced, usePagedQuery } from "@/lib/use-paged-query";
+
 import { formatQty, inrCompact } from "@/lib/format";
 import type { PoStatus, PurchaseOrderDetail, PurchaseOrderList, PurchaseOrderRow } from "@/server/purchasing/purchase-orders";
 import { NewPurchaseOrderButton, PurchaseOrderActions } from "@/components/purchasing/po-actions";
@@ -164,17 +167,13 @@ export default function PurchaseOrders() {
   const [tab, setTab] = useState<TabKey>("all");
   const [selected, setSelected] = useState<string | null>(null);
 
-  const q = useQuery({
-    queryKey: ["purchase-orders"],
-    queryFn: ({ signal }) => apiGet<PurchaseOrderList>("/purchase-orders", undefined, { signal }),
-  });
-
-  const filteredPOs = useMemo(() => {
-    const all = q.data?.orders ?? [];
-    if (tab === "all") return all;
-    if (tab === "overdue") return all.filter((p) => p.overdue);
-    return all.filter((p) => p.status === tab);
-  }, [q.data, tab]);
+  // Paged on the server: the tab and search filter there; counts cover the company.
+  const [search, setSearch] = useState("");
+  const term = useDebounced(search.trim());
+  const q = usePagedQuery<PurchaseOrderList>(["purchase-orders"], "/purchase-orders", { status: tab === "all" ? undefined : tab, q: term || undefined });
+  const list = q.data?.pages[0]?.data;
+  const total = q.data?.pages[0]?.meta?.total;
+  const filteredPOs = useMemo(() => q.data?.pages.flatMap((p) => p.data.orders) ?? [], [q.data]);
 
   const columns: Column<PurchaseOrderRow>[] = [
     { key: "po", header: "PO number", width: "w-[140px]", value: p => p.orderNumber, cell: p => <span className="identifier text-body-sm">{p.orderNumber}</span> },
@@ -199,12 +198,12 @@ export default function PurchaseOrders() {
     },
   ];
 
-  const count = (key: TabKey) => (q.data ? q.data.counts[key] : "—");
+  const count = (key: TabKey) => (list ? list.counts[key] : "—");
 
   return (
     <div className="px-6 py-5">
       <PageHeader title="Purchase orders"
-        description={q.data ? `${filteredPOs.length.toLocaleString()} order${filteredPOs.length === 1 ? "" : "s"}` : q.isPending ? "Loading…" : undefined}
+        description={total !== undefined ? `${total.toLocaleString()} order${total === 1 ? "" : "s"}` : q.isPending ? "Loading…" : undefined}
         actions={<NewPurchaseOrderButton onCreated={setSelected} />} />
 
       <div className="-mx-1 mb-1 flex gap-1 overflow-x-auto border-b border-border px-1">
@@ -236,13 +235,18 @@ export default function PurchaseOrders() {
           name="Purchase orders"
           loading={q.isPending}
           searchable
+          searchValue={search}
+          onSearchChange={setSearch}
           columnToggle
           exportable
           pageSize={25}
           onRowClick={p => setSelected(p.id)}
           isRowSelected={p => p.id === selected}
-          empty={<EmptyState title="No purchase orders" description={tab === "all" ? "Purchase orders appear here once they are raised." : "Nothing matches this filter yet."} />}
+          empty={<EmptyState title="No purchase orders" description={tab === "all" && !term ? "Purchase orders appear here once they are raised." : "Nothing matches this filter yet."} />}
         />
+      )}
+      {!q.error && (
+        <LoadMore shown={filteredPOs.length} total={total} hasMore={!!q.hasNextPage} loading={q.isFetchingNextPage} onLoadMore={() => void q.fetchNextPage()} />
       )}
 
       {selected && <PurchaseOrderPanel key={selected} id={selected} onDeleted={() => setSelected(null)} />}

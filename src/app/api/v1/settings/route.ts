@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 const KEYS: SettingKey[] = [
   "purchasing.overReceiptTolerancePct", "purchasing.allowSelfApproval", "sales.overDispatchTolerancePct",
-  "production.overProductionTolerancePct", "production.overIssueTolerancePct",
+  "production.overProductionTolerancePct", "production.overIssueTolerancePct", "mrp.rescheduleInToleranceDays",
 ];
 
 export const GET = withApi(

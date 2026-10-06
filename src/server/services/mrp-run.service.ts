@@ -6,6 +6,7 @@ import { requirePermission } from "@/server/auth/rbac";
 import { planningAsOf } from "@/server/config/as-of";
 import { companyContext, dateOnly, isoDate, yearOf } from "@/server/config/business-date";
 import { env } from "@/server/config/env";
+import { getSetting } from "@/server/config/company-settings";
 import { nextDocumentNumber } from "@/server/db/sequence";
 import { runInTransaction } from "@/server/db/transaction";
 import { AppError } from "@/server/errors/app-error";
@@ -13,6 +14,8 @@ import { logger } from "@/server/logger";
 import { addDays } from "@/server/planning/dates";
 import { independentDemand, type DemandEvent } from "@/server/planning/demand";
 import { runMrp, type EngineInput, type EngineOutput } from "@/server/planning/mrp-engine";
+import { resolveRunDate } from "@/server/planning/run-date";
+import { usableStock } from "@/server/planning/supply";
 import { OPEN_PO_STATUSES } from "@/server/purchasing/purchase-orders";
 import type { StartRunInput } from "@/server/validation/mrp";
 import { auditMeta, type WriteContext } from "./write-context";
@@ -48,14 +51,20 @@ export interface Snapshot {
 
 export async function loadSnapshot(
   companyId: string,
-  params: { asOf: string; horizonDays: number; bucketSizeDays: number; includeForecast: boolean; respectSafetyStock: boolean },
+  params: {
+    asOf: string; horizonDays: number; bucketSizeDays: number; includeForecast: boolean; respectSafetyStock: boolean;
+    /** The company's `mrp.rescheduleInToleranceDays`; 0 when omitted. */
+    rescheduleInToleranceDays?: number;
+  },
 ): Promise<Snapshot> {
   const horizonEnd = addDays(params.asOf, params.horizonDays);
   const OPEN_SO = ["CONFIRMED", "PROCESSING"] as const;
+  /** No longer demand, but still consumes forecast for the days they were booked for. */
+  const CLOSED_SO = ["DISPATCHED", "DELIVERED", "CANCELLED"] as const;
   const OPEN_WO = ["PLANNED", "FIRMED", "RELEASED", "IN_PROGRESS"] as const;
 
   return prisma.$transaction(async (tx) => {
-    const [materials, locations, policies, versions, vendorMaterials, balances, poLines, workOrders, soLines, forecastPeriods] = await Promise.all([
+    const [materials, locations, policies, versions, vendorMaterials, balances, poLines, workOrders, soLines, forecastPeriods, expiredLots, awaitingQc] = await Promise.all([
       tx.material.findMany({ where: { companyId, isActive: true }, select: { id: true, code: true, unitOfMeasureId: true, unitOfMeasure: { select: { code: true } } } }),
       tx.location.findMany({ where: { companyId, isActive: true }, select: { id: true, isManufacturing: true } }),
       tx.materialLocationPolicy.findMany({ where: { isActive: true, material: { companyId, isActive: true }, location: { isActive: true } } }),
@@ -86,21 +95,51 @@ export async function loadSnapshot(
           components: { select: { id: true, materialId: true, requiredQty: true, issuedQty: true, requiredDate: true } },
         },
       }),
+      // Open lines are demand. Closed ones are read only for the planning
+      // window, where they consume forecast.
       tx.salesOrderLine.findMany({
-        where: { salesOrder: { companyId, status: { in: [...OPEN_SO] } } },
-        select: { id: true, materialId: true, locationId: true, quantity: true, shippedQty: true, requiredDate: true, salesOrder: { select: { orderNumber: true } } },
+        where: {
+          salesOrder: { companyId },
+          OR: [
+            { salesOrder: { status: { in: [...OPEN_SO] } } },
+            { salesOrder: { status: { in: [...CLOSED_SO] } }, requiredDate: { gte: dateOnly(params.asOf), lte: dateOnly(horizonEnd) } },
+          ],
+        },
+        select: { id: true, materialId: true, locationId: true, quantity: true, shippedQty: true, requiredDate: true, salesOrder: { select: { orderNumber: true, status: true } } },
       }),
       tx.forecastPeriod.findMany({
         where: { forecast: { companyId, isActive: true }, periodEnd: { gte: dateOnly(params.asOf) }, periodStart: { lte: dateOnly(horizonEnd) } },
         select: { id: true, periodStart: true, periodEnd: true, forecastQty: true, forecast: { select: { name: true, materialId: true, locationId: true } } },
       }),
+      // Released lots past their expiry: still on hand, but dispatch and issue
+      // refuse them. Held lots are already outside usable stock.
+      tx.inventoryLot.findMany({
+        where: { material: { companyId }, location: { isActive: true }, qcStatus: "APPROVED", remainingQty: { gt: 0 }, expiryDate: { lt: dateOnly(params.asOf) } },
+        select: { materialId: true, locationId: true, remainingQty: true },
+      }),
+      // Lots awaiting their QC decision, not yet expired: held stock that is
+      // expected to be released. Lots put on hold (QUARANTINE) are not.
+      tx.inventoryLot.findMany({
+        where: {
+          material: { companyId }, location: { isActive: true }, qcStatus: "PENDING", remainingQty: { gt: 0 },
+          OR: [{ expiryDate: null }, { expiryDate: { gte: dateOnly(params.asOf) } }],
+        },
+        select: { id: true, lotNumber: true, materialId: true, locationId: true, remainingQty: true },
+      }),
     ]);
 
     const { events, forecastUse } = independentDemand(
-      soLines.map((l) => ({
-        id: l.id, reference: l.salesOrder.orderNumber, materialId: l.materialId, locationId: l.locationId,
-        requiredDate: isoDate(l.requiredDate), openQty: Math.max(0, num(l.quantity) - num(l.shippedQty)),
-      })),
+      soLines.map((l) => {
+        const open = (OPEN_SO as readonly string[]).includes(l.salesOrder.status);
+        return {
+          id: l.id, reference: l.salesOrder.orderNumber, materialId: l.materialId, locationId: l.locationId,
+          requiredDate: isoDate(l.requiredDate),
+          openQty: open ? Math.max(0, num(l.quantity) - num(l.shippedQty)) : 0,
+          // A cancelled order sold only what it shipped; any other sold its
+          // quantity, or more where over-dispatch tolerance allowed it.
+          bookedQty: l.salesOrder.status === "CANCELLED" ? num(l.shippedQty) : Math.max(num(l.quantity), num(l.shippedQty)),
+        };
+      }),
       forecastPeriods.map((p) => ({
         id: p.id, forecastName: p.forecast.name, materialId: p.forecast.materialId, locationId: p.forecast.locationId,
         periodStart: isoDate(p.periodStart), periodEnd: isoDate(p.periodEnd), forecastQty: num(p.forecastQty),
@@ -130,6 +169,7 @@ export async function loadSnapshot(
 
     const input: EngineInput = {
       asOf: params.asOf, horizonDays: params.horizonDays, bucketSizeDays: params.bucketSizeDays, respectSafetyStock: params.respectSafetyStock,
+      rescheduleInToleranceDays: params.rescheduleInToleranceDays ?? 0,
       items: materials.map((m) => ({ id: m.id, code: m.code, uom: m.unitOfMeasure.code })),
       policies: policies.map((p) => ({
         materialId: p.materialId, locationId: p.locationId, procurementType: p.procurementType, safetyStock: num(p.safetyStock),
@@ -144,10 +184,11 @@ export async function loadSnapshot(
         })),
       })),
       vendors: [...vendorsByMaterial].map(([materialId, options]) => ({ materialId, options })),
-      // Usable stock: held (quarantined) stock cannot be issued or shipped.
-      onHand: balances
-        .map((b) => ({ materialId: b.materialId, locationId: b.locationId, qty: Math.max(0, num(b.onHandQty) - num(b.quarantineQty)) }))
-        .filter((b) => b.qty > 0),
+      // Usable stock: neither held by quality nor expired.
+      onHand: usableStock(
+        balances.map((b) => ({ materialId: b.materialId, locationId: b.locationId, onHandQty: num(b.onHandQty), quarantineQty: num(b.quarantineQty) })),
+        expiredLots.map((l) => ({ materialId: l.materialId, locationId: l.locationId, remainingQty: num(l.remainingQty) })),
+      ),
       demand: [...events, ...woDemand].filter((d) => activeLocations.has(d.locationId)),
       receipts: [
         ...poLines
@@ -164,6 +205,13 @@ export async function loadSnapshot(
             materialId: w.materialId, locationId: w.locationId, date: isoDate(w.plannedEndDate), qty: open,
             type: "WORK_ORDER" as const, id: w.id, reference: w.orderNumber,
           })),
+        // Conditional supply: counted as arriving on the planning date, while
+        // usable stock above still excludes it, so nothing can be issued or
+        // shipped from it until quality releases it.
+        ...awaitingQc.map((l) => ({
+          materialId: l.materialId, locationId: l.locationId, date: params.asOf, qty: num(l.remainingQty),
+          type: "QUALITY_INSPECTION" as const, id: l.id, reference: `${l.lotNumber} (awaiting QC)`,
+        })),
       ],
       manufacturingLocationIds: locations.filter((l) => l.isManufacturing).map((l) => l.id),
     };
@@ -189,10 +237,17 @@ export async function startMrpRun(params: StartRunInput, ctx: WriteContext) {
   requirePermission(ctx.actor, "mrp:run");
   const companyId = ctx.actor.companyId;
   const company = await companyContext(companyId);
-  const asOf = params.asOfDate ?? (env.PLANNING_AS_OF_DATE ? isoDate(planningAsOf()) : company.today);
+  // A planning run plans from today; another date makes it a simulation.
+  // PLANNING_AS_OF_DATE (the demo's date) cannot be set in production.
+  const { asOf, isSimulation } = resolveRunDate({
+    requestedAsOf: params.asOfDate, simulation: params.simulation ?? false, today: company.today,
+    pinned: env.PLANNING_AS_OF_DATE ? isoDate(planningAsOf()) : undefined,
+  });
   const settings = {
     asOf, horizonDays: params.horizonDays ?? 90, bucketSizeDays: params.bucketSizeDays ?? 1,
     includeForecast: params.includeForecast ?? true, respectSafetyStock: params.respectSafetyStock ?? true,
+    // Stored with the run's parameters, so a plan can be explained later.
+    rescheduleInToleranceDays: await getSetting(companyId, "mrp.rescheduleInToleranceDays"),
   };
 
   // 1. Claim the run.
@@ -209,11 +264,11 @@ export async function startMrpRun(params: StartRunInput, ctx: WriteContext) {
     const runNumber = await nextDocumentNumber(tx, companyId, "MRP_RUN", yearOf(company.today));
     return tx.mrpRun.create({
       data: {
-        companyId, runNumber, status: MrpRunStatus.RUNNING, asOfDate: dateOnly(asOf),
+        companyId, runNumber, status: MrpRunStatus.RUNNING, asOfDate: dateOnly(asOf), isSimulation,
         horizonDays: settings.horizonDays, bucketSizeDays: settings.bucketSizeDays,
         triggeredById: ctx.actor.userId, startedAt: new Date(),
         parameters: {
-          create: Object.entries(settings).map(([key, value]) => ({ key, value: value as Prisma.InputJsonValue })),
+          create: Object.entries({ ...settings, simulation: isSimulation }).map(([key, value]) => ({ key, value: value as Prisma.InputJsonValue })),
         },
       },
       select: { id: true, runNumber: true, startedAt: true },
@@ -241,7 +296,7 @@ export async function startMrpRun(params: StartRunInput, ctx: WriteContext) {
       await recordAudit({
         ...auditMeta(ctx), tx, mrpRunId: run.id,
         action: AuditAction.MRP_RUN, entityType: "mrp_runs", entityId: run.id, entityLabel: run.runNumber,
-        newValues: { ...settings, plannedOrders: out.plannedOrders.length, exceptions: out.exceptions.length, materialsPlanned: out.materialsPlanned, durationMs },
+        newValues: { ...settings, simulation: isSimulation, plannedOrders: out.plannedOrders.length, exceptions: out.exceptions.length, materialsPlanned: out.materialsPlanned, durationMs },
       });
     });
     logger.info({ runNumber: run.runNumber, durationMs, plannedOrders: out.plannedOrders.length }, "mrp run completed");

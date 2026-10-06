@@ -1,21 +1,33 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { ArrowRight } from "lucide-react";
 import anvayaLogoLight from "@/assets/anvaya-logo-light.svg";
 import anvayaLogoDark from "@/assets/anvaya-logo-dark.svg";
 import { btnPrimary, inputBase } from "@/components/app/controls";
 
+/** The company code is not a secret; remembering it saves retyping it on a shared terminal. */
+const COMPANY_KEY = "anvaya-company-code";
+
 export default function Login() {
   const router = useRouter();
   const { theme = "light" } = useTheme();
   const anvayaLogo = (theme === "dark" ? anvayaLogoDark : anvayaLogoLight).src;
+  const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    try {
+      setCompany(localStorage.getItem(COMPANY_KEY) ?? "");
+    } catch {
+      // Storage may be unavailable (private mode); the field just starts empty.
+    }
+  }, []);
 
   /*
     Credentials are checked by the server. The session arrives as an httpOnly
@@ -37,13 +49,19 @@ export default function Login() {
       const res = await fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ company, email, password }),
       });
       const body = await res.json().catch(() => null);
 
       if (!res.ok) {
         setError(body?.error?.message ?? "Sign in failed. Please try again.");
         return;
+      }
+
+      try {
+        localStorage.setItem(COMPANY_KEY, company.trim().toUpperCase());
+      } catch {
+        // Not remembering the code is harmless.
       }
 
       /*
@@ -85,6 +103,23 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="surface-panel p-6">
           <div className="space-y-4">
+            {/* Several companies share Anvaya and an email can belong to more
+                than one of them, so the company is always named, never guessed. */}
+            <div>
+              <label htmlFor="login-company" className="mb-1.5 block text-label-sm text-foreground">
+                Company code
+              </label>
+              <input
+                id="login-company"
+                autoComplete="organization"
+                autoCapitalize="characters"
+                spellCheck={false}
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                placeholder="e.g. ACME"
+                className={inputBase}
+              />
+            </div>
             <div>
               <label htmlFor="login-email" className="mb-1.5 block text-label-sm text-foreground">
                 Email

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chooseVendor, leadTime } from "@/server/inventory/exhaustion";
 import { addDays, daysBetween, r6 } from "./dates";
 import type { DemandEvent } from "./demand";
-import { sizeLot, type LotSizing } from "./lot-sizing";
+import { lotSizingConflict, sizeLot, type LotSizing } from "./lot-sizing";
 
 /**
  * The MRP engine — material requirements planning as a pure function.
@@ -29,6 +29,11 @@ import { sizeLot, type LotSizing } from "./lot-sizing";
  *      stock enters the queue as demand of its own, so it is netted, pegged
  *      and explained like any other. What the queue still holds in a bucket
  *      is that bucket's net requirement.
+ *      Before new supply is planned for a shortfall, open receipts arriving
+ *      no more than `rescheduleInToleranceDays` after the need are pulled in
+ *      (earliest first) and reported as RESCHEDULE_IN: expediting them is the
+ *      answer, not a second order. The time-phased record keeps them on their
+ *      real date, so the dip until they are expedited stays visible.
  *   4. Lot sizing turns the net requirement into order quantities (policy
  *      rule, minimum, multiple, maximum; a vendor's MOQ and multiple for
  *      purchases). What a planned order supplies beyond the demand it covers
@@ -96,7 +101,12 @@ export interface ScheduledReceipt {
   /** ISO date the quantity is expected. */
   date: string;
   qty: number;
-  type: "PURCHASE_ORDER" | "WORK_ORDER";
+  /**
+   * QUALITY_INSPECTION: a lot received but awaiting its QC decision. On the
+   * books, unusable until released, and expected to be: conditional supply
+   * on the planning date, never stock that can be issued or shipped.
+   */
+  type: "PURCHASE_ORDER" | "WORK_ORDER" | "QUALITY_INSPECTION";
   id: string;
   reference: string;
 }
@@ -114,6 +124,12 @@ export interface EngineInput {
   demand: DemandEvent[];
   receipts: ScheduledReceipt[];
   manufacturingLocationIds: string[];
+  /**
+   * How many days late an open receipt may be and still be expedited to
+   * cover a need, instead of planning new supply. 0 (the default) turns
+   * rescheduling off.
+   */
+  rescheduleInToleranceDays?: number;
   /** Id generator for planned orders; injectable so tests are deterministic. */
   newId?: () => string;
 }
@@ -166,7 +182,7 @@ export interface RequirementRow {
 
 export type ExceptionType =
   | "MATERIAL_SHORTAGE" | "LATE_SUPPLY" | "PAST_DUE_RELEASE" | "MISSING_BOM"
-  | "MISSING_VENDOR" | "MISSING_LEAD_TIME" | "EXCESS_STOCK" | "BOM_CYCLE";
+  | "MISSING_VENDOR" | "MISSING_LEAD_TIME" | "EXCESS_STOCK" | "BOM_CYCLE" | "POLICY_CONFLICT" | "RESCHEDULE_IN";
 export type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export interface ExceptionOut {
@@ -241,6 +257,7 @@ interface QueueEntry {
 export function runMrp(input: EngineInput): EngineOutput {
   const newId = input.newId ?? randomUUID;
   const { asOf, bucketSizeDays: size } = input;
+  const rescheduleTolerance = Math.max(0, input.rescheduleInToleranceDays ?? 0);
   const horizonEnd = addDays(asOf, input.horizonDays);
 
   const items = new Map(input.items.map((i) => [i.id, i]));
@@ -275,8 +292,16 @@ export function runMrp(input: EngineInput): EngineOutput {
   const levelOf = (m: string) => llc.get(m) ?? 0;
   const bucketOf = (d: string) => (d <= asOf ? 0 : Math.floor(daysBetween(asOf, d) / size));
   const bucketStart = (b: number) => addDays(asOf, b * size);
-  const exception = (e: Omit<ExceptionOut, "suggestedAction" | "quantity" | "dueDate" | "daysLate" | "referenceType" | "referenceId"> & Partial<ExceptionOut>) =>
-    exceptions.push({ suggestedAction: null, quantity: null, dueDate: null, daysLate: null, referenceType: null, referenceId: null, ...e });
+  // One record per condition: a BOM line in the wrong unit, say, is found
+  // again by every planned order that explodes it, but is one problem.
+  const reported = new Set<string>();
+  const exception = (e: Omit<ExceptionOut, "suggestedAction" | "quantity" | "dueDate" | "daysLate" | "referenceType" | "referenceId"> & Partial<ExceptionOut>) => {
+    const full: ExceptionOut = { suggestedAction: null, quantity: null, dueDate: null, daysLate: null, referenceType: null, referenceId: null, ...e };
+    const fingerprint = [full.type, full.materialId, full.locationId, full.referenceType, full.referenceId, full.message].join("|");
+    if (reported.has(fingerprint)) return;
+    reported.add(fingerprint);
+    exceptions.push(full);
+  };
 
   for (const m of cyclic) {
     exception({
@@ -370,22 +395,50 @@ export function runMrp(input: EngineInput): EngineOutput {
     let reportedUnplannable = false;
     let reportedNoVendor = false;
     let reportedNoBom = false;
+    let reportedConflict = false;
     const releasesByBucket = new Map<number, number>();
     const rows: RequirementRow[] = [];
+
+    // Receipts already used early to cover an earlier need; they must not
+    // be counted again when their own date comes round.
+    const pulledIn = new Set<string>();
 
     for (const b of buckets) {
       const bd = demands.filter((d) => bucketOf(d.date) === b);
       const br = receipts.filter((r) => bucketOf(r.date) === b);
       const gross = r6(bd.reduce((s, d) => s + d.qty, 0));
+      // The record shows every receipt on its real date, pulled in or not.
       const sched = r6(br.reduce((s, r) => s + r.qty, 0));
       receivedSoFar = r6(receivedSoFar + sched);
 
-      pool = r6(pool + sched);
+      pool = r6(pool + br.filter((r) => !pulledIn.has(r.id)).reduce((s, r) => s + r.qty, 0));
       for (const d of bd) queue.push({ event: d, remaining: d.qty });
       pool = consume(pool);
 
-      const unmet = r6(queue.reduce((s, e) => s + e.remaining, 0));
+      let unmet = r6(queue.reduce((s, e) => s + e.remaining, 0));
       let plannedQty = 0;
+
+      // Expedite open supply arriving shortly after the need before planning
+      // more of it. Receipts are date-ordered, so the first beyond the
+      // tolerance ends the search.
+      if (unmet > 0 && rescheduleTolerance > 0) {
+        for (const r of receipts) {
+          if (unmet <= 0) break;
+          if (pulledIn.has(r.id) || bucketOf(r.date) <= b) continue;
+          const need = queue[0].event.date < asOf ? asOf : queue[0].event.date;
+          const late = daysBetween(need, r.date);
+          if (late > rescheduleTolerance) break;
+          pulledIn.add(r.id);
+          pool = consume(r6(pool + r.qty));
+          unmet = r6(queue.reduce((s, e) => s + e.remaining, 0));
+          exception({
+            materialId, locationId, type: "RESCHEDULE_IN", severity: "HIGH",
+            message: `${r.reference}: ${r.qty} ${it.uom} of ${it.code} is due ${r.date} but needed by ${need}; expedite it by ${late} day(s) instead of ordering more`,
+            suggestedAction: r.type === "PURCHASE_ORDER" ? `Ask the vendor to deliver ${r.reference} by ${need}` : `Bring ${r.reference} forward to finish by ${need}`,
+            quantity: r.qty, dueDate: need, daysLate: late, referenceType: r.type, referenceId: r.id,
+          });
+        }
+      }
 
       if (unmet > 0) {
         if (makes && !canMake) {
@@ -409,6 +462,15 @@ export function runMrp(input: EngineInput): EngineOutput {
             toCover = r6(unmet + Math.max(0, later - laterIn));
           }
           const quantities = sizeLot(toCover, lotSizing);
+          const conflict = lotSizingConflict(lotSizing);
+          if (conflict && !reportedConflict) {
+            reportedConflict = true;
+            exception({
+              materialId, locationId, type: "POLICY_CONFLICT", severity: "HIGH",
+              message: `${it.code}: the ${conflict}; orders are planned one multiple each, above the maximum`,
+              suggestedAction: "Raise the maximum order quantity to at least one order multiple, or agree a smaller multiple with the vendor",
+            });
+          }
           const releaseDate = addDays(requiredDate, -leadDays);
 
           if (!makes && !vendor && !reportedNoVendor) {
@@ -530,7 +592,7 @@ export function runMrp(input: EngineInput): EngineOutput {
     }
     requirements.push(...rows);
 
-    shortageAndLateness(materialId, locationId, stock, demands, receipts, leadDays);
+    shortageAndLateness(materialId, locationId, stock, demands, receipts, leadDays, pulledIn);
 
     const totalGross = demands.reduce((s, d) => s + d.qty, 0);
     if (policy && totalGross === 0 && stock > ss && stock > 0) {
@@ -550,6 +612,7 @@ export function runMrp(input: EngineInput): EngineOutput {
    */
   function shortageAndLateness(
     materialId: string, locationId: string, stock: number, demands: DemandEvent[], receipts: ScheduledReceipt[], leadDays: number,
+    rescheduled: Set<string>,
   ) {
     const it = item(materialId);
     const events = [
@@ -563,7 +626,8 @@ export function runMrp(input: EngineInput): EngineOutput {
     let worstBeforeLead = 0;
     let worstDate: string | null = null;
     for (const e of events) {
-      if (e.receipt && stockOutDate && balance < 0 && e.date > stockOutDate) {
+      // A receipt already reported as RESCHEDULE_IN is not reported twice.
+      if (e.receipt && !rescheduled.has(e.receipt.id) && stockOutDate && balance < 0 && e.date > stockOutDate) {
         exception({
           materialId, locationId, type: "LATE_SUPPLY", severity: "MEDIUM",
           message: `${e.receipt.reference} arrives ${e.date}, ${daysBetween(stockOutDate, e.date)} day(s) after ${it.code} runs out`,

@@ -11,6 +11,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSession } from "@/components/auth/session-context";
+import { canSeeNavItem, visibleSections } from "./nav-access";
+import { navSections, topNavItems } from "./nav-items";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Layers, Factory, Package, ShoppingCart,
@@ -35,100 +37,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-interface NavItem {
-  label: string;
-  path: string;
-  icon: React.ElementType;
-  badge?: number;
-}
-
-interface NavSection {
-  label: string;
-  icon: React.ElementType;
-  items: NavItem[];
-}
-
-const topNavItems: NavItem[] = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
-  { label: "Traceability", path: "/traceability", icon: Search },
-];
-
-const navSections: NavSection[] = [
-  {
-    label: "Material planning",
-    icon: Layers,
-    items: [
-      { label: "MRP run & results", path: "/mrp-run", icon: Zap },
-      { label: "Material requirements", path: "/material-requirements", icon: ClipboardList },
-      { label: "BOM management", path: "/bom-management", icon: FileText },
-      { label: "Safety stock", path: "/safety-stock", icon: Shield },
-      { label: "Stock exhaustion alerts", path: "/stock-alerts", icon: AlertTriangle },
-    ],
-  },
-  {
-    label: "Production",
-    icon: Factory,
-    items: [
-      { label: "Production schedule", path: "/production-schedule", icon: Calendar },
-      { label: "Work orders", path: "/work-orders", icon: Wrench },
-      { label: "Constraints", path: "/production-constraints", icon: AlertTriangle },
-      { label: "Schedule updates", path: "/schedule-updates", icon: Target },
-    ],
-  },
-  {
-    label: "Inventory",
-    icon: Package,
-    items: [
-      { label: "Stock overview", path: "/stock-overview", icon: Box },
-      { label: "Multi-location", path: "/multi-location", icon: MapPin },
-      { label: "Batch & serial tracking", path: "/batch-tracking", icon: Hash },
-      { label: "Inventory health", path: "/inventory-health", icon: Heart },
-    ],
-  },
-  {
-    label: "Purchase",
-    icon: ShoppingCart,
-    items: [
-      { label: "Purchase planning", path: "/purchase-planning", icon: ClipboardList },
-      { label: "Purchase orders", path: "/purchase-orders", icon: ShoppingCart },
-      { label: "Vendor management", path: "/vendor-management", icon: Truck },
-      { label: "Procurement analytics", path: "/procurement-analytics", icon: PieChart },
-    ],
-  },
-  {
-    label: "Demand & forecasting",
-    icon: TrendingUp,
-    items: [
-      { label: "Demand forecast", path: "/demand-forecast", icon: TrendingUp },
-      { label: "Forecast vs. actuals", path: "/forecast-actuals", icon: LineChart },
-      { label: "Sales order intake", path: "/sales-orders", icon: FileBarChart },
-    ],
-  },
-  {
-    label: "Analytics & reports",
-    icon: BarChart3,
-    items: [
-      { label: "BI dashboard", path: "/bi-dashboard", icon: BarChart3 },
-      { label: "Material coverage", path: "/material-coverage", icon: Shield },
-      { label: "Procurement reports", path: "/procurement-reports", icon: FileText },
-      { label: "MRP efficiency", path: "/mrp-efficiency", icon: Target },
-      { label: "Custom reports", path: "/custom-reports", icon: FileBarChart },
-    ],
-  },
-  {
-    label: "Settings",
-    icon: Settings,
-    items: [
-      { label: "Company & warehouses", path: "/company-settings", icon: Building },
-      { label: "Users & roles", path: "/users-roles", icon: Users },
-      { label: "Integrations", path: "/integrations", icon: Link2 },
-      { label: "Alert configuration", path: "/alert-config", icon: Bell },
-      { label: "theme-toggle", path: "", icon: Moon },
-      { label: "Logout", path: "", icon: LogOut },
-    ],
-  },
-];
 
 /** Remembered for the length of a tab. A brand-new session opens collapsed. */
 const COLLAPSE_KEY = "anvaya-sidebar-collapsed";
@@ -317,7 +225,10 @@ export default function AppSidebar() {
     shows who is actually signed in rather than whatever a local flag last
     claimed. Roles are joined because a user may hold more than one.
   */
-  const { user } = useSession();
+  const { user, can } = useSession();
+  // Only the screens this user's permissions would load (see nav-access).
+  const topItems = topNavItems.filter((i) => canSeeNavItem(i.path, can));
+  const sections = visibleSections(navSections, can);
   const email = user.email;
   const role = user.roles.length ? user.roles.join(", ").toLowerCase() : "no role";
 
@@ -422,7 +333,7 @@ export default function AppSidebar() {
           collapsed ? "flex flex-col items-center gap-1 px-3" : "space-y-1 px-3",
         )}
       >
-        {topNavItems.map((item) => (
+        {topItems.map((item) => (
           <NavButton
             key={item.path}
             icon={item.icon}
@@ -432,7 +343,7 @@ export default function AppSidebar() {
             collapsed={collapsed}
           />
         ))}
-        {navSections.map((section) => {
+        {sections.map((section) => {
           const isOpen = openSections[section.label];
           const hasActivePath = section.items.some((i) => i.path === pathname);
           const totalBadge = section.items.reduce((sum, i) => sum + (i.badge || 0), 0);

@@ -7,9 +7,11 @@ import { MOVEMENT_REF } from "@/server/inventory/lots";
 import { totalMatchesLines } from "@/server/purchasing/purchase-orders";
 import { WORK_ORDER_STATUSES, isOpen as isOpenWorkOrder } from "@/server/production/work-orders";
 import {
-  availableQty, isSoLineOverdue, isSoOverdue, openQty, soCounts, soKpis,
-  type SalesOrderDetail, type SalesOrderList, type SalesOrderRow, type SoLineFacts,
+  SO_STATUSES, availableQty, isSoLineOverdue, isSoOverdue, openQty,
+  type SalesOrderDetail, type SalesOrderList, type SalesOrderRow, type SoCounts, type SoLineFacts, type SoStatus,
 } from "@/server/sales/sales-orders";
+import { cursorArgs, pageOf } from "@/server/api/pagination";
+import { startOfUtcDay } from "@/server/inventory/lots";
 
 /**
  * Sales orders — read side. Every query is scoped by the caller's company;
@@ -60,35 +62,92 @@ function dispatchesFor<S extends Prisma.StockMovementSelect>(lineIds: string[], 
   });
 }
 
-/** Every order, newest first, with counts per status and the headline figures. */
-export async function listSalesOrders(companyId: string, asOf = planningAsOf()): Promise<SalesOrderList> {
-  const orders = await prisma.salesOrder.findMany({
-    where: { companyId },
-    include: orderInclude,
-    orderBy: [{ orderDate: "desc" }, { orderNumber: "desc" }],
-  });
+export interface ListSalesOrdersQuery {
+  status?: SoStatus | "overdue";
+  q?: string;
+  /** Default 50, as the route schema has it. */
+  limit?: number;
+  cursor?: string;
+}
 
-  const lines = orders.flatMap((o) => o.lines);
-  const priceOf = new Map(lines.map((l) => [l.id, toNumber(l.unitPrice)]));
-  const movements = lines.length
-    ? await dispatchesFor(lines.map((l) => l.id), { referenceId: true, quantity: true, occurredAt: true })
-    : [];
+const DAY_MS = 86_400_000;
+const AWAITING_DISPATCH: SoStatus[] = ["CONFIRMED", "PROCESSING"];
+const money = (n: number) => Math.round(n * 1e4) / 1e4;
 
-  const rows = orders.map((o) => toRow(o, asOf));
+/** `isSoOverdue` as SQL: awaiting dispatch, with a line past due and quantity still to ship. */
+function overdueWhere(asOf: Date): Prisma.SalesOrderWhereInput {
   return {
-    asOf: asOf.toISOString(),
-    orders: rows,
-    counts: soCounts(rows),
-    kpis: soKpis({
-      orders: rows,
-      dispatches: movements.map((m) => ({
-        occurredAt: m.occurredAt.toISOString(),
-        quantity: Math.abs(toNumber(m.quantity)),
-        unitPrice: priceOf.get(m.referenceId!) ?? 0,
-      })),
-      asOf,
-    }),
+    status: { in: AWAITING_DISPATCH },
+    lines: { some: { requiredDate: { lt: startOfUtcDay(asOf) }, shippedQty: { lt: prisma.salesOrderLine.fields.quantity } } },
   };
+}
+
+/**
+ * One page of orders, newest first, filtered to a status tab and a search on
+ * number or customer. Tab counts and the headline figures (`soKpis`'
+ * definitions, worked in SQL) cover the whole company, whatever the page.
+ */
+export async function listSalesOrders(companyId: string, query: ListSalesOrdersQuery, asOf = planningAsOf()) {
+  const tab: Prisma.SalesOrderWhereInput =
+    query.status === "overdue" ? overdueWhere(asOf) : query.status ? { status: query.status } : {};
+  const search: Prisma.SalesOrderWhereInput = query.q
+    ? { OR: [
+        { orderNumber: { contains: query.q, mode: "insensitive" } },
+        { customer: { name: { contains: query.q, mode: "insensitive" } } },
+        { customer: { code: { contains: query.q, mode: "insensitive" } } },
+      ] }
+    : {};
+  const where: Prisma.SalesOrderWhereInput = { companyId, AND: [tab, search] };
+
+  const today = startOfUtcDay(asOf);
+  const monthStart = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1));
+  const endOfToday = new Date(today.getTime() + DAY_MS);
+  const tally = (w: Prisma.SalesOrderWhereInput) =>
+    prisma.salesOrder.aggregate({ where: { companyId, ...w }, _count: { _all: true }, _sum: { totalAmount: true } })
+      .then((a) => ({ count: a._count._all, value: money(toNumber(a._sum.totalAmount ?? 0)) }));
+
+  const [orders, total, byStatus, overdue, open, dueNext7Days, bookedToday, dispatched] = await Promise.all([
+    prisma.salesOrder.findMany({
+      where, include: orderInclude,
+      orderBy: [{ orderDate: "desc" }, { orderNumber: "desc" }, { id: "desc" }],
+      ...cursorArgs({ limit: query.limit ?? 50, cursor: query.cursor }),
+    }),
+    prisma.salesOrder.count({ where }),
+    prisma.salesOrder.groupBy({ by: ["status"], where: { companyId }, _count: { _all: true } }),
+    prisma.salesOrder.count({ where: { companyId, ...overdueWhere(asOf) } }),
+    tally({ status: { notIn: ["DELIVERED", "CANCELLED"] } }),
+    tally({ status: { in: AWAITING_DISPATCH }, requiredDate: { gte: today, lte: new Date(today.getTime() + 7 * DAY_MS) } }),
+    tally({ status: { not: "CANCELLED" }, orderDate: today }),
+    // Bounded by one month of dispatches, not by the order book.
+    prisma.stockMovement.findMany({
+      where: {
+        type: StockMovementType.ISSUE, referenceType: MOVEMENT_REF.SALES_ORDER_LINE,
+        occurredAt: { gte: monthStart, lt: endOfToday }, material: { companyId },
+      },
+      select: { referenceId: true, quantity: true },
+    }),
+  ]);
+
+  const lineIds = [...new Set(dispatched.map((m) => m.referenceId!))];
+  const prices = lineIds.length
+    ? await prisma.salesOrderLine.findMany({ where: { id: { in: lineIds }, salesOrder: { companyId } }, select: { id: true, unitPrice: true } })
+    : [];
+  const priceOf = new Map(prices.map((l) => [l.id, toNumber(l.unitPrice)]));
+  const dispatchedMtd = money(dispatched.reduce((s, m) => s + Math.abs(toNumber(m.quantity)) * (priceOf.get(m.referenceId!) ?? 0), 0));
+
+  const counts = Object.fromEntries(SO_STATUSES.map((s) => [s, 0])) as SoCounts;
+  for (const g of byStatus) counts[g.status] = g._count._all;
+  counts.all = byStatus.reduce((s, g) => s + g._count._all, 0);
+  counts.overdue = overdue;
+
+  const page = pageOf(orders, query.limit ?? 50);
+  const list: SalesOrderList = {
+    asOf: asOf.toISOString(),
+    orders: page.items.map((o) => toRow(o, asOf)),
+    counts,
+    kpis: { open, dueNext7Days, bookedToday, dispatchedMtd },
+  };
+  return { list, nextCursor: page.nextCursor, total };
 }
 
 const OPEN_WORK_ORDER_STATUSES = WORK_ORDER_STATUSES.filter(isOpenWorkOrder);

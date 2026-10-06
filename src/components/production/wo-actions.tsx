@@ -109,7 +109,7 @@ function NewWorkOrderDialog({ onClose, onCreated }: { onClose: () => void; onCre
 
 /* ---- Actions on one order --------------------------------------------------- */
 
-type Dialogs = null | "issue" | "output" | "cancel";
+type Dialogs = null | "issue" | "output" | "complete" | "cancel";
 
 export function WorkOrderActions({ wo }: { wo: WorkOrderDetail }) {
   const { can } = useSession();
@@ -117,9 +117,9 @@ export function WorkOrderActions({ wo }: { wo: WorkOrderDetail }) {
   const [dialog, setDialog] = useState<Dialogs>(null);
 
   const step = useMutation({
-    mutationFn: (path: "firm" | "release" | "complete" | "close") => apiSend("POST", `/work-orders/${wo.id}/${path}`),
+    mutationFn: (path: "firm" | "release" | "close") => apiSend("POST", `/work-orders/${wo.id}/${path}`),
     onSuccess: (_d, path) => {
-      toast.success(`${wo.orderNumber} ${{ firm: "firmed", release: "released", complete: "completed", close: "closed" }[path]}`);
+      toast.success(`${wo.orderNumber} ${{ firm: "firmed", release: "released", close: "closed" }[path]}`);
       refresh(wo.id);
     },
     onError: (e) => toast.error((e as Error).message),
@@ -132,7 +132,7 @@ export function WorkOrderActions({ wo }: { wo: WorkOrderDetail }) {
     (s === "PLANNED" || s === "FIRMED") && <button key="rel" className={btnPrimary} disabled={step.isPending} onClick={() => step.mutate("release")}>Release</button>,
     (s === "RELEASED" || s === "IN_PROGRESS") && <button key="iss" className={btnPrimary} onClick={() => setDialog("issue")}>Issue materials</button>,
     (s === "RELEASED" || s === "IN_PROGRESS") && <button key="out" className={btnSecondary} onClick={() => setDialog("output")}>Report output</button>,
-    s === "IN_PROGRESS" && <button key="comp" className={btnSecondary} disabled={step.isPending} onClick={() => step.mutate("complete")}>Complete</button>,
+    s === "IN_PROGRESS" && <button key="comp" className={btnSecondary} onClick={() => setDialog("complete")}>Complete</button>,
     s === "COMPLETED" && <button key="close" className={btnSecondary} disabled={step.isPending} onClick={() => step.mutate("close")}>Close</button>,
     ["PLANNED", "FIRMED", "RELEASED"].includes(s) && <button key="cancel" className={btnDestructive} onClick={() => setDialog("cancel")}>Cancel</button>,
   ].filter(Boolean);
@@ -143,6 +143,7 @@ export function WorkOrderActions({ wo }: { wo: WorkOrderDetail }) {
       {actions}
       {dialog === "issue" && <IssueDialog wo={wo} onClose={() => setDialog(null)} />}
       {dialog === "output" && <OutputDialog wo={wo} onClose={() => setDialog(null)} />}
+      {dialog === "complete" && <CompleteDialog wo={wo} onClose={() => setDialog(null)} />}
       {dialog === "cancel" && <CancelDialog wo={wo} onClose={() => setDialog(null)} />}
     </div>
   );
@@ -212,10 +213,12 @@ function OutputDialog({ wo, onClose }: { wo: WorkOrderDetail; onClose: () => voi
   const [quantity, setQuantity] = useState(String(remaining));
   const [scrap, setScrap] = useState("");
   const [complete, setComplete] = useState(true);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const post = useMutation({
     mutationFn: () => apiSend<{ lot: { lotNumber: string } | null }>("POST", `/work-orders/${wo.id}/output`, {
       quantity: Number(quantity || 0), scrappedQty: scrap ? Number(scrap) : undefined, complete,
+      shortIssueReason: complete && overrideReason.trim() ? overrideReason.trim() : undefined,
     }, { idempotencyKey }),
     onSuccess: (r) => {
       toast.success(`Output recorded on ${wo.orderNumber}${r.lot ? ` · lot ${r.lot.lotNumber} (held for QC)` : ""}`);
@@ -245,11 +248,62 @@ function OutputDialog({ wo, onClose }: { wo: WorkOrderDetail; onClose: () => voi
           <input type="checkbox" checked={complete} onChange={(e) => setComplete(e.target.checked)} />
           This completes the order
         </label>
+        {complete && <ShortIssueOverride value={overrideReason} onChange={setOverrideReason} />}
         <ErrorNote error={post.error} />
         <DialogFooter>
           <button className={btnSecondary} onClick={onClose}>Close</button>
           <button className={btnPrimary} disabled={post.isPending || !(Number(quantity) > 0 || Number(scrap) > 0 || complete)} onClick={() => post.mutate()}>
             {post.isPending ? "Posting…" : "Post output"}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Completion is refused while components are issued short of the output; the
+ * server names each one. Users allowed to override see a reason field — the
+ * reason goes into the audit trail.
+ */
+function ShortIssueOverride({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { can } = useSession();
+  if (!can("work-order:complete-short")) return null;
+  return (
+    <label className="block">
+      <span className={label}>Reason to complete with components short (only if they are)</span>
+      <textarea className={`${inputSm} h-16 rounded-lg py-1.5`} value={value} onChange={(e) => onChange(e.target.value)} maxLength={500}
+        placeholder="e.g. Yield beat the BOM; substitute material used" />
+    </label>
+  );
+}
+
+function CompleteDialog({ wo, onClose }: { wo: WorkOrderDetail; onClose: () => void }) {
+  const refresh = useRefreshProduction();
+  const [overrideReason, setOverrideReason] = useState("");
+  const complete = useMutation({
+    mutationFn: () => apiSend("POST", `/work-orders/${wo.id}/complete`, overrideReason.trim() ? { shortIssueReason: overrideReason.trim() } : {}),
+    onSuccess: () => {
+      toast.success(`${wo.orderNumber} completed`);
+      refresh(wo.id);
+      onClose();
+    },
+  });
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Complete {wo.orderNumber}</DialogTitle>
+          <DialogDescription>
+            Closes the order to further output at {formatQty(wo.producedQty)} {wo.uom} produced. Every component must have been issued for that output.
+          </DialogDescription>
+        </DialogHeader>
+        <ShortIssueOverride value={overrideReason} onChange={setOverrideReason} />
+        <ErrorNote error={complete.error} />
+        <DialogFooter>
+          <button className={btnSecondary} onClick={onClose}>Close</button>
+          <button className={btnPrimary} disabled={complete.isPending || (overrideReason.trim().length > 0 && overrideReason.trim().length < 3)} onClick={() => complete.mutate()}>
+            {complete.isPending ? "Completing…" : "Complete order"}
           </button>
         </DialogFooter>
       </DialogContent>

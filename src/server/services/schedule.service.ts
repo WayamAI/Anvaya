@@ -2,7 +2,7 @@ import { prisma } from "@/server/db/client";
 import { toNumber } from "@/server/api/decimal";
 import { componentReadiness, isOpen } from "@/server/production/work-orders";
 import { buildSchedule, type ScheduleOrderInput, type ScheduleView, type StoredConstraint } from "@/server/production/schedule";
-import { listWorkOrders } from "./work-order.service";
+import { allWorkOrderRows } from "./work-order.service";
 
 /**
  * Production schedule — read side. Built on the work order list, so status,
@@ -10,8 +10,8 @@ import { listWorkOrders } from "./work-order.service";
  * each order's operation times and the company's stored constraints.
  */
 export async function getProductionSchedule(companyId: string, asOf = new Date()): Promise<ScheduleView> {
-  const [{ orders }, details, constraints] = await Promise.all([
-    listWorkOrders(companyId, asOf),
+  const [orders, details, constraints] = await Promise.all([
+    allWorkOrderRows(companyId, asOf),
     prisma.workOrder.findMany({
       where: { companyId },
       select: {

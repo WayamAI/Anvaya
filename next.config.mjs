@@ -1,6 +1,20 @@
+import { securityHeaders } from "./src/server/config/security-headers.mjs";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+
+  // CSP, framing, sniffing, referrer and (on HTTPS production) HSTS headers
+  // on every route, pages and API alike. See security-headers.mjs.
+  async headers() {
+    return [{
+      source: "/:path*",
+      headers: securityHeaders({
+        production: process.env.NODE_ENV === "production",
+        appUrl: process.env.APP_URL ?? "http://localhost:8080",
+      }),
+    }];
+  },
 
   /*
     Dev-server route cache.

@@ -180,6 +180,12 @@ enum MrpExceptionType {
   MISSING_LEAD_TIME
   EXCESS_STOCK
   BOM_CYCLE
+  /// Policy rules that cannot all be honoured, e.g. a maximum order quantity
+  /// below the order multiple.
+  POLICY_CONFLICT
+  /// An open receipt due shortly after the need, used to cover it instead of
+  /// planning duplicate supply: it must be expedited.
+  RESCHEDULE_IN
 }
 
 enum ExceptionSeverity {
@@ -1508,6 +1514,10 @@ model MrpRun {
   /// Bucket width in days; 1 is daily.
   bucketSizeDays Int      @default(1)
 
+  /// A what-if planned from a date other than today. Kept for comparison,
+  /// but never the latest plan and never converted into orders.
+  isSimulation Boolean @default(false)
+
   /// Hash of the input snapshot. Two runs with the same hash saw the same
   /// data, which is what lets the UI say whether a difference is real.
   inputHash String?
@@ -1540,6 +1550,8 @@ model MrpRun {
   @@unique([companyId, runNumber])
   @@index([companyId])
   @@index([companyId, status])
+  /// "Latest plan" is the newest completed non-simulation run.
+  @@index([companyId, isSimulation, status, completedAt])
   @@index([asOfDate])
   @@map("mrp_runs")
 }

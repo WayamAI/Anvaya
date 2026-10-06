@@ -203,3 +203,70 @@ export function outputUnitCost(opts: {
     : open.times(Prisma.Decimal.min(D(1), opts.quantity.div(Prisma.Decimal.max(opts.quantity, opts.remainingToMake))));
   return share.div(opts.quantity).toDecimalPlaces(4);
 }
+
+/* ---- Completion ---------------------------------------------------------- */
+
+export interface ComponentShortfall {
+  materialCode: string;
+  /** What the quantity produced needed, scaled from the order's snapshot. */
+  requiredQty: Prisma.Decimal;
+  issuedQty: Prisma.Decimal;
+  shortQty: Prisma.Decimal;
+}
+
+/**
+ * Components issued short of what the output actually made needed.
+ *
+ * The snapshot holds each component's requirement for the planned quantity,
+ * scrap allowance included; the output needs that share of it in proportion
+ * to the good quantity produced. Expected scrap is already in the BOM's scrap
+ * factor, so scrapped units are not counted again. Issuing more than needed
+ * (within the issue tolerance) is covered, not short.
+ */
+export function componentShortfalls(
+  components: { materialCode: string; requiredQty: Prisma.Decimal; issuedQty: Prisma.Decimal }[],
+  plannedQty: Prisma.Decimal,
+  producedQty: Prisma.Decimal,
+): ComponentShortfall[] {
+  if (plannedQty.lte(0)) return [];
+  return components
+    .map((c) => {
+      const requiredQty = c.requiredQty.times(producedQty).div(plannedQty).toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP);
+      return { materialCode: c.materialCode, requiredQty, issuedQty: c.issuedQty, shortQty: requiredQty.minus(c.issuedQty) };
+    })
+    .filter((c) => c.shortQty.gt(0));
+}
+
+/**
+ * Whether an order may complete. Completing with components unissued would
+ * leave them on the books though the product consumed them, and take their
+ * demand out of MRP — so it is refused, unless someone holding
+ * `work-order:complete-short` gives a reason (the material was substituted,
+ * yield beat the BOM). Returns the override for the audit trail, or null.
+ */
+export function assertCompletable(opts: {
+  shortfalls: ComponentShortfall[];
+  orderNumber: string;
+  canOverride: boolean;
+  overrideReason?: string;
+}): { reason: string; shortfalls: { material: string; required: string; issued: string; short: string }[] } | null {
+  if (!opts.shortfalls.length) return null;
+  if (!opts.overrideReason) {
+    throw AppError.unprocessable(
+      `${opts.orderNumber} cannot complete: its components are not fully issued for the output reported. Issue them first.`,
+      opts.shortfalls.map((s) => ({
+        path: "components",
+        message: `${s.materialCode}: ${s.issuedQty} issued, ${s.requiredQty} needed for the output — ${s.shortQty} short`,
+      })),
+    );
+  }
+  if (!opts.canOverride) {
+    throw AppError.forbidden("Completing with components short requires the 'work-order:complete-short' permission");
+  }
+  return {
+    reason: opts.overrideReason,
+    shortfalls: opts.shortfalls.map((s) => ({
+      material: s.materialCode, required: s.requiredQty.toString(), issued: s.issuedQty.toString(), short: s.shortQty.toString(),
+    })),
+  };
+}

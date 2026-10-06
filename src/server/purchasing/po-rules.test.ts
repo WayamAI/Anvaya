@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Prisma } from "@prisma/client";
 import { AppError } from "@/server/errors/app-error";
 import {
-  assertPoTransition, assertQcTransition, lineTotal, orderTotal, planReceipt, statusAfterReceipt,
+  amountProblems, assertPoTransition, assertQcTransition, duplicateLineProblems, lineTotal, orderTotal, planReceipt, statusAfterReceipt,
   type ReceivablePoLine,
 } from "./po-rules";
 
@@ -109,6 +109,46 @@ describe("planReceipt", () => {
       "lines.0.purchaseOrderLineId: is not a line of this purchase order",
       "lines.2.purchaseOrderLineId: line 2 appears more than once",
       "lines.3.receivedQty: RM-1: 101 exceeds the outstanding 100",
+    ]);
+  });
+});
+
+describe("amountProblems", () => {
+  it("passes amounts the money columns can hold", () => {
+    expect(amountProblems([{ orderedQty: 1000, unitPrice: 250.5 }])).toEqual([]);
+  });
+
+  it("refuses a line, or an order, too large to store", () => {
+    // 999,999,999 × 999,999,999 ≈ 1e18: past Decimal(18,4)'s 1e14.
+    expect(amountProblems([{ orderedQty: 10, unitPrice: 1 }, { orderedQty: 999_999_999, unitPrice: 999_999_999 }])).toEqual([
+      { path: "lines.1.unitPrice", message: "makes the line total too large to record" },
+    ]);
+    // Each line fits, the sum does not.
+    const big = { orderedQty: 900_000_000, unitPrice: 100_000 }; // 9e13 each
+    expect(amountProblems([big, big])).toEqual([{ path: "lines", message: "the order total is too large to record" }]);
+  });
+});
+
+describe("duplicateLineProblems", () => {
+  const HEADER = "2026-04-10";
+
+  it("allows one material on several lines due on different dates", () => {
+    expect(duplicateLineProblems([
+      { materialId: "m", expectedDeliveryDate: "2026-04-05" },
+      { materialId: "m", expectedDeliveryDate: "2026-04-15" },
+      { materialId: "m" }, // the header's date, the 10th
+    ], HEADER)).toEqual([]);
+  });
+
+  it("refuses one material twice on the same date, a line without a date taking the header's", () => {
+    expect(duplicateLineProblems([
+      { materialId: "m", expectedDeliveryDate: "2026-04-05" },
+      { materialId: "n" },
+      { materialId: "m", expectedDeliveryDate: "2026-04-05" },
+      { materialId: "n", expectedDeliveryDate: HEADER },
+    ], HEADER)).toEqual([
+      { path: "lines.2.materialId", message: "is already on line 1 for delivery on 2026-04-05; combine the quantities" },
+      { path: "lines.3.materialId", message: "is already on line 2 for delivery on 2026-04-10; combine the quantities" },
     ]);
   });
 });

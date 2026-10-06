@@ -63,7 +63,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   session.resolveSession.mockResolvedValue(actor([
     "purchase-order:create", "purchase-order:update", "purchase-order:delete", "purchase-order:approve",
-    "goods-receipt:create", "inventory:update",
+    "goods-receipt:create", "quality:decide",
   ]));
   reads.getPurchaseOrder.mockResolvedValue({ id: "po-1", orderNumber: "PO-2026-0001" });
   writes.createPurchaseOrder.mockResolvedValue({ id: "po-1", orderNumber: "PO-2026-0001" });
@@ -76,7 +76,7 @@ describe("permissions", () => {
     ["DELETE /purchase-orders/:id", "purchase-order:delete", () => deletePO(request("/purchase-orders/po-1", "DELETE"), idParams)],
     ["POST /purchase-orders/:id/approve", "purchase-order:approve", () => approvePO(request("/purchase-orders/po-1/approve", "POST"), idParams)],
     ["POST /goods-receipts", "goods-receipt:create", () => receive(request("/goods-receipts", "POST", validGRN))],
-    ["POST /inventory/lots/:id/qc", "inventory:update", () => lotQc(request("/inventory/lots/l/qc", "POST", { status: "APPROVED" }), { params: { id: "l" } })],
+    ["POST /inventory/lots/:id/qc", "quality:decide", () => lotQc(request("/inventory/lots/l/qc", "POST", { status: "APPROVED" }), { params: { id: "l" } })],
   ] as const;
 
   it.each(cases)("%s needs a session", async (_n, _p, call) => {

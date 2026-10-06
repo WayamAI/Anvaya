@@ -12,7 +12,10 @@ vi.hoisted(() => {
   process.env.DATABASE_URL ??= "postgresql://u:p@localhost:55432/anvaya?schema=public";
 });
 
-const db = vi.hoisted(() => ({ purchaseOrder: { findMany: vi.fn(), findFirst: vi.fn() } }));
+const db = vi.hoisted(() => ({
+  purchaseOrder: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn().mockResolvedValue(0), groupBy: vi.fn().mockResolvedValue([]) },
+  purchaseOrderLine: { fields: { orderedQty: "orderedQty" } },
+}));
 const session = vi.hoisted(() => ({ resolveSession: vi.fn() }));
 
 vi.mock("@/server/db/client", () => ({ prisma: db }));
@@ -74,6 +77,7 @@ describe("authentication and permission", () => {
 
 describe("GET /api/v1/purchase-orders", () => {
   it("lists POs with received %, overdue, delivered date and counts", async () => {
+    db.purchaseOrder.groupBy.mockResolvedValue([{ status: "PARTIALLY_RECEIVED", _count: { _all: 1 } }, { status: "FULLY_RECEIVED", _count: { _all: 1 } }]);
     db.purchaseOrder.findMany.mockResolvedValue([
       po(),
       po({ id: "po-198", orderNumber: "PO-2026-0198", status: "FULLY_RECEIVED", totalAmount: D(222000),
@@ -83,8 +87,14 @@ describe("GET /api/v1/purchase-orders", () => {
 
     const body = await (await listPOs(request("/purchase-orders"))).json();
 
-    expect(db.purchaseOrder.findMany.mock.calls[0][0].where).toEqual({ companyId: COMPANY });
-    expect(body.data.counts).toMatchObject({ all: 2, overdue: 1, PARTIALLY_RECEIVED: 1, FULLY_RECEIVED: 1, DRAFT: 0 });
+    // Counts and "overdue" across the company are SQL, proven against Postgres
+    // in list-pagination.integration.test.ts; the per-row overdue flag is here.
+    expect(db.purchaseOrder.findMany.mock.calls[0][0]).toMatchObject({ where: { companyId: COMPANY }, take: 51 });
+    for (const call of [...db.purchaseOrder.count.mock.calls, ...db.purchaseOrder.groupBy.mock.calls]) {
+      expect(call[0].where).toMatchObject({ companyId: COMPANY });
+    }
+    expect(body.data.counts).toMatchObject({ all: 2, PARTIALLY_RECEIVED: 1, FULLY_RECEIVED: 1, DRAFT: 0 });
+    expect(body.meta).toMatchObject({ nextCursor: null, limit: 50 });
     expect(body.data.orders[0]).toMatchObject({
       orderNumber: "PO-2026-0241", vendor: { name: "Rashtriya Chemicals" }, totalAmount: 87000, lineCount: 1,
       receivedPct: 41.7, overdue: true, delivered: { date: "2026-03-24", source: "RECEIPT" }, totalMismatch: false,
