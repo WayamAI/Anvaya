@@ -81,7 +81,7 @@ export async function apiGet<T>(path: string, query?: Query, init?: { signal?: A
  * recognised by the server as the same request and applied once.
  */
 export async function apiSend<T = unknown>(
-  method: "POST" | "PATCH" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   body?: unknown,
   opts: { idempotencyKey?: string } = {},

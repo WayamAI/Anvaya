@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
-import { ArrowRight } from "lucide-react";
+import { ArrowRightIcon } from "@/components/icons/chronos";
 import anvayaLogoLight from "@/assets/anvaya-logo-light.svg";
 import anvayaLogoDark from "@/assets/anvaya-logo-dark.svg";
 import { btnPrimary, inputBase } from "@/components/app/controls";
@@ -161,7 +161,7 @@ export default function Login() {
               disabled={submitting}
               className={`${btnPrimary} h-10 w-full disabled:cursor-not-allowed disabled:opacity-60`}
             >
-              {submitting ? "Signing in…" : "Sign in"} <ArrowRight />
+              {submitting ? "Signing in…" : "Sign in"} <ArrowRightIcon />
             </button>
           </div>
         </form>

@@ -1,92 +1,88 @@
 "use client";
 
+import type { ElementType } from "react";
 import { usePathname } from "next/navigation";
 
+import {
+  AlertConfigIcon, CustomerIcon, MaterialMasterIcon, BatchSerialIcon, BiDashboardIcon, BomIcon, CompanyWarehouseIcon, ConstraintsIcon, CustomReportsIcon,
+  DemandForecastIcon, ForecastVsActualIcon, IntegrationsIcon, InventoryHealthIcon, MaterialCoverageIcon,
+  MaterialRequirementsIcon, MrpEfficiencyIcon, MrpRunIcon, MultiLocationIcon, ProcurementAnalyticsIcon,
+  ProductionScheduleIcon, PurchaseOrderIcon, PurchasePlanningIcon, ReportsIcon, SafetyStockIcon, SalesOrderIcon,
+  ScheduleUpdatesIcon, StockExhaustionIcon, StockOverviewIcon, SupplierIcon, TraceabilityIcon, UsersRolesIcon,
+  WorkOrderIcon,
+} from "@/components/icons/chronos";
 import { cn } from "@/lib/utils";
 
 /**
  * ICON REGISTRY — pages
  * ----------------------------------------------------------------------------
- * The illustrated icons, bound to the page each one depicts.
- *
- * These assets are page-scoped, not metric-scoped: "BOM management" and
- * "Users & roles" name whole screens, not figures on them. So the one place
- * in the content area they map onto cleanly is the page's own title, which is
- * also where the reference product puts its illustrative mark.
+ * The Chronos glyph that sits before each page title, bound to its route — the
+ * same glyph the sidebar uses for that screen, so a page and its menu entry
+ * read as one thing.
  *
  * Keyed by route rather than by title: the route is what the router already
  * uses, and a title is the likelier thing to get reworded. A page with no
  * entry renders nothing at all, so an unmapped screen loses the mark rather
- * than the heading.
- *
- * Deliberately separate from `lib/icons.ts`, which is the lucide line-art set
- * used for navigation and controls. These are raster and illustrated, legible
- * only at size, and the two are not interchangeable — in particular they do
- * not belong in the rail, where the glyph is 14px.
+ * than the heading. The Dashboard ("/") is deliberately absent.
  */
-const PAGE_ICONS: Record<string, string> = {
-  "/mrp-run": "mrp-run-results",
-  "/material-requirements": "material-requirements",
-  "/bom-management": "bom-management",
-  "/safety-stock": "safety-stock",
-  "/stock-alerts": "stock-exhaustion-alerts",
+const PAGE_ICONS: Record<string, ElementType> = {
+  "/mrp-run": MrpRunIcon,
+  "/material-requirements": MaterialRequirementsIcon,
+  "/bom-management": BomIcon,
+  "/safety-stock": SafetyStockIcon,
+  "/stock-alerts": StockExhaustionIcon,
 
-  "/production-schedule": "production-schedule",
-  "/work-orders": "work-orders",
-  "/production-constraints": "constraints",
-  "/schedule-updates": "schedule-updates",
+  "/production-schedule": ProductionScheduleIcon,
+  "/work-orders": WorkOrderIcon,
+  "/production-constraints": ConstraintsIcon,
+  "/schedule-updates": ScheduleUpdatesIcon,
 
-  "/stock-overview": "stock-overview",
-  "/multi-location": "multi-location",
-  "/batch-tracking": "batch-serial-tracking",
-  "/inventory-health": "inventory-health",
+  "/materials": MaterialMasterIcon,
+  "/stock-overview": StockOverviewIcon,
+  "/multi-location": MultiLocationIcon,
+  "/batch-tracking": BatchSerialIcon,
+  "/inventory-health": InventoryHealthIcon,
+  "/traceability": TraceabilityIcon,
 
-  "/purchase-planning": "purchase-planning",
-  "/purchase-orders": "purchase-orders",
-  "/vendor-management": "vendor-management",
-  "/procurement-analytics": "procurement-analytics",
+  "/purchase-planning": PurchasePlanningIcon,
+  "/purchase-orders": PurchaseOrderIcon,
+  "/vendor-management": SupplierIcon,
+  "/procurement-analytics": ProcurementAnalyticsIcon,
 
-  "/demand-forecast": "demand-forecast",
-  "/forecast-actuals": "forecasts-vs-actual",
-  "/sales-orders": "sales-order-intake",
+  "/demand-forecast": DemandForecastIcon,
+  "/forecast-actuals": ForecastVsActualIcon,
+  "/sales-orders": SalesOrderIcon,
+  "/customers": CustomerIcon,
 
-  "/bi-dashboard": "bi-dashboard",
-  "/material-coverage": "material-coverage",
-  "/procurement-reports": "procurement-reports",
-  "/mrp-efficiency": "mrp-efficiency",
-  "/custom-reports": "custom-reports",
+  "/bi-dashboard": BiDashboardIcon,
+  "/material-coverage": MaterialCoverageIcon,
+  "/procurement-reports": ReportsIcon,
+  "/mrp-efficiency": MrpEfficiencyIcon,
+  "/custom-reports": CustomReportsIcon,
 
-  "/company-settings": "company-warehouses",
-  "/users-roles": "users-roles",
-  "/integrations": "integrations",
-  "/alert-config": "alert-configuration",
+  "/company-settings": CompanyWarehouseIcon,
+  "/users-roles": UsersRolesIcon,
+  "/integrations": IntegrationsIcon,
+  "/alert-config": AlertConfigIcon,
 };
 
 /**
- * The illustrated mark that sits before a page title.
+ * The mark that sits before a page title.
  *
  * Resolves itself from the current route, so a page opts in by rendering it
- * rather than by knowing which file it needs.
+ * rather than by knowing which glyph it needs. The 28px box is the one the
+ * title row was laid out around; the 20px glyph is centred inside it.
  *
- * The source renders are all different shapes, so the box is fixed and the
- * artwork is fitted inside it — sizing by width alone would leave a tall icon
- * overhanging a wide one and titles would not start on a common line.
- *
- * Decorative: the title beside it says the same thing, so it is hidden from
- * assistive technology rather than repeating it.
+ * Decorative: the title beside it says the same thing.
  */
 export function PageIcon({ className }: { className?: string }) {
   const pathname = usePathname();
-  const icon = PAGE_ICONS[pathname];
-  if (!icon) return null;
+  const Icon = PAGE_ICONS[pathname];
+  if (!Icon) return null;
 
   return (
-    <img
-      src={`/icons/pages/${icon}.png`}
-      alt=""
-      aria-hidden="true"
-      draggable={false}
-      className={cn("block h-7 w-7 shrink-0 object-contain", className)}
-    />
+    <span aria-hidden="true" className={cn("flex h-7 w-7 shrink-0 items-center justify-center text-foreground", className)}>
+      <Icon className="h-5 w-5" />
+    </span>
   );
 }

@@ -5,11 +5,8 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/app/page-header";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import {
-  Activity, RefreshCw, Settings, ChevronDown, ChevronUp, ArrowUpRight, ArrowDownRight,
-  AlertTriangle, CheckCircle2, Clock, Database, Zap, Calendar, BarChart3,
-  ShieldCheck, ExternalLink, Pause, Play, RotateCcw
-} from "lucide-react";
+
+import { AddIcon, ArrowDownRightIcon, ArrowUpRightIcon, ChevronDownIcon, ChevronUpIcon, DatabaseIcon, ExternalLinkIcon, IntegrationsIcon, MrpEfficiencyIcon, PauseIcon, PlayIcon, RefreshIcon, RetryIcon, SettingsIcon, SuccessIcon, WarningIcon } from "@/components/icons/chronos";
 
 type SyncDirection = "inbound" | "outbound" | "bidirectional";
 type IntegrationStatus = "active" | "degraded" | "error" | "paused";
@@ -272,17 +269,17 @@ const categoryLabels: Record<string, string> = {
   communication: "Notifications",
 };
 
-const statusConfig: Record<IntegrationStatus, { color: "green" | "amber" | "red" | "gray"; icon: typeof CheckCircle2 }> = {
-  active: { color: "green", icon: CheckCircle2 },
-  degraded: { color: "amber", icon: AlertTriangle },
-  error: { color: "red", icon: AlertTriangle },
-  paused: { color: "gray", icon: Pause },
+const statusConfig: Record<IntegrationStatus, { color: "green" | "amber" | "red" | "gray"; icon: typeof SuccessIcon }> = {
+  active: { color: "green", icon: SuccessIcon },
+  degraded: { color: "amber", icon: WarningIcon },
+  error: { color: "red", icon: WarningIcon },
+  paused: { color: "gray", icon: PauseIcon },
 };
 
 const directionIcon = (d: SyncDirection) =>
-  d === "inbound" ? <ArrowDownRight className="w-3 h-3 text-chart-1" /> :
-  d === "outbound" ? <ArrowUpRight className="w-3 h-3 text-muted-foreground" /> :
-  <RefreshCw className="w-3 h-3 text-ebom" />;
+  d === "inbound" ? <ArrowDownRightIcon className="w-3 h-3 text-chart-1" /> :
+  d === "outbound" ? <ArrowUpRightIcon className="w-3 h-3 text-muted-foreground" /> :
+  <RefreshIcon className="w-3 h-3 text-ebom" />;
 
 const directionLabel = (d: SyncDirection) =>
   d === "inbound" ? "IN" : d === "outbound" ? "OUT" : "BI";
@@ -362,7 +359,7 @@ function IntegrationCard({ int, isExpanded, onToggle }: { int: Integration; isEx
             </div>
           </div>
           <button className="p-1 rounded hover:bg-secondary transition-colors text-muted-foreground" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {isExpanded ? <ChevronUpIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4" />}
           </button>
         </div>
 
@@ -371,7 +368,7 @@ function IntegrationCard({ int, isExpanded, onToggle }: { int: Integration; isEx
           <div className={`mt-3 ml-10 px-3 py-2 rounded text-body-sm font-medium flex items-start gap-2 ${
             int.status === "error" ? "bg-danger/10 text-danger" : "bg-warning/10 text-warning"
           }`}>
-            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <WarningIcon className="w-3.5 h-3.5 mt-0.5 shrink-0" />
             <span>{int.warning}</span>
           </div>
         )}
@@ -436,21 +433,21 @@ function IntegrationCard({ int, isExpanded, onToggle }: { int: Integration; isEx
               </div>
               <div className="flex gap-2 mt-3">
                 <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5">
-                  <RotateCcw className="w-3 h-3" /> Force Sync
+                  <RetryIcon className="w-3 h-3" /> Force Sync
                 </Button>
                 <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5">
-                  <Settings className="w-3 h-3" /> Settings
+                  <SettingsIcon className="w-3 h-3" /> Settings
                 </Button>
                 <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5">
-                  <ExternalLink className="w-3 h-3" /> API Docs
+                  <ExternalLinkIcon className="w-3 h-3" /> API Docs
                 </Button>
                 {int.status === "active" ? (
                   <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5 text-warning border-warning/30 hover:bg-warning/10">
-                    <Pause className="w-3 h-3" /> Pause
+                    <PauseIcon className="w-3 h-3" /> Pause
                   </Button>
                 ) : int.status === "paused" ? (
                   <Button variant="outline" size="sm" className="text-body-sm h-7 gap-1.5 text-success border-success/30 hover:bg-success/10">
-                    <Play className="w-3 h-3" /> Resume
+                    <PlayIcon className="w-3 h-3" /> Resume
                   </Button>
                 ) : null}
               </div>
@@ -485,10 +482,10 @@ export default function Integrations() {
         actions={
           <>
             <Button variant="outline" size="sm">
-              <RefreshCw /> Sync All
+              <RefreshIcon /> Sync All
             </Button>
             <Button size="sm">
-              <Zap /> Add Integration
+              <AddIcon /> Add Integration
             </Button>
           </>
         }
@@ -497,11 +494,11 @@ export default function Integrations() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {[
-          { label: "Active pipelines", value: `${activeCount}/${integrations.length}`, icon: Activity, accent: "text-success" },
-          { label: "Degraded", value: degradedCount, icon: AlertTriangle, accent: degradedCount > 0 ? "text-warning" : "text-success" },
-          { label: "Errors", value: errorCount, icon: AlertTriangle, accent: errorCount > 0 ? "text-danger" : "text-success" },
-          { label: "Records today", value: todayTotal.toLocaleString("en-IN"), icon: Database, accent: "text-foreground" },
-          { label: "Avg uptime", value: `${avgUptime}%`, icon: BarChart3, accent: "text-foreground" },
+          { label: "Active pipelines", value: `${activeCount}/${integrations.length}`, icon: IntegrationsIcon, accent: "text-success" },
+          { label: "Degraded", value: degradedCount, icon: WarningIcon, accent: degradedCount > 0 ? "text-warning" : "text-success" },
+          { label: "Errors", value: errorCount, icon: WarningIcon, accent: errorCount > 0 ? "text-danger" : "text-success" },
+          { label: "Records today", value: todayTotal.toLocaleString("en-IN"), icon: DatabaseIcon, accent: "text-foreground" },
+          { label: "Avg uptime", value: `${avgUptime}%`, icon: MrpEfficiencyIcon, accent: "text-foreground" },
         ].map((kpi, i) => (
           <div key={i} className="surface-sunken min-w-0 px-4 py-3.5">
             <div className="flex items-start justify-between gap-3">

@@ -2,7 +2,8 @@
 
 import { useSearchParams } from "next/navigation";
 import { useState, useMemo } from "react";
-import { Search, Download, Filter, Shield, AlertTriangle } from "lucide-react";
+
+import { DownloadIcon, FilterIcon, QcHoldIcon, SearchIcon, WarningIcon } from "@/components/icons/chronos";
 import StatusBadge from "@/components/StatusBadge";
 import KPICard from "@/components/KPICard";
 import {
@@ -168,7 +169,7 @@ export default function Traceability() {
       {/* Critical Alert Banner */}
       {criticalAlerts.length > 0 && (
         <div className="bg-danger/10 border border-danger/30 rounded-lg px-4 py-3 flex items-center gap-3">
-          <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
+          <WarningIcon className="w-4 h-4 text-danger flex-shrink-0" />
           <span className="text-danger font-semibold text-body-md">⚠ {criticalAlerts.length} critical traceability alert{criticalAlerts.length > 1 ? "s" : ""} — {criticalAlerts.map(a => a.title).join(" · ")}</span>
         </div>
       )}
@@ -193,7 +194,7 @@ export default function Traceability() {
           {/* Search bar */}
           <div className="flex gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()}
                 placeholder="Search by serial number, lot number, or part number..."
                 className="w-full h-10 pl-10 pr-3 rounded-lg border border-input bg-card text-body-md identifier" />
@@ -358,7 +359,7 @@ export default function Traceability() {
 
               {/* Export 8D */}
               <button onClick={export8D} className={btnPrimary}>
-                <Download className="w-4 h-4" /> Export 8D Report
+                <DownloadIcon className="w-4 h-4" /> Export 8D Report
               </button>
             </div>
           )}
@@ -376,7 +377,7 @@ export default function Traceability() {
         <div className="space-y-4">
           {/* Filter Panel */}
           <div>
-            <div className="flex items-center gap-2 mb-3 text-body-sm font-semibold text-muted-foreground"><Filter className="w-3.5 h-3.5" /> FILTERS</div>
+            <div className="flex items-center gap-2 mb-3 text-body-sm font-semibold text-muted-foreground"><FilterIcon className="w-3.5 h-3.5" /> FILTERS</div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="text-body-sm text-muted-foreground block mb-1">Lot number</label>
@@ -427,8 +428,8 @@ export default function Traceability() {
 
           {/* Metric Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <KPICard title="Units at risk in field" value={riskTotals.atRiskInField.toLocaleString()} status="red" icon={AlertTriangle} />
-            <KPICard title="Already returned / defective" value={riskTotals.alreadyReturned.toString()} status="amber" icon={Shield} />
+            <KPICard title="Units at risk in field" value={riskTotals.atRiskInField.toLocaleString()} status="red" icon={WarningIcon} />
+            <KPICard title="Already returned / defective" value={riskTotals.alreadyReturned.toString()} status="amber" icon={QcHoldIcon} />
             {/* Same tile as its two neighbours. The priority is carried by the
                 colour of the figure, not by a coloured edge on the card. */}
             <div className="surface-sunken min-w-0 px-4 py-3.5">
@@ -465,10 +466,10 @@ export default function Traceability() {
           {/* Export buttons */}
           <div className="flex gap-3">
             <button onClick={exportSerialList} className={btnPrimary}>
-              <Download className="w-4 h-4" /> Export Affected Serial List
+              <DownloadIcon className="w-4 h-4" /> Export Affected Serial List
             </button>
             <button className={btnSecondary}>
-              <Shield className="w-4 h-4" /> Generate Containment Action Plan
+              <QcHoldIcon className="w-4 h-4" /> Generate Containment Action Plan
             </button>
           </div>
         </div>

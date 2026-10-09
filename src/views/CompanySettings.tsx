@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { MapPin } from "lucide-react";
+import { CompanyWarehouseIcon } from "@/components/icons/chronos";
 import { useTheme } from "next-themes";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import anvayaLogoLight from "@/assets/anvaya-logo-light.svg";
 import anvayaLogoDark from "@/assets/anvaya-logo-dark.svg";
 import { PageIcon } from "@/components/app/page-icon";
+import { LocationFormButton } from "@/components/masterdata/master-forms";
 import { EmptyState } from "@/components/app/empty-state";
 import { SkeletonBlock } from "@/components/app/skeleton-block";
 import { ErrorNote } from "@/components/app/api-error-note";
@@ -138,12 +139,19 @@ export default function CompanySettings() {
       {settings.data && <OperationalSettings values={settings.data.operational} canEdit={can("setting:update")} />}
 
       <div className="space-y-3">
-        <h3 className="label-caps">Warehouses & plants</h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="label-caps">Warehouses & plants</h3>
+          <LocationFormButton />
+        </div>
+        {locations.error && (
+          <EmptyState title="Locations could not be loaded" description={(locations.error as Error).message}
+            action={<button className={btnSecondary} onClick={() => void locations.refetch()}>Try again</button>} />
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {locations.data?.map((w) => (
             <div key={w.id} className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
-                <MapPin className="w-5 h-5 text-muted-foreground" />
+                <CompanyWarehouseIcon className="w-5 h-5 text-muted-foreground" />
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
@@ -154,8 +162,9 @@ export default function CompanySettings() {
                   {w.type.charAt(0) + w.type.slice(1).toLowerCase()}{w.isManufacturing ? " · manufacturing" : ""}
                   {[w.city, w.state].filter(Boolean).length ? ` · ${[w.city, w.state].filter(Boolean).join(", ")}` : ""}
                 </span>
-                <div className="mt-1 text-body-sm">
+                <div className="mt-1 flex items-center justify-between text-body-sm">
                   <span className={w.isActive ? "text-success font-medium" : "text-muted-foreground"}>{w.isActive ? "Active" : "Inactive"}</span>
+                  <LocationFormButton location={w} />
                 </div>
               </div>
             </div>

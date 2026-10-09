@@ -1,7 +1,10 @@
 import type { ElementType } from "react";
 import {
-  AlertTriangle, Box, Building, Calendar, ClipboardList, Factory, FileBarChart, FileText, Hash, Heart, Layers, LayoutDashboard, LogOut, MapPin, Moon, Package, Settings, Shield, ShoppingCart, TrendingUp, Truck, Users, Wrench, Zap,
-} from "lucide-react";
+  BatchSerialIcon, BomIcon, CustomerIcon, MaterialMasterIcon, CompanyWarehouseIcon, DashboardIcon, DemandIcon, InventoryHealthIcon, InventoryIcon, LogoutIcon,
+  MaterialCoverageIcon, MaterialPlanningIcon, MaterialRequirementsIcon, MrpRunIcon, MultiLocationIcon, ProductionIcon,
+  ProductionScheduleIcon, PurchaseIcon, PurchaseOrderIcon, PurchasePlanningIcon, SafetyStockIcon, SalesOrderIcon, SettingsIcon,
+  StockExhaustionIcon, StockOverviewIcon, SupplierIcon, ThemeDarkIcon, UsersRolesIcon, WorkOrderIcon,
+} from "@/components/icons/chronos";
 
 /**
  * The sidebar's menu: screens grouped by area. Which a user sees is nav-access's call.
@@ -22,64 +25,66 @@ export interface NavSection {
 }
 
 export const topNavItems: NavItem[] = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
+  { label: "Dashboard", path: "/", icon: DashboardIcon },
 ];
 
 export const navSections: NavSection[] = [
   {
     label: "Material planning",
-    icon: Layers,
+    icon: MaterialPlanningIcon,
     items: [
-      { label: "MRP run & results", path: "/mrp-run", icon: Zap },
-      { label: "Material requirements", path: "/material-requirements", icon: ClipboardList },
-      { label: "Material coverage", path: "/material-coverage", icon: Shield },
-      { label: "BOM management", path: "/bom-management", icon: FileText },
-      { label: "Safety stock", path: "/safety-stock", icon: Shield },
-      { label: "Stock exhaustion alerts", path: "/stock-alerts", icon: AlertTriangle },
+      { label: "MRP run & results", path: "/mrp-run", icon: MrpRunIcon },
+      { label: "Material requirements", path: "/material-requirements", icon: MaterialRequirementsIcon },
+      { label: "Material coverage", path: "/material-coverage", icon: MaterialCoverageIcon },
+      { label: "BOM management", path: "/bom-management", icon: BomIcon },
+      { label: "Safety stock", path: "/safety-stock", icon: SafetyStockIcon },
+      { label: "Stock exhaustion alerts", path: "/stock-alerts", icon: StockExhaustionIcon },
     ],
   },
   {
     label: "Production",
-    icon: Factory,
+    icon: ProductionIcon,
     items: [
-      { label: "Production schedule", path: "/production-schedule", icon: Calendar },
-      { label: "Work orders", path: "/work-orders", icon: Wrench },
+      { label: "Production schedule", path: "/production-schedule", icon: ProductionScheduleIcon },
+      { label: "Work orders", path: "/work-orders", icon: WorkOrderIcon },
     ],
   },
   {
     label: "Inventory",
-    icon: Package,
+    icon: InventoryIcon,
     items: [
-      { label: "Stock overview", path: "/stock-overview", icon: Box },
-      { label: "Multi-location", path: "/multi-location", icon: MapPin },
-      { label: "Batch & serial tracking", path: "/batch-tracking", icon: Hash },
-      { label: "Inventory health", path: "/inventory-health", icon: Heart },
+      { label: "Materials", path: "/materials", icon: MaterialMasterIcon },
+      { label: "Stock overview", path: "/stock-overview", icon: StockOverviewIcon },
+      { label: "Multi-location", path: "/multi-location", icon: MultiLocationIcon },
+      { label: "Batch & serial tracking", path: "/batch-tracking", icon: BatchSerialIcon },
+      { label: "Inventory health", path: "/inventory-health", icon: InventoryHealthIcon },
     ],
   },
   {
     label: "Purchase",
-    icon: ShoppingCart,
+    icon: PurchaseIcon,
     items: [
-      { label: "Purchase planning", path: "/purchase-planning", icon: ClipboardList },
-      { label: "Purchase orders", path: "/purchase-orders", icon: ShoppingCart },
-      { label: "Vendor management", path: "/vendor-management", icon: Truck },
+      { label: "Purchase planning", path: "/purchase-planning", icon: PurchasePlanningIcon },
+      { label: "Purchase orders", path: "/purchase-orders", icon: PurchaseOrderIcon },
+      { label: "Vendor management", path: "/vendor-management", icon: SupplierIcon },
     ],
   },
   {
     label: "Demand",
-    icon: TrendingUp,
+    icon: DemandIcon,
     items: [
-      { label: "Sales order intake", path: "/sales-orders", icon: FileBarChart },
+      { label: "Sales order intake", path: "/sales-orders", icon: SalesOrderIcon },
+      { label: "Customers", path: "/customers", icon: CustomerIcon },
     ],
   },
   {
     label: "Settings",
-    icon: Settings,
+    icon: SettingsIcon,
     items: [
-      { label: "Company & warehouses", path: "/company-settings", icon: Building },
-      { label: "Users & roles", path: "/users-roles", icon: Users },
-      { label: "theme-toggle", path: "", icon: Moon },
-      { label: "Logout", path: "", icon: LogOut },
+      { label: "Company & warehouses", path: "/company-settings", icon: CompanyWarehouseIcon },
+      { label: "Users & roles", path: "/users-roles", icon: UsersRolesIcon },
+      { label: "theme-toggle", path: "", icon: ThemeDarkIcon },
+      { label: "Logout", path: "", icon: LogoutIcon },
     ],
   },
 ];

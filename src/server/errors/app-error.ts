@@ -18,6 +18,7 @@ export const ErrorCode = {
   NOT_FOUND: "NOT_FOUND",
   CONFLICT: "CONFLICT",
   UNPROCESSABLE: "UNPROCESSABLE",
+  PAYLOAD_TOO_LARGE: "PAYLOAD_TOO_LARGE",
   RATE_LIMITED: "RATE_LIMITED",
   INTERNAL: "INTERNAL",
   UNAVAILABLE: "UNAVAILABLE",
@@ -32,6 +33,7 @@ const STATUS: Record<ErrorCode, number> = {
   NOT_FOUND: 404,
   CONFLICT: 409,
   UNPROCESSABLE: 422,
+  PAYLOAD_TOO_LARGE: 413,
   RATE_LIMITED: 429,
   INTERNAL: 500,
   UNAVAILABLE: 503,
@@ -100,6 +102,10 @@ export class AppError extends Error {
   }
 
   /** `retryAfterSeconds` is sent to the client as a Retry-After header. */
+  static payloadTooLarge(maxBytes: number) {
+    return new AppError(ErrorCode.PAYLOAD_TOO_LARGE, `The request body is larger than the ${Math.round(maxBytes / 1024)} KB limit`);
+  }
+
   static rateLimited(message = "Too many requests — please slow down", retryAfterSeconds?: number) {
     return new AppError(ErrorCode.RATE_LIMITED, message, { context: { retryAfterSeconds } });
   }

@@ -22,6 +22,8 @@ export const NAV_ACCESS: Record<string, Rule> = {
   "/stock-alerts": "inventory:read",
   "/production-schedule": "work-order:read",
   "/work-orders": "work-order:read",
+  "/materials": "material:read",
+  "/customers": "customer:read",
   "/stock-overview": "inventory:read",
   "/multi-location": "inventory:read",
   "/batch-tracking": "inventory:read",

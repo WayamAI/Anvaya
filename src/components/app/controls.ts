@@ -19,7 +19,7 @@ const base =
   "transition-colors duration-200 " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:ring-offset-1 focus-visible:ring-offset-background " +
   "disabled:pointer-events-none disabled:opacity-50 " +
-  "[&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0";
+  "[&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0 [&_.chronos-icon]:h-3.5 [&_.chronos-icon]:w-3.5";
 
 /** The main action. Near-black, and at most one per screen. */
 export const btnPrimary = `${base} h-8 px-3.5 bg-primary text-primary-foreground hover:bg-primary/90`;

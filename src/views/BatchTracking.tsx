@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useDeferredValue } from "react";
 import { useQuery } from "@tanstack/react-query";
 import StatusBadge from "@/components/StatusBadge";
-import { Search, ChevronDown, ChevronRight, AlertTriangle, Shield, Package, X, Ban } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, CloseIcon, FinishedGoodIcon, QcHoldIcon, SearchIcon, TraceabilityIcon, WarningIcon } from "@/components/icons/chronos";
 import { btnSecondary, btnSecondarySm } from "@/components/app/controls";
 import { PageIcon } from "@/components/app/page-icon";
 import { EmptyState } from "@/components/app/empty-state";
@@ -96,7 +96,7 @@ function GRNSearchResult({ grnNumber, onClose, onSelectLot }: { grnNumber: strin
   const header = (
     <div className="flex items-center justify-between mb-3">
       <h3 className="text-body-md font-semibold">GRN Detail: <span className="text-foreground identifier">{grnNumber}</span></h3>
-      <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+      <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><CloseIcon className="w-4 h-4" /></button>
     </div>
   );
 
@@ -175,7 +175,7 @@ function SideDrawer({ drawer, onClose, onNavigate }: { drawer: NonNullable<Drawe
             {drawer.kind === "containment" && `Containment Panel`}
             {drawer.kind === "product" && `Product / Formula Detail`}
           </h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><CloseIcon className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-4">
           {drawer.kind === "grn" && <GRNDrawerContent grnNumber={drawer.grnNumber} onNavigate={onNavigate} />}
@@ -369,7 +369,7 @@ function ContainmentDrawerContent({ lotId }: { lotId: string }) {
   return (
     <>
       <div className="p-3 rounded-lg border border-danger/30 bg-danger/5 mb-4">
-        <div className="flex items-center gap-2 text-danger text-body-md font-semibold"><AlertTriangle className="w-4 h-4" /> Containment required</div>
+        <div className="flex items-center gap-2 text-danger text-body-md font-semibold"><WarningIcon className="w-4 h-4" /> Containment required</div>
         <div className="text-body-sm text-muted-foreground mt-1">Batch {lot.lotNumber} — {lot.material.name} — QC Status: {qcBadge(lot.qcStatus).label}</div>
       </div>
 
@@ -424,8 +424,8 @@ function ContainmentDrawerContent({ lotId }: { lotId: string }) {
       ) : <div className="text-body-sm text-muted-foreground">No recorded dispatches from this lot</div>}
 
       <div className="flex gap-2 mt-4">
-        <button disabled title="Containment actions aren't available yet" className="flex-1 h-8 bg-warning text-warning-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1 opacity-50 cursor-not-allowed"><Ban className="w-3 h-3" />Place dispatch hold</button>
-        <button disabled title="Containment actions aren't available yet" className="flex-1 h-8 bg-danger text-danger-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1 opacity-50 cursor-not-allowed"><AlertTriangle className="w-3 h-3" />Raise quality event</button>
+        <button disabled title="Containment actions aren't available yet" className="flex-1 h-8 bg-warning text-warning-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1 opacity-50 cursor-not-allowed"><QcHoldIcon className="w-3 h-3" />Place dispatch hold</button>
+        <button disabled title="Containment actions aren't available yet" className="flex-1 h-8 bg-danger text-danger-foreground rounded-lg text-body-sm font-medium flex items-center justify-center gap-1 opacity-50 cursor-not-allowed"><WarningIcon className="w-3 h-3" />Raise quality event</button>
       </div>
       <p className="text-caption text-muted-foreground text-center">Containment actions aren't available yet.</p>
     </>
@@ -568,7 +568,7 @@ function TraceabilityPanel({ lotId, setDrawer }: { lotId: string; setDrawer: (d:
         <div className="flex items-center gap-2">
           {needsContainment(lot.qcStatus) && (
             <button onClick={() => setDrawer({ kind: "containment", lotId: lot.id })} className="h-7 px-2.5 bg-danger text-danger-foreground rounded text-body-sm font-medium flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3" /> Containment
+              <WarningIcon className="w-3 h-3" /> Containment
             </button>
           )}
           <button onClick={() => setDrawer({ kind: "qc", lotId: lot.id })} className={btnSecondarySm}>QC report</button>
@@ -585,7 +585,7 @@ function TraceabilityPanel({ lotId, setDrawer }: { lotId: string; setDrawer: (d:
             {rows.map((r) => (
               <div key={r.key} className={`rounded-lg border text-body-sm ${r.suspect ? "border-danger/30 bg-danger/5" : r.nonApproved ? "border-warning/30 bg-warning/5" : "border-border"}`}>
                 <div className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer" onClick={() => toggleInput(r.key)}>
-                  {expandedInputs[r.key] ? <ChevronDown className="w-3 h-3 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 text-muted-foreground" />}
+                  {expandedInputs[r.key] ? <ChevronDownIcon className="w-3 h-3 text-muted-foreground" /> : <ChevronRightIcon className="w-3 h-3 text-muted-foreground" />}
                   <StatusBadge {...kindBadge(r.kind)} />
                   {r.lotNumber
                     ? (r.receipt
@@ -594,8 +594,8 @@ function TraceabilityPanel({ lotId, setDrawer }: { lotId: string; setDrawer: (d:
                     : <span className="text-muted-foreground italic">No lot recorded</span>}
                   <span className="font-medium truncate">{r.materialName}</span>
                   <span className="tabular-nums text-muted-foreground ml-auto">{r.qty}</span>
-                  {r.suspect && <AlertTriangle className="w-3 h-3 text-danger" />}
-                  {r.nonApproved && <AlertTriangle className="w-3 h-3 text-warning" />}
+                  {r.suspect && <WarningIcon className="w-3 h-3 text-danger" />}
+                  {r.nonApproved && <WarningIcon className="w-3 h-3 text-warning" />}
                 </div>
                 {expandedInputs[r.key] && (
                   <div className="px-2.5 pb-2 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 text-caption border-t border-border/50 pt-1.5 ml-5">
@@ -718,7 +718,7 @@ export default function BatchTracking() {
           <span className="min-w-0">Batch & serial tracking</span>
         </h1>
         <div className="relative w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search batch, material, or GRN-xxxx..."
             className="w-full h-9 pl-9 pr-3 rounded-lg border border-input bg-card text-body-md" />
@@ -728,16 +728,16 @@ export default function BatchTracking() {
       {/* Completeness Indicators */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center"><Shield className="w-5 h-5 text-success" /></div>
+          <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center"><TraceabilityIcon className="w-5 h-5 text-success" /></div>
           <div><div className="text-body-sm text-muted-foreground">Backward trace complete</div><div className="text-display-lg font-semibold tabular-nums text-success">{pct(indicators?.backwardPct)}</div></div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center"><Package className="w-5 h-5 text-muted-foreground" /></div>
+          <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center"><FinishedGoodIcon className="w-5 h-5 text-muted-foreground" /></div>
           <div><div className="text-body-sm text-muted-foreground">Forward trace complete</div><div className="text-display-lg font-semibold tabular-nums text-foreground">{pct(indicators?.forwardPct)}</div></div>
         </div>
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${containment ? "bg-danger/10" : "bg-success/10"}`}>
-            <AlertTriangle className={`w-5 h-5 ${containment ? "text-danger" : "text-success"}`} />
+            <WarningIcon className={`w-5 h-5 ${containment ? "text-danger" : "text-success"}`} />
           </div>
           <div><div className="text-body-sm text-muted-foreground">Open containment actions</div><div className={`text-display-lg font-semibold tabular-nums ${containment ? "text-danger" : "text-success"}`}>{containment ?? "—"}</div></div>
         </div>
@@ -798,7 +798,7 @@ export default function BatchTracking() {
                           </button>
                           {isContainment && (
                             <button onClick={e => { e.stopPropagation(); setDrawer({ kind: "containment", lotId: b.id }); }}
-                              className="ml-1 text-danger"><AlertTriangle className="w-3 h-3 inline" /></button>
+                              className="ml-1 text-danger"><WarningIcon className="w-3 h-3 inline" /></button>
                           )}
                         </td>
                         <td className="px-3 py-2 tabular-nums whitespace-nowrap">{b.ageDays}d</td>

@@ -1,7 +1,7 @@
 import KPICard from "@/components/KPICard";
 import StatusBadge from "@/components/StatusBadge";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { TrendingUp, Target, AlertTriangle } from "lucide-react";
+import { DemandIcon, ForecastVsActualIcon, WarningIcon } from "@/components/icons/chronos";
 import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE, CHART_LEGEND_STYLE } from "@/lib/chart-colors";
 import { PageIcon } from "@/components/app/page-icon";
 import { RangePicker } from "@/components/app/chart-card";
@@ -44,10 +44,10 @@ export default function ForecastActuals() {
           <span className="min-w-0">Forecast vs. actuals</span>
         </h1>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="Overall MAPE" value="14.2%" icon={Target} status="amber" />
-        <KPICard title="Forecast bias" value="+3.1%" subtitle="Slight over-forecast" icon={TrendingUp} />
-        <KPICard title="Best category" value="8.4%" subtitle="Polymers" icon={Target} />
-        <KPICard title="Worst category" value="24.1%" subtitle="Specialty Chemicals" icon={AlertTriangle} status="red" />
+        <KPICard title="Overall MAPE" value="14.2%" icon={ForecastVsActualIcon} status="amber" />
+        <KPICard title="Forecast bias" value="+3.1%" subtitle="Slight over-forecast" icon={DemandIcon} />
+        <KPICard title="Best category" value="8.4%" subtitle="Polymers" icon={ForecastVsActualIcon} />
+        <KPICard title="Worst category" value="24.1%" subtitle="Specialty Chemicals" icon={WarningIcon} status="red" />
       </div>
       <div>
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">

@@ -4,7 +4,7 @@ import { DataTable, type Column } from "@/components/app/data-table";
 import { EmptyState } from "@/components/app/empty-state";
 import { btnSecondary } from "@/components/app/controls";
 import KPICard from "@/components/KPICard";
-import { Shield, AlertTriangle, Info } from "lucide-react";
+import { InfoIcon, SafetyStockIcon, StockExhaustionIcon } from "@/components/icons/chronos";
 import { PageIcon } from "@/components/app/page-icon";
 import { apiGet } from "@/lib/api";
 import { formatQty } from "@/lib/format";
@@ -80,12 +80,12 @@ export default function SafetyStock() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <KPICard title="Materials with safety stock" value={summary ? summary.withSafetyStock : "—"}
-          subtitle={summary && summary.underRecommended > 0 ? `${summary.underRecommended} below recommended` : undefined} icon={Shield} />
+          subtitle={summary && summary.underRecommended > 0 ? `${summary.underRecommended} below recommended` : undefined} icon={SafetyStockIcon} />
         <KPICard title="Below safety stock now" value={summary ? summary.belowSafetyStock : "—"}
-          status={summary?.belowSafetyStock ? "red" : undefined} icon={AlertTriangle} />
+          status={summary?.belowSafetyStock ? "red" : undefined} icon={StockExhaustionIcon} />
         <KPICard title="No buffer defined" value={summary ? summary.noBuffer : "—"}
           subtitle={summary ? "Zero safety stock, or stock held with no policy" : undefined}
-          status={summary?.noBuffer ? "amber" : undefined} icon={Info} />
+          status={summary?.noBuffer ? "amber" : undefined} icon={InfoIcon} />
       </div>
 
       {q.error ? (

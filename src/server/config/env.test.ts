@@ -74,11 +74,22 @@ describe("env configuration", () => {
 
   it("allows a pinned planning date outside production, and none in production", async () => {
     expect((await loadEnv({ NODE_ENV: "development", PLANNING_AS_OF_DATE: "2026-03-25" })).env.PLANNING_AS_OF_DATE).toBe("2026-03-25");
-    expect((await loadEnv({ NODE_ENV: "production", PLANNING_AS_OF_DATE: "" })).env.PLANNING_AS_OF_DATE).toBeUndefined();
+    expect((await loadEnv({ NODE_ENV: "production", APP_URL: "https://anvaya.example.com", PLANNING_AS_OF_DATE: "" })).env.PLANNING_AS_OF_DATE).toBeUndefined();
   });
 
   it("parses LOG_PRETTY into a boolean", async () => {
     const { env } = await loadEnv({ LOG_PRETTY: "true" });
     expect(env.LOG_PRETTY).toBe(true);
+  });
+
+  it("requires APP_URL to be set explicitly in production", async () => {
+    await expect(loadEnv({ NODE_ENV: "production", APP_URL: undefined })).rejects.toThrow(/APP_URL: must be set in production/);
+  });
+
+  it("requires https for a public APP_URL in production, but allows a local one", async () => {
+    await expect(loadEnv({ NODE_ENV: "production", APP_URL: "http://anvaya.example.com" })).rejects.toThrow(/APP_URL: must use https/);
+    const { env } = await loadEnv({ NODE_ENV: "production", APP_URL: "https://anvaya.example.com" });
+    expect(env.APP_URL).toBe("https://anvaya.example.com");
+    await expect(loadEnv({ NODE_ENV: "production", APP_URL: "http://localhost:8080" })).resolves.toBeDefined();
   });
 });

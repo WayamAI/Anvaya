@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronsUpDown, Columns3, Download, Search, X } from "lucide-react";
+import { CloseIcon, ColumnsIcon, DownloadIcon, SearchIcon, SortAscIcon, SortDescIcon, SortIcon } from "@/components/icons/chronos";
 
 import { cn } from "@/lib/utils";
 import { btnSecondarySm, inputSm } from "@/components/app/controls";
@@ -182,7 +182,7 @@ export function DataTable<T>({
           {toolbar}
           {searchable && (
             <div className="relative min-w-0 flex-1 sm:max-w-[280px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-quaternary" />
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-quaternary" />
               <input
                 type="search"
                 value={query}
@@ -198,7 +198,7 @@ export function DataTable<T>({
                   aria-label="Clear search"
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-quaternary hover:text-foreground"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <CloseIcon className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
@@ -213,7 +213,7 @@ export function DataTable<T>({
             {columnToggle && (
               <div className="relative" ref={menuRef}>
                 <button type="button" onClick={() => setMenuOpen((o) => !o)} className={btnSecondarySm} aria-expanded={menuOpen}>
-                  <Columns3 /> Columns
+                  <ColumnsIcon /> Columns
                 </button>
                 {menuOpen && (
                   <div className="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-input bg-popover p-1">
@@ -246,7 +246,7 @@ export function DataTable<T>({
 
             {exportable && (
               <button type="button" onClick={exportCsv} className={btnSecondarySm}>
-                <Download /> Export
+                <DownloadIcon /> Export
               </button>
             )}
           </div>
@@ -293,9 +293,9 @@ export function DataTable<T>({
                         {c.header}
                         {active
                           ? (sort!.dir === "asc"
-                            ? <ArrowUp className="h-3 w-3 shrink-0" />
-                            : <ArrowDown className="h-3 w-3 shrink-0" />)
-                          : <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/head:opacity-40" />}
+                            ? <SortAscIcon className="h-3 w-3 shrink-0" />
+                            : <SortDescIcon className="h-3 w-3 shrink-0" />)
+                          : <SortIcon className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/head:opacity-40" />}
                       </button>
                     ) : (
                       c.header

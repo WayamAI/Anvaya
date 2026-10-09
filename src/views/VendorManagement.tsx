@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { inrCompact } from "@/lib/format";
 import { useDebounced, usePagedQuery } from "@/lib/use-paged-query";
 import type { VendorDetail } from "@/server/services/trace-lookup.service";
+import { VendorFormButton, VendorMaterialFormButton } from "@/components/masterdata/master-forms";
 
 /**
  * Vendors on file: approved-supplier status, payment terms, the materials each
@@ -52,6 +53,7 @@ function VendorPanel({ id }: { id: string }) {
         {v.name} <span className="identifier text-muted-foreground font-normal">{v.code}</span>
         <StatusBadge status={v.isApproved ? "green" : "amber"} label={v.isApproved ? "Approved supplier" : "Not on ASL"} />
         {!v.isActive && <StatusBadge status="gray" label="Inactive" />}
+        <span className="ml-auto"><VendorFormButton vendor={v} /></span>
       </h3>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-body-sm">
         <Fact label="Location">{[v.city, v.state].filter(Boolean).join(", ") || "—"}</Fact>
@@ -74,14 +76,31 @@ function VendorPanel({ id }: { id: string }) {
       </div>
 
       <div>
-        <span className="text-body-sm text-muted-foreground font-medium">Materials supplied ({v.approvedMaterials.length})</span>
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {v.approvedMaterials.length ? v.approvedMaterials.map((m) => (
-            <span key={m.code} className="rounded bg-secondary/50 px-2 py-1 text-body-sm">
-              <span className="identifier text-muted-foreground">{m.code}</span> {m.name}{m.isPreferred && <span className="text-caption text-muted-foreground"> · preferred</span>}
-            </span>
-          )) : <span className="text-body-sm text-muted-foreground">None set up.</span>}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-body-sm text-muted-foreground font-medium">Materials supplied ({v.approvedMaterials.length})</span>
+          <VendorMaterialFormButton vendorId={v.id} />
         </div>
+        {v.approvedMaterials.length ? (
+          <table className="data-table mt-1 w-full text-body-sm">
+            <thead><tr className="border-b border-border text-left text-muted-foreground">
+              <th className="py-1.5 font-medium">Material</th><th className="py-1.5 font-medium text-right">Price</th>
+              <th className="py-1.5 font-medium text-right">Lead time</th><th className="py-1.5 font-medium text-right">Min / multiple</th>
+              <th className="py-1.5 font-medium">Source</th><th className="py-1.5" />
+            </tr></thead>
+            <tbody>
+              {v.approvedMaterials.map((m) => (
+                <tr key={m.materialId} className="border-b border-border last:border-0">
+                  <td className="py-1.5"><span className="identifier text-muted-foreground">{m.code}</span> {m.name}</td>
+                  <td className="py-1.5 text-right tabular-nums">{m.unitPrice === null ? "—" : `₹${m.unitPrice.toLocaleString("en-IN")}`}</td>
+                  <td className="py-1.5 text-right tabular-nums">{m.leadTimeDays} d</td>
+                  <td className="py-1.5 text-right tabular-nums">{m.minOrderQty ?? 0} / {m.orderMultiple ?? 0}</td>
+                  <td className="py-1.5">{m.isPreferred ? "Preferred" : "Alternate"}</td>
+                  <td className="py-1.5 text-right"><VendorMaterialFormButton vendorId={v.id} item={m} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <p className="mt-1 text-body-sm text-muted-foreground">None set up.</p>}
       </div>
     </div>
   );
@@ -115,11 +134,14 @@ export default function VendorManagement() {
           <PageIcon />
           <span className="min-w-0">Vendor management</span>
         </h1>
+        <div className="flex items-center gap-2">
         <select className={cn(selectSm, "w-auto")} value={active} onChange={(e) => setActive(e.target.value as typeof active)} aria-label="Show">
           <option value="true">Active vendors</option>
           <option value="false">Inactive vendors</option>
           <option value="all">All vendors</option>
         </select>
+        <VendorFormButton onSaved={setSelected} />
+        </div>
       </div>
 
       {q.error ? (

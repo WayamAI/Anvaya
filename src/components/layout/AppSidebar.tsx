@@ -14,15 +14,8 @@ import { useSession } from "@/components/auth/session-context";
 import { canSeeNavItem, visibleSections } from "./nav-access";
 import { navSections, topNavItems } from "./nav-items";
 import { cn } from "@/lib/utils";
-import {
-  LayoutDashboard, Layers, Factory, Package, ShoppingCart,
-  TrendingUp, BarChart3, Settings, ChevronDown, ChevronRight,
-  Zap, ClipboardList, Shield, Box, Truck, FileText,
-  AlertTriangle, Calendar, Wrench, MapPin, Hash,
-  Heart, LineChart, Target, PieChart, FileBarChart,
-  Building, Users, Link2, Bell, Search,
-  LogOut, Moon, Sun, User, ShieldCheck
-} from "lucide-react";
+import { LayoutDashboard, Layers, Factory, Package, ShoppingCart, TrendingUp, BarChart3, Settings, Zap, ClipboardList, Shield, Box, Truck, FileText, AlertTriangle, Calendar, Wrench, MapPin, Hash, Heart, LineChart, Target, PieChart, FileBarChart, Users, Link2, Bell, Search } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, CompanyWarehouseIcon, LogoutIcon, ThemeDarkIcon, ThemeLightIcon, UserAccountIcon, UsersRolesIcon } from "@/components/icons/chronos";
 
 import {
   DropdownMenu,
@@ -303,7 +296,7 @@ export default function AppSidebar() {
               className={cn(controlBase, collapsed ? "justify-center" : "w-full gap-2.5 pr-2.5")}
             >
               <span className={cn(discBase, discIdle)}>
-                <ChevronRight
+                <ChevronRightIcon
                   className={cn(
                     "block h-[17px] w-[17px] shrink-0 transition-transform duration-300 ease-out",
                     !collapsed && "rotate-180",
@@ -380,8 +373,8 @@ export default function AppSidebar() {
                       </span>
                     )}
                     {isOpen
-                      ? <ChevronDown className="block h-3.5 w-3.5 shrink-0 text-ink-quaternary" />
-                      : <ChevronRight className="block h-3.5 w-3.5 shrink-0 text-ink-quaternary" />}
+                      ? <ChevronDownIcon className="block h-3.5 w-3.5 shrink-0 text-ink-quaternary" />
+                      : <ChevronRightIcon className="block h-3.5 w-3.5 shrink-0 text-ink-quaternary" />}
                   </>
                 }
               />
@@ -400,8 +393,8 @@ export default function AppSidebar() {
                           className={cn(rowBase, rowIdle, "h-8 gap-2.5 px-3")}
                         >
                           {isDark
-                            ? <Sun className="block h-3.5 w-3.5 shrink-0" />
-                            : <Moon className="block h-3.5 w-3.5 shrink-0" />}
+                            ? <ThemeLightIcon className="block h-3.5 w-3.5 shrink-0" />
+                            : <ThemeDarkIcon className="block h-3.5 w-3.5 shrink-0" />}
                           <span className="truncate flex-1 text-left">{isDark ? "Light mode" : "Dark mode"}</span>
                         </button>
                       );
@@ -414,7 +407,7 @@ export default function AppSidebar() {
                           onClick={handleLogout}
                           className={cn(rowBase, rowIdle, "h-8 gap-2.5 px-3")}
                         >
-                          <LogOut className="block h-3.5 w-3.5 shrink-0" />
+                          <LogoutIcon className="block h-3.5 w-3.5 shrink-0" />
                           <span className="truncate flex-1 text-left">Logout</span>
                         </button>
                       );
@@ -456,7 +449,7 @@ export default function AppSidebar() {
               className={cn(controlBase, collapsed ? "justify-center" : "w-full gap-2.5 pr-2.5")}
             >
               <span className={cn(discBase, "bg-primary text-primary-foreground")}>
-                <User className="block h-[17px] w-[17px]" />
+                <UserAccountIcon className="block h-[17px] w-[17px]" />
               </span>
               {!collapsed && (
                 <span className="min-w-0 flex-1 text-left leading-tight">
@@ -477,8 +470,8 @@ export default function AppSidebar() {
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 {isDark
-                  ? <Moon className="mr-2 block h-4 w-4 shrink-0" />
-                  : <Sun className="mr-2 block h-4 w-4 shrink-0" />}
+                  ? <ThemeDarkIcon className="mr-2 block h-4 w-4 shrink-0" />
+                  : <ThemeLightIcon className="mr-2 block h-4 w-4 shrink-0" />}
                 Theme
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
@@ -492,14 +485,14 @@ export default function AppSidebar() {
 
             <DropdownMenuItem asChild>
               <Link href="/users-roles" prefetch>
-                <ShieldCheck className="mr-2 block h-4 w-4 shrink-0" />
+                <UsersRolesIcon className="mr-2 block h-4 w-4 shrink-0" />
                 Admin &amp; Controls
               </Link>
             </DropdownMenuItem>
 
             <DropdownMenuItem asChild>
               <Link href="/company-settings" prefetch>
-                <Building className="mr-2 block h-4 w-4 shrink-0" />
+                <CompanyWarehouseIcon className="mr-2 block h-4 w-4 shrink-0" />
                 Company &amp; warehouses
               </Link>
             </DropdownMenuItem>
@@ -507,7 +500,7 @@ export default function AppSidebar() {
             <DropdownMenuSeparator />
 
             <DropdownMenuItem onSelect={handleLogout}>
-              <LogOut className="mr-2 block h-4 w-4 shrink-0" />
+              <LogoutIcon className="mr-2 block h-4 w-4 shrink-0" />
               Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>

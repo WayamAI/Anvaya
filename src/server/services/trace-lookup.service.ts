@@ -131,10 +131,16 @@ export async function getVendor(companyId: string, id: string) {
     state: v.state,
     contactPerson: v.contactPerson,
     contactEmail: v.contactEmail,
+    contactPhone: v.contactPhone,
+    addressLine1: v.addressLine1,
+    country: v.country,
     paymentTerms: v.paymentTerms,
     isApproved: v.isApproved,
     isActive: v.isActive,
-    approvedMaterials: v.materials.map((m) => ({ code: m.material.code, name: m.material.name, isPreferred: m.isPreferred })),
+    approvedMaterials: v.materials.map((m) => ({
+      materialId: m.materialId, code: m.material.code, name: m.material.name, isPreferred: m.isPreferred,
+      leadTimeDays: m.leadTimeDays, unitPrice: toNumber(m.unitPrice), minOrderQty: toNumber(m.minOrderQty), orderMultiple: toNumber(m.orderMultiple),
+    })),
     scorecard: sc
       ? {
           periodStart: isoDate(sc.periodStart)!,

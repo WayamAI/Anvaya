@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle } from "lucide-react";
+import { WarningIcon } from "@/components/icons/chronos";
 import KPICard from "@/components/KPICard";
 import StatusBadge from "@/components/StatusBadge";
 import { DataTable, type Column } from "@/components/app/data-table";
@@ -164,7 +164,7 @@ export default function PurchasePlanning() {
               subtitle={estValue > 0 ? `${inrCompact(estValue)} est.${!allLoaded || unpriced ? " (priced lines shown)" : ""}` : undefined}
               iconName="planned-pos" status={toPlace ? "amber" : "green"} />
             <KPICard title="To order now" value={ordersQ.isPending ? "—" : urgent}
-              subtitle={noVendor ? `${noVendor} without a vendor` : "Order-by date today or past"} icon={AlertTriangle} status={urgent ? "red" : "green"} />
+              subtitle={noVendor ? `${noVendor} without a vendor` : "Order-by date today or past"} icon={WarningIcon} status={urgent ? "red" : "green"} />
             <KPICard title="Overdue purchase orders" value={poQ.data ? poQ.data.counts.overdue : "—"}
               subtitle={poQ.data ? `${poQ.data.counts.DRAFT} draft awaiting approval` : can("purchase-order:read") ? undefined : "No access to purchase orders"}
               iconName="requisitions" status={poQ.data?.counts.overdue ? "red" : undefined} />

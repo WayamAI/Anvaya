@@ -53,6 +53,20 @@ const schema = z.object({
     .optional()
     .transform((v) => (v ? v : undefined)),
 }).superRefine((e, ctx) => {
+  if (e.NODE_ENV === "production") {
+    // The cross-site request check trusts APP_URL's host, so a deployment must
+    // name itself rather than inherit the localhost default; and session
+    // cookies are Secure in production, so anything but a local host needs https.
+    if (!process.env.APP_URL) {
+      ctx.addIssue({ code: "custom", path: ["APP_URL"], message: "must be set in production to the public URL of the app" });
+    } else {
+      const { protocol, hostname } = new URL(e.APP_URL);
+      const local = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+      if (protocol !== "https:" && !local) {
+        ctx.addIssue({ code: "custom", path: ["APP_URL"], message: "must use https in production" });
+      }
+    }
+  }
   // Every production MRP run would silently plan from the pinned date.
   if (e.NODE_ENV === "production" && e.PLANNING_AS_OF_DATE) {
     ctx.addIssue({

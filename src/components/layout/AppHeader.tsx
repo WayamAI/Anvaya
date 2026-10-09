@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Bell, ChevronRight } from "lucide-react";
+import { ChevronRightIcon, NotificationIcon } from "@/components/icons/chronos";
 
 const routeLabels: Record<string, string[]> = {
   "/": ["Dashboard"],
@@ -78,7 +78,7 @@ export default function AppHeader() {
           return (
             <span key={i} className="flex min-w-0 items-center gap-3">
               <span className="label-caps truncate">{crumb}</span>
-              {i > 0 && <ChevronRight className="block h-3.5 w-3.5 shrink-0 text-ink-quaternary" />}
+              {i > 0 && <ChevronRightIcon className="block h-3.5 w-3.5 shrink-0 text-ink-quaternary" />}
             </span>
           );
         })}
@@ -90,7 +90,7 @@ export default function AppHeader() {
           aria-label="Notifications"
           className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-ink-tertiary transition-colors hover:border-input hover:bg-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
         >
-          <Bell className="block h-[15px] w-[15px]" />
+          <NotificationIcon className="block h-[15px] w-[15px]" />
         </button>
       </div>
     </header>

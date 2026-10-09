@@ -1,5 +1,5 @@
 import KPICard from "@/components/KPICard";
-import { Clock, TrendingUp, DollarSign, Truck } from "lucide-react";
+import { CostIcon, LeadTimeIcon, ShipmentIcon, SupplierIcon } from "@/components/icons/chronos";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { CHART_COLORS, SERIES, CHART_TOOLTIP_STYLE, CHART_LEGEND_STYLE } from "@/lib/chart-colors";
 import { PageIcon } from "@/components/app/page-icon";
@@ -39,10 +39,10 @@ export default function ProcurementAnalytics() {
           <span className="min-w-0">Procurement cycle analytics</span>
         </h1>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="Avg PO cycle time" value="12.4 days" subtitle="Req to delivery" icon={Clock} status="amber" />
-        <KPICard title="On-time delivery" value="83.2%" subtitle="Below 90% target" icon={Truck} status="amber" />
-        <KPICard title="Price variance" value="+2.1%" subtitle="Over budget" icon={DollarSign} status="amber" />
-        <KPICard title="Top vendor (volume)" value="₹1.2 Cr" subtitle="Reliance Polymers" icon={TrendingUp} />
+        <KPICard title="Avg PO cycle time" value="12.4 days" subtitle="Req to delivery" icon={LeadTimeIcon} status="amber" />
+        <KPICard title="On-time delivery" value="83.2%" subtitle="Below 90% target" icon={ShipmentIcon} status="amber" />
+        <KPICard title="Price variance" value="+2.1%" subtitle="Over budget" icon={CostIcon} status="amber" />
+        <KPICard title="Top vendor (volume)" value="₹1.2 Cr" subtitle="Reliance Polymers" icon={SupplierIcon} />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>

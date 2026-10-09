@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Zap } from "lucide-react";
+import { MrpRunIcon } from "@/components/icons/chronos";
 import StatusBadge from "@/components/StatusBadge";
 import { PageHeader } from "@/components/app/page-header";
 import { DataTable, type Column } from "@/components/app/data-table";
@@ -237,7 +237,7 @@ export default function MRPRun() {
               <input type="checkbox" checked={params.respectSafetyStock} onChange={(e) => setParams((p) => ({ ...p, respectSafetyStock: e.target.checked }))} /> Safety stock
             </label>
             <button onClick={() => start.mutate()} disabled={start.isPending} className={btnPrimary}>
-              <Zap /> {start.isPending ? "Running…" : "Run MRP now"}
+              <MrpRunIcon /> {start.isPending ? "Running…" : "Run MRP now"}
             </button>
           </>
         ) : undefined}

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, ChevronDown, Package, Download, Shield, Search } from "lucide-react";
+import { BomIcon, ChevronDownIcon, ChevronRightIcon, DownloadIcon, RawMaterialIcon, SearchIcon } from "@/components/icons/chronos";
 import { btnLink, btnSecondary, selectBase } from "@/components/app/controls";
 import { EmptyState } from "@/components/app/empty-state";
 import { SkeletonBlock } from "@/components/app/skeleton-block";
 import { PageIcon } from "@/components/app/page-icon";
+import { ActivateRevisionButton, NewBomButton, NewRevisionButton } from "@/components/production/bom-actions";
 import { apiGet } from "@/lib/api";
 import { formatQty } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -79,11 +80,11 @@ function TreeNode({
           />
         )}
         {hasChildren ? (
-          open ? <ChevronDown className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" />
+          open ? <ChevronDownIcon className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" /> : <ChevronRightIcon className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" />
         ) : (
           <span className="w-3.5 flex-shrink-0" />
         )}
-        <Package className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" />
+        <RawMaterialIcon className="w-3.5 h-3.5 text-ink-quaternary flex-shrink-0" />
         <span className="identifier text-body-sm text-muted-foreground w-[74px] flex-shrink-0">{node.code}</span>
         <span className="truncate">{node.name}</span>
         {node.cycle && <span className="text-caption text-danger">cycle</span>}
@@ -241,9 +242,14 @@ export default function BOMManagement() {
               <option key={p.materialId} value={p.materialId}>{p.name}{p.bom ? "" : " (no BOM)"}</option>
             ))}
           </select>
+          {product && !product.bom && <NewBomButton product={product} onCreated={() => void productsQuery.refetch()} />}
+          {product?.bom && (view || bomQuery.error) && (
+            <NewRevisionButton bomId={product.bom.id} bomCode={product.bom.code} productUom={view?.tree.uom ?? ""}
+              versions={view?.versions ?? []} tree={view?.tree} baseQuantity={view?.version.baseQuantity ?? 1} />
+          )}
           <button className={btnSecondary} disabled={!view} onClick={() => view && exportCsv(view)}
             title={view ? `Download ${view.bom.code} rev ${view.version.version} as CSV` : "No BOM to export"}>
-            <Download /> Export
+            <DownloadIcon /> Export
           </button>
         </div>
       </header>
@@ -283,7 +289,8 @@ export default function BOMManagement() {
             <PanelLoading />
           ) : product && !product.bom ? (
             <EmptyState title={`No BOM recorded for ${product.name}`}
-              description="This product is made in-house but has no bill of materials, so it can't be broken down into components." />
+              description="This product is made in-house but has no bill of materials, so it can't be broken down into components."
+              action={<NewBomButton product={product} onCreated={() => void productsQuery.refetch()} />} />
           ) : bomQuery.error ? (
             <EmptyState title="BOM could not be loaded" description={bomQuery.error.message}
               action={<button className={btnSecondary} onClick={() => void bomQuery.refetch()}>Try again</button>} />
@@ -363,7 +370,7 @@ export default function BOMManagement() {
             <section className="surface-panel">
               <div className="panel-head flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <p className="label-caps flex items-center gap-1.5">
-                  <Shield className="h-3.5 w-3.5 text-ebom" /> Revision &amp; usage
+                  <BomIcon className="h-3.5 w-3.5 text-ebom" /> Revision &amp; usage
                 </p>
                 {detail && (
                   <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-caption font-medium",
@@ -412,6 +419,7 @@ export default function BOMManagement() {
                               <td className="identifier whitespace-nowrap py-1.5 pr-3 text-body-sm text-muted-foreground">—</td>
                               <td className="py-1.5 text-body-sm text-ink-secondary">
                                 {v.isActive ? "Active" : "Inactive"} · {v.components} components per {formatQty(v.baseQuantity)} {view.tree.uom}
+                                {" "}<ActivateRevisionButton bomId={view.bom.id} bomCode={view.bom.code} version={v} />
                               </td>
                             </tr>
                           );
@@ -437,7 +445,7 @@ export default function BOMManagement() {
                 {selectedNode && (
                   <div className="border-t border-border pt-3">
                     <button onClick={() => setShowWhereUsed(!showWhereUsed)} className={`${btnLink} flex items-center gap-1`}>
-                      <Search className="h-3 w-3" /> Where-used analysis — {selectedNode.code} →
+                      <SearchIcon className="h-3 w-3" /> Where-used analysis — {selectedNode.code} →
                     </button>
                     {showWhereUsed && detail && (
                       <ul className="mt-2 space-y-1 rounded-lg bg-sunken p-3">

@@ -18,7 +18,7 @@ export async function listCustomers(companyId: string, query: ListCustomersQuery
       where,
       orderBy: [{ code: "asc" }, { id: "asc" }],
       ...cursorArgs({ limit: query.limit ?? 50, cursor: query.cursor }),
-      select: { id: true, code: true, name: true, type: true, city: true, paymentTerms: true, isActive: true },
+      select: { id: true, code: true, name: true, type: true, city: true, state: true, country: true, contactPerson: true, contactEmail: true, contactPhone: true, paymentTerms: true, isActive: true },
     }),
     prisma.customer.count({ where }),
   ]);

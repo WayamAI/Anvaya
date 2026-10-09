@@ -240,10 +240,40 @@ function mapPrismaError(error: unknown) {
 /** Any input shape: a schema may transform what it parses (e.g. a comma list into an array). */
 type Schema<T> = ZodType<T, ZodTypeDef, unknown>;
 
+/**
+ * Largest JSON body any endpoint accepts. The biggest legitimate payloads (a
+ * goods receipt or an order with many lines) are a few tens of KB; the cap
+ * stops a client — including an unauthenticated one, since login parses its
+ * body before anything else — making the server buffer and parse megabytes.
+ */
+export const MAX_BODY_BYTES = 1024 * 1024;
+
+/** Read the body as text, refusing it as soon as it passes `maxBytes`. */
+export async function readBodyCapped(req: Request, maxBytes = MAX_BODY_BYTES): Promise<string> {
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) throw AppError.payloadTooLarge(maxBytes);
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw AppError.payloadTooLarge(maxBytes);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 export async function parseBody<T>(req: NextRequest, schema: Schema<T>): Promise<T> {
+  const text = await readBodyCapped(req);
   let raw: unknown;
   try {
-    raw = await req.json();
+    raw = JSON.parse(text);
   } catch {
     throw AppError.validation("Request body must be valid JSON");
   }

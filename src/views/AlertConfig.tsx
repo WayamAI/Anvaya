@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Bell, Mail, MessageSquare } from "lucide-react";
+import { MessageIcon, NotificationIcon, SendIcon } from "@/components/icons/chronos";
 import StatusBadge from "@/components/StatusBadge";
 import { traceabilityAlerts } from "@/data/traceability";
 import { PageIcon } from "@/components/app/page-icon";
@@ -78,9 +78,9 @@ export default function AlertConfig() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {[
-              { icon: Bell, label: "Active alert rules", count: rules.filter(r => r.enabled).length, total: rules.length },
-              { icon: Mail, label: "Email alerts sent (today)", count: 47, total: null },
-              { icon: MessageSquare, label: "SMS alerts sent (today)", count: 8, total: null },
+              { icon: NotificationIcon, label: "Active alert rules", count: rules.filter(r => r.enabled).length, total: rules.length },
+              { icon: SendIcon, label: "Email alerts sent (today)", count: 47, total: null },
+              { icon: MessageIcon, label: "SMS alerts sent (today)", count: 8, total: null },
             ].map((s, i) => (
               <div key={i} className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
